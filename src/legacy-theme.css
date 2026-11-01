@@ -1,0 +1,118 @@
+:root {
+  --bg: #151515;
+  --panel: #1c1c1c;
+  --ink: #e7e7e7;
+  --muted: #a8a8a8;
+  --line: #363636;
+  --green: #c5c5c5;
+}
+body {
+  font-family: "Geist Variable", sans-serif;
+  background: #151515;
+  color: #e7e7e7;
+}
+.legacy-root {
+  color: #e7e7e7;
+}
+.return-observation {
+  position: fixed;
+  bottom: 18px;
+  left: 22px;
+  z-index: 60;
+  font-size: 11px;
+  color: #c3c3c3;
+  background: #222222;
+  border: 1px solid #424242;
+  padding: 8px 10px;
+  border-radius: 6px;
+  text-decoration: none;
+}
+.legacy-root .app-shell {
+  background: #151515;
+}
+.legacy-root .sidebar {
+  background: #121212;
+}
+.legacy-root .topbar,
+.legacy-root .panel,
+.legacy-root .stat,
+.legacy-root .session-card,
+.legacy-root .modal {
+  background: #1d1d1d;
+  border-color: #373737;
+  color: #e5e5e5;
+}
+.legacy-root input,
+.legacy-root textarea,
+.legacy-root select {
+  background: #151515;
+  border-color: #434343;
+  color: #e1e1e1;
+}
+.legacy-root .eyebrow,
+.legacy-root .space-label,
+.legacy-root .beta,
+.legacy-root .hero-tag {
+  display: none;
+}
+.legacy-root * {
+  text-transform: none !important;
+  letter-spacing: normal;
+}
+.legacy-root h1 {
+  font-size: 28px;
+  letter-spacing: -0.6px;
+}
+.legacy-root .primary-button {
+  background: #dadada;
+  color: #232323;
+}
+.legacy-root pre {
+  background: #141414;
+  color: #c1c1c1;
+}
+.legacy-root .sidebar-bottom {
+  padding-bottom: 50px;
+}
+.legacy-root .score-grid,
+.legacy-root .event-details,
+.legacy-root .candidate-table > div,
+.legacy-root .intent-summary {
+  background: #212121;
+  color: #cbcbcb;
+}
+@media (max-width: 760px) {
+  .return-observation {
+    position: static;
+    display: block;
+    margin: 10px 15px;
+    width: fit-content;
+  }
+}
+
+.legacy-workflow-note {
+  position: fixed;
+  top: 0;
+  left: 255px;
+  right: 0;
+  z-index: 45;
+  padding: 8px 24px;
+  background: #242424;
+  color: #c3c3c3;
+  font-size: 11px;
+  border-bottom: 1px solid #363636;
+}
+.legacy-root .topbar {
+  padding-top: 36px;
+  min-height: 105px;
+}
+@media (max-width: 760px) {
+  .legacy-workflow-note {
+    position: static;
+    padding: 12px 16px;
+  }
+  .legacy-root .topbar {
+    padding-top: 0;
+    min-height: 65px;
+  }
+}

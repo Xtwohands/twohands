@@ -3,17 +3,17 @@ import {
   ArrowRight,
   ArrowUpRight,
   Check,
-  CheckCircle2,
+  CheckCircle as CheckCircle2,
   ChevronDown,
-  CircleDot,
-  Download,
-  ExternalLink,
-  FileSearch,
-  Globe2,
-  LoaderCircle,
-  Search,
-  ShieldCheck,
-} from "lucide-react";
+  Circle as CircleDot,
+  Download01 as Download,
+  LinkExternal01 as ExternalLink,
+  FileSearch02 as FileSearch,
+  Globe02 as Globe2,
+  Loading02 as LoaderCircle,
+  SearchLg as Search,
+  ShieldTick as ShieldCheck,
+} from "@untitledui/icons";
 import { api, type TaskDetail } from "../api";
 import type {
   Source,

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { search, safeUrl } from "../server/providers";
+import { search, safeUrl, scrape } from "../server/providers";
 import { config } from "../server/config";
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -112,5 +112,48 @@ describe("official provider adapter contracts", () => {
     await expect(search("exa", "query", [], "c")).rejects.toThrow(
       "Provider invalid response",
     );
+  });
+});
+
+it("labels truncated extraction text instead of implying the complete page was captured", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          success: true,
+          data: {
+            markdown: "x".repeat(23000),
+            metadata: { statusCode: 200 },
+          },
+        }),
+      ),
+    ),
+  );
+  const result = await scrape("https://example.com");
+  expect(result.text).toHaveLength(20000);
+  expect(result).toMatchObject({
+    truncated: true,
+    originalCharacters: 23000,
+    returnedCharacters: 20000,
+  });
+});
+it("marks a short extraction as not locally truncated", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          success: true,
+          data: { markdown: "Short fixture", metadata: { statusCode: 200 } },
+        }),
+      ),
+    ),
+  );
+  const result = await scrape("https://example.com");
+  expect(result).toMatchObject({
+    truncated: false,
+    originalCharacters: 13,
+    returnedCharacters: 13,
   });
 });

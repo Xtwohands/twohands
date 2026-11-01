@@ -6,17 +6,27 @@ Except for explicitly enabled Firecrawl keyless extraction, provider keys are re
 
 By default the server binds to loopback. Non-loopback binding requires `API_TOKEN` with at least 24 characters. For remote use, place the service behind HTTPS and trusted access controls. The browser keeps the workspace token in memory only, clearing it on reload; provider credentials cannot be entered into the browser. Local API host validation and same-origin JSON writes reduce browser-based attacks against unauthenticated loopback deployments.
 
-This is a single shared workspace. The token grants access to all local tasks. It does not supply tenant isolation, roles, user identity, audit attribution, or buyer access control. Do not use this version for untrusted public users or confidential multi-tenant workloads.
+This is a single shared workspace. The token grants access to all local sessions and research tasks. It does not supply tenant isolation, roles, user identity, audit attribution, or buyer access control. Do not use this version for untrusted public users or confidential multi-tenant workloads.
 
 ## Local data
 
-The default database is `data/apilayer.sqlite`; its directory is created with owner-only permissions. Normal operations append events and replace materialized task state. WAL sidecars are part of the database's operational storage. Protect the directory and any backups as sensitive workspace data.
+The default database is `data/apilayer.sqlite`; its directory is created with owner-only permissions. Normal operations append events and replace materialized session/task state. Observation events have a local SHA-256 chain; this checks internal chain consistency, not independent attestation or immutable external custody. WAL sidecars are part of the database's operational storage. Protect the directory and any backups as sensitive workspace data.
 
 Internal storage includes prompts, criteria, normalized query arguments, source excerpts and URLs, evidence assessments, reviewer notes, routing/usage metadata, and estimates. Search providers receive the query and domain filters needed to perform the search; Firecrawl receives an explicitly selected source URL. Review the vendor's terms, data retention, and permitted use before processing sensitive requests.
 
 Analytics consent defaults **off**. The task privacy control can withdraw it immediately or explicitly opt back in. The separate delete action removes a settled task and its event history from local storage; it is blocked while provider operations are active or reserved. Local task storage is necessary to use the workspace; the optional checkbox controls whether that task contributes to provider aggregates. The provider analytics API has an explicit field allowlist, excludes task content, and suppresses small cohorts. Cohort suppression is a basic safeguard, not a differential-privacy guarantee or proof of anonymity. Do not commercialize this feed without reviewing permissions, terms, licensing, and buyer requirements.
 
 Sanitized trace exports omit prompts, queries, source URLs/content, organization names, reviewer notes, and request arguments. They retain task/call identifiers, timing, policy decisions, observed response metadata, and cost estimates. Company CSV exports intentionally contain the reviewed result and evidence links.
+
+## Observation records and sharing
+
+The MCP bridge exposes intent proposals, session reads, explicit provider tools, cached evidence, and output submission. Intent acceptance, evaluations, case handling, deletion, and sharing controls are operator HTTP operations, absent from the MCP tool catalog. This is a local shared trust boundary; it is not a defense against another privileged local process accessing the operator API.
+
+Each delivered output remains available as a separate version. An evaluation references an exact output ID, accepted intent hash, criterion verdicts, supporting call IDs, and a reported review source. Reviewing a prior version requires an explicit retrospective flag. Cases reference one exact evaluation and record their resolution; no money moves and no coverage is issued.
+
+Observation summary exports omit the objective, constraints, criteria text, model label, output text, source content, URLs, queries, stated explanations, and reviewer/case notes. Private exports intentionally contain them. Identifiers and timestamps remain in summary exports; these are minimized records, not a promise of anonymity.
+
+Commercial consent defaults off per session and can be withdrawn. The aggregate endpoint suppresses both overall and per-provider cohorts below the configured minimum (at least five). It contains only fixed provider names and aggregate execution counts/latency. Nothing is automatically sent to vendors. Stated explanations are retained locally and are not part of this aggregate feed. A future licensed data product needs a separate, explicit export contract and permissions.
 
 ## Retention
 
@@ -26,7 +36,7 @@ Default documented retention: **30 days**. Scheduling cleanup is the operator's 
 RETENTION_DAYS=30 npm run retention
 ```
 
-The command deletes expired tasks and their event histories, skips tasks marked running, checkpoints WAL, and vacuums SQLite. A paused task is not a complete backup. Apply equivalent retention to exported files, screenshots, backups, and hosting volumes. Filesystem snapshots and external backups are outside this application's deletion control.
+The command deletes expired research tasks and observation sessions with their evidence and event histories. It skips running research tasks, observation sessions with active provider calls, and observation sessions with open review cases. Expiration uses the last materialized update. Closed cases are subject to ordinary retention. It then checkpoints WAL and vacuums SQLite. MCP client connection metadata is operational history and remains until the workspace is removed; it contains client name/version and timestamps, not conversation content. A paused task is not a complete backup. Apply equivalent retention to exported files, screenshots, backups, and hosting volumes. Filesystem snapshots and external backups are outside this application's deletion control.
 
 ## Limits and pricing
 
@@ -49,11 +59,13 @@ Prices are **configurable planning assumptions**, not verified current plan pric
 
 The ledger enforces the task cap against those configured estimates. Actual vendor charges can differ. Provider response usage is displayed separately when available and is not an invoice reconciliation. Set vendor-side caps and validate estimates before larger runs. Errors/timeouts conservatively retain estimates because their billing status is uncertain.
 
-Each task has a maximum of 50 provider attempts across search and extraction; each run has at most five queries and two search attempts per query. At most three tasks can perform operations simultaneously. Run a single process per database; process-local limits are not distributed rate limiting. Database exclusive ownership prevents another server, retention command, or direct-database live runner from claiming that database while the server is running. Stop the server before maintenance.
+Each observation session and legacy research task has a maximum of 50 provider attempts across search and extraction. The rolling provider rate limit is shared across both workflows within the process. Observation calls are explicitly selected by the external agent and are never automatically retried. Legacy research additionally limits each plan to five queries and two search attempts per query, with at most three legacy tasks active simultaneously. The legacy three-task limit does not apply to observation sessions; their admission uses accepted budgets, call counts, and shared provider rate limits. Run a single process per database; process-local limits are not distributed rate limiting. Database exclusive ownership prevents another server, retention command, or direct-database live runner from claiming that database while the server is running. Stop the server before maintenance.
 
 ## Optional keyless extraction
 
 `FIRECRAWL_ALLOW_KEYLESS=true` explicitly opts into Firecrawl's documented free tier. The default remains false. Keyless requests send no Authorization header, use a zero-USD free-tier ledger entry, and preserve provider credit usage separately. They stop on HTTP 401/403/429 without automatic retry or paid upgrade. `FIRECRAWL_KEYLESS_MAX_REQUESTS` defaults to ten requests per server process (configurable 1–50), in addition to the task and rolling provider limits. This local cap does not reset the provider's daily per-IP quota; restarting is not a way to bypass provider refusal. Sign in and configure a legitimate key if the allowance is unavailable.
+
+The observation MCP catalog currently requires a configured Firecrawl key; optional keyless extraction is supported only by the legacy research workflow.
 
 The free tier can change. See [actual live validation](LIVE_VALIDATION.md) and the current [official keyless documentation](https://www.firecrawl.dev/blog/firecrawl-keyless-launch). Firecrawl remains a separate extraction capability; it is not silently substituted for the specified Exa/Tavily search comparison.
 
@@ -63,7 +75,7 @@ The start/development/CLI scripts enable Node's environment proxy support (`--us
 
 ## Shutdown, recovery, and health
 
-SIGTERM/SIGINT stops accepting connections, asks active plans to stop between calls, and waits for in-flight operations to settle. If the process is killed before settlement, startup conservatively consumes outstanding estimates, records interrupted-call and settlement events, and marks affected tasks partial. Repeated recovery does not charge the same reservation twice.
+SIGTERM/SIGINT stops accepting connections, asks active legacy plans to stop between calls, and waits for in-flight legacy and observation operations to settle. If the process is killed before settlement, startup conservatively consumes outstanding estimates, records interrupted-call and settlement events, and marks affected tasks partial. Observation calls are marked interrupted and retain a conservative estimate; the same request key returns the recorded interruption rather than repeating the provider operation. Repeated recovery does not charge the same reservation twice.
 
 `GET /healthz` tests the database connection and returns only `{ "ok": true }`. It does not verify vendor credentials or prove an external provider is healthy. `/api/health` is authenticated when a workspace token is configured and provides connection configuration, not vendor uptime.
 

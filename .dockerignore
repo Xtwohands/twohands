@@ -7,3 +7,8 @@ build
 data
 test-results
 playwright-report
+
+# Local observation records and machine-specific connections
+.gstack
+.mcp.json*
+*.log

@@ -128,6 +128,9 @@ export async function search(
 }
 export async function scrape(url: string): Promise<{
   text: string;
+  truncated?: boolean;
+  originalCharacters?: number;
+  returnedCharacters?: number;
   httpStatus: number;
   credits?: number;
   pageStatus?: number;
@@ -142,6 +145,9 @@ export async function scrape(url: string): Promise<{
     throw new ProviderError("invalid_response", response.status);
   return {
     text: json.data.markdown.slice(0, 20000),
+    truncated: json.data.markdown.length > 20000,
+    originalCharacters: json.data.markdown.length,
+    returnedCharacters: Math.min(json.data.markdown.length, 20000),
     httpStatus: response.status,
     pageStatus:
       Number.isInteger(json.data?.metadata?.statusCode) &&

@@ -1,16 +1,16 @@
 import { useEffect, useState } from "react";
 import {
   ChevronDown,
-  Code2,
-  Download,
-  Fingerprint,
-  GitBranch,
-  LockKeyhole,
+  Code02 as Code2,
+  Download01 as Download,
+  Fingerprint01 as Fingerprint,
+  GitBranch01 as GitBranch,
+  Lock01 as LockKeyhole,
   Play,
-  Pause,
-  RotateCcw,
-  ShieldCheck,
-} from "lucide-react";
+  PauseCircle as Pause,
+  RefreshCcw01 as RotateCcw,
+  ShieldTick as ShieldCheck,
+} from "@untitledui/icons";
 import {
   recordingIndex,
   loadRecording,
@@ -175,8 +175,8 @@ export function Inspector({
         </select>
         <span className="mono muted">
           {task
-            ? `${task.events.length} APPEND-ONLY EVENTS`
-            : "NO SESSION SELECTED"}
+            ? `${task.events.length} Append-only events`
+            : "No session selected"}
         </span>
       </div>
       {recordingError && (
@@ -307,9 +307,13 @@ export function Inspector({
                                 {Object.entries(c.components).map(([k, v]) => (
                                   <span key={k}>
                                     {k}
-                                    <b>{Number(v).toFixed(2)}</b>
+                                    <b>
+                                      {c.insufficientData.includes(k)
+                                        ? "—"
+                                        : Number(v).toFixed(2)}
+                                    </b>
                                     {c.insufficientData.includes(k) && (
-                                      <small>insufficient data</small>
+                                      <small>Not measured</small>
                                     )}
                                   </span>
                                 ))}
@@ -322,8 +326,8 @@ export function Inspector({
                         </div>
                       )}
                       <div className="payload-label">
-                        <span>RECORDED EVENT PAYLOAD</span>
-                        <span>{e.callId?.slice(0, 8) || "TASK LEVEL"}</span>
+                        <span>Recorded event payload</span>
+                        <span>{e.callId?.slice(0, 8) || "Task level"}</span>
                       </div>
                       <pre tabIndex={0} aria-label="Recorded event JSON">
                         {JSON.stringify(e.data, null, 2)}
@@ -355,21 +359,21 @@ export function Inspector({
             </div>
             <div className="legend-body">
               <div>
-                <span className="legend-tag">OBSERVED</span>
+                <span className="legend-tag">Observed</span>
                 <p>
                   Provider HTTP status, latency, returned URLs, and actual
                   routing decisions.
                 </p>
               </div>
               <div>
-                <span className="legend-tag amber">ESTIMATED</span>
+                <span className="legend-tag amber">Estimated</span>
                 <p>
                   Costs from the configured rate card. Not actual vendor-billed
                   charges.
                 </p>
               </div>
               <div>
-                <span className="legend-tag purple">EVALUATED</span>
+                <span className="legend-tag purple">Evaluated</span>
                 <p>
                   Search coverage checks and human assessments. A successful
                   HTTP call can leave the task unproven.

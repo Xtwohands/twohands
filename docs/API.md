@@ -1,3 +1,5 @@
+> This document covers the legacy research engine. See [observation architecture](OBSERVATION_ARCHITECTURE.md) for the primary external-agent workflow and its API.
+
 # API contract
 
 Base URL: `http://127.0.0.1:3001`. Requests that mutate state require `Content-Type: application/json`. If `API_TOKEN` is configured, every `/api/*` request requires `Authorization: Bearer <workspace token>`. Same-origin writes only. `/healthz` returns minimal unauthenticated liveness.

@@ -4,15 +4,15 @@ import {
   ArrowRight,
   ArrowUpRight,
   Check,
-  Fingerprint,
-  GitBranch,
-  Globe2,
-  Layers3,
-  LoaderCircle,
-  LockKeyhole,
-  ShieldCheck,
-  Sparkles,
-} from "lucide-react";
+  Fingerprint01 as Fingerprint,
+  GitBranch01 as GitBranch,
+  Globe02 as Globe2,
+  LayersThree01 as Layers3,
+  Loading02 as LoaderCircle,
+  Lock01 as LockKeyhole,
+  ShieldTick as ShieldCheck,
+  Stars01 as Sparkles,
+} from "@untitledui/icons";
 import type { ServerHealth } from "../../server/types";
 import { money } from "../api";
 import { ProviderMark } from "./shared";
@@ -104,7 +104,7 @@ export function IntentForm({
             </div>
             <div className="form-section">
               <div className="section-label">
-                <span>SUCCESS CRITERIA</span>
+                <span>Success criteria</span>
                 <span>Editable rubric</span>
               </div>
               <label htmlFor="criteria" className="sr-only">
@@ -150,7 +150,7 @@ export function IntentForm({
             </div>
             <div className="form-section">
               <div className="section-label">
-                <span>SEARCH & ROUTING</span>
+                <span>Search & routing</span>
                 <span>Deterministic policy</span>
               </div>
               <label>
@@ -305,7 +305,7 @@ export function IntentForm({
               <Globe2 size={17} />
               Provider network
             </span>
-            <span className="small-label">LIVE</span>
+            <span className="small-label">Live</span>
           </div>
           <p className="rail-intro">
             One normalized tool. Multiple real providers.

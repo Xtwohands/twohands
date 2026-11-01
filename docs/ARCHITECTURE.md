@@ -1,3 +1,5 @@
+> This document covers the legacy research engine. See [observation architecture](OBSERVATION_ARCHITECTURE.md) for the primary external-agent workflow and its API.
+
 # Architecture and routing
 
 The browser talks only to this application's API. The server owns provider credentials, eligibility, routing, budget reservations, execution, and event persistence.

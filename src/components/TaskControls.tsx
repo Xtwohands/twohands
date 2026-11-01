@@ -1,12 +1,12 @@
 import { useState, useEffect, type FormEvent } from "react";
 import {
-  Globe2,
+  Globe02 as Globe2,
   Plus,
-  LoaderCircle,
-  LockKeyhole,
-  Trash2,
-  X,
-} from "lucide-react";
+  Loading02 as LoaderCircle,
+  Lock01 as LockKeyhole,
+  Trash01 as Trash2,
+  XClose as X,
+} from "@untitledui/icons";
 import { api, type TaskDetail } from "../api";
 export function AddEvidence({
   task,
@@ -39,7 +39,7 @@ export function AddEvidence({
           <Globe2 size={16} />
           Start with a known evidence link
         </span>
-        <span className="small-label">OPTIONAL</span>
+        <span className="small-label">Optional</span>
       </div>
       <form onSubmit={(e) => void add(e)}>
         <label htmlFor="evidence-url">Public HTTPS URL</label>

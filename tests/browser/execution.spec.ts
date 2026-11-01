@@ -6,7 +6,7 @@ test("HTTP 200 with insufficient evidence triggers a real engine fallback; revie
 }, testInfo) => {
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
-  await page.goto("/");
+  await page.goto("/research/");
   await page
     .getByLabel("Search query", { exact: true })
     .fill("stale evidence fixture");
@@ -79,7 +79,7 @@ test("HTTP 200 with insufficient evidence triggers a real engine fallback; revie
 test("compare calls use both providers and extraction consumes the same task ledger", async ({
   page,
 }) => {
-  await page.goto("/");
+  await page.goto("/research/");
   await page
     .getByRole("button", { name: /Compare providers.*Two live calls/ })
     .click();
@@ -149,7 +149,7 @@ test("consented cross-provider cohort unlocks honest aggregate insights", async 
   expect(data.providers.find((p: any) => p.provider === "exa").suppressed).toBe(
     false,
   );
-  await page.goto("/#intelligence");
+  await page.goto("/research/#intelligence");
   await expect(
     page.getByRole("columnheader", { name: "Eligible / first selected" }),
   ).toBeVisible();

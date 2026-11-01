@@ -1,0 +1,62 @@
+import { z } from "zod";
+import type { ObservationStore } from "./observation-store.js";
+export const clientIdentity = z
+  .object({
+    clientName: z.string().trim().min(1).max(160),
+    clientVersion: z.string().trim().min(1).max(100),
+  })
+  .strict();
+export type ClientIdentity = z.infer<typeof clientIdentity>;
+export function recordConnection(
+  db: ObservationStore,
+  input: ClientIdentity,
+  sessionId?: string,
+) {
+  const client = clientIdentity.parse(input);
+  const key = JSON.stringify([client.clientName, client.clientVersion]);
+  const existing = db.store.db
+    .prepare("SELECT body FROM observation_clients WHERE id=?")
+    .get(key);
+  const at = new Date().toISOString();
+  const connection = {
+    ...client,
+    firstSeenAt: existing
+      ? JSON.parse(existing.body as string).firstSeenAt
+      : at,
+    lastSeenAt: at,
+    transport: "stdio",
+    identity: "MCP client-reported",
+  };
+  db.store.db
+    .prepare(
+      "INSERT INTO observation_clients VALUES (?,?) ON CONFLICT(id) DO UPDATE SET body=excluded.body",
+    )
+    .run(key, JSON.stringify(connection));
+  if (
+    sessionId &&
+    db.get(sessionId) &&
+    !db
+      .events(sessionId)
+      .some(
+        (e) =>
+          e.type === "client_observed" &&
+          e.data.clientName === client.clientName &&
+          e.data.clientVersion === client.clientVersion,
+      )
+  )
+    db.event(sessionId, "client_observed", "observed", {
+      ...client,
+      transport: "stdio",
+      identity:
+        "Client name and version are self-reported, not model attestation.",
+    });
+  return connection;
+}
+export function connections(db: ObservationStore) {
+  return db.store.db
+    .prepare(
+      "SELECT body FROM observation_clients ORDER BY json_extract(body,'$.lastSeenAt') DESC",
+    )
+    .all()
+    .map((r) => JSON.parse(r.body as string));
+}

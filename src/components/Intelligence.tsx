@@ -1,15 +1,15 @@
 import { useEffect, useState } from "react";
 import {
   Activity,
-  BarChart3,
-  Fingerprint,
-  GitBranch,
-  Layers3,
-  LoaderCircle,
-  LockKeyhole,
-  Search,
-  ShieldCheck,
-} from "lucide-react";
+  BarChart03 as BarChart3,
+  Fingerprint01 as Fingerprint,
+  GitBranch01 as GitBranch,
+  LayersThree01 as Layers3,
+  Loading02 as LoaderCircle,
+  Lock01 as LockKeyhole,
+  SearchLg as Search,
+  ShieldTick as ShieldCheck,
+} from "@untitledui/icons";
 import { api, money } from "../api";
 import type { Analytics } from "../../server/analytics";
 import { Stat, ProviderMark } from "./shared";
@@ -63,25 +63,25 @@ export function Intelligence() {
         <>
           <div className="stats-grid">
             <Stat
-              label="CONSENTED TASKS"
+              label="Consented tasks"
               value={String(data.cohortSize).padStart(2, "0")}
               detail="Only explicitly opted-in sessions"
               icon={<Fingerprint size={17} />}
             />
             <Stat
-              label="MINIMUM COHORT"
+              label="Minimum cohort"
               value={String(data.minCohort).padStart(2, "0")}
               detail="Required before aggregate reporting"
               icon={<ShieldCheck size={17} />}
             />
             <Stat
-              label="PROVIDER INSIGHTS"
+              label="Provider insights"
               value="—"
               detail="Withheld until threshold is met"
               icon={<BarChart3 size={17} />}
             />
             <Stat
-              label="DATA SOURCE"
+              label="Data source"
               value="Live only"
               detail="No seeded performance benchmarks"
               icon={<Activity size={17} />}
@@ -92,7 +92,7 @@ export function Intelligence() {
               <div className="empty-icon">
                 <LockKeyhole size={30} />
               </div>
-              <span className="small-label">PRIVACY THRESHOLD ACTIVE</span>
+              <span className="small-label">Privacy threshold active</span>
               <h2>Real insights need a real cohort.</h2>
               <p>
                 Complete at least {data.minCohort} opted-in research tasks to
@@ -117,25 +117,25 @@ export function Intelligence() {
         <>
           <div className="stats-grid">
             <Stat
-              label="CONSENTED TASKS"
+              label="Consented tasks"
               value={String(data.cohortSize)}
               detail="De-identified task cohort"
               icon={<Fingerprint size={17} />}
             />
             <Stat
-              label="SEARCH DEMAND"
+              label="Search demand"
               value={metric(data.capabilities.search)}
               detail="Normalized research.search invocations"
               icon={<Search size={17} />}
             />
             <Stat
-              label="FALLBACKS CONSIDERED"
+              label="Fallbacks considered"
               value={metric(data.fallbacks)}
               detail="Error or evidence coverage triggered"
               icon={<GitBranch size={17} />}
             />
             <Stat
-              label="OPT-IN COMPARISONS"
+              label="Opt-in comparisons"
               value={metric(data.comparisons)}
               detail="Same query, alternative live provider"
               icon={<Layers3 size={17} />}

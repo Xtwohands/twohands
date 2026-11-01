@@ -1,0 +1,33 @@
+# Product direction
+
+The product records what a person wanted, what an external agent actually did through APILayer, what it delivered, and how that delivery was evaluated. It should become a reliable evidence layer across agent hosts, rather than another research chat or planning harness.
+
+The useful unit is an **accepted intent and a versioned outcome**, not an HTTP request. A tool can return successfully while the answer misses the goal. An agent can report a setup failure honestly without demonstrating poor factual accuracy. Keep those distinctions in every score, case, and commercial dataset.
+
+## Three uses of the same evidence
+
+| Product use                  | Present foundation                                                                                                                                                 | What must come next                                                                                                                                                              |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Model accuracy               | Fixed criteria, output versions, pass/fail/unknown reviews, coverage, reported model/reviewer provenance, minimum samples                                          | Verified host/model identity, representative task cohorts, reproducible evaluations, independent review, uncertainty estimates, and controls against selection bias              |
+| Refund or insurance evidence | Accepted budget, tool receipts, exact reviewed output, shortfall notes, case resolution, export consistency checks                                                 | A defined coverage/refund contract, authenticated parties, eligibility rules, billing reconciliation, independent adjudication, and an explicitly authorized payment integration |
+| Tool-company improvement     | Offered options, actual tool selections, optional stated explanations, observed execution, source evidence, downstream output reviews, revocable aggregate consent | A field-specific licensing/consent agreement, attribution methodology, privacy protections, buyer access controls, and a separately reviewed export product                      |
+
+These are connected uses, but they should not share one ambiguous success metric. A provider execution statistic, an agent's explanation, a reviewed answer score, and a claims decision have different meanings and evidence requirements.
+
+## Capture boundaries
+
+The external host owns the conversation, planning, and tool decisions. APILayer's MCP server offers named provider tools; it does not silently route, switch providers, run a second planner, or inspect private chain of thought. Optional decision summaries are useful reported data, with that provenance preserved.
+
+An offered tool set records an opportunity to choose. It does not prove attention to every option or establish the counterfactual outcome of a tool not selected. A later vendor dataset should distinguish exposure, selection, execution, and outcome attribution. It should not label every unselected provider as rejected or every successful API call as a fulfilled intent.
+
+The recorded intent is what was explicitly submitted and accepted. It is not proof that the rubric captures every nuance of the person's original conversation. Future host integrations can improve this with authenticated user acceptance and a visible version history for scope changes.
+
+## Next implementation priorities
+
+1. Add authenticated user, host, model, and reviewer provenance before treating local scores or approvals as independently attributable.
+2. Develop an evaluation protocol on a bounded task family. Keep assistant grading, human review, coverage, and uncertainty separate; audit disagreements and failure causes.
+3. Add trusted usage reconciliation and external evidence custody before making any financial guarantee.
+4. Define a vendor data contract around explicit fields and uses. Start with aggregate execution evidence; do not silently broaden existing consent to raw intent, source content, outputs, or explanations.
+5. Extend the tool catalog only where it improves measured outcomes or offers a useful choice. Keep client setup and the observation UI small as the catalog grows.
+
+The current local workflow supports product learning and integration validation. It intentionally makes the unresolved identity, evaluation, custody, and payment boundaries visible instead of presenting them as completed capabilities.

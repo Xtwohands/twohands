@@ -9,6 +9,8 @@ import { Engine } from "./engine.js";
 import type { Task } from "./types.js";
 import { publicEvidenceUrl } from "./url-policy.js";
 import { acceptedOrganizations, resultCsv } from "./results.js";
+import { Observatory } from "./observation.js";
+import { observationRoutes } from "./observation-api.js";
 const domain = z
   .string()
   .trim()
@@ -45,7 +47,11 @@ function publicTask(t: Task) {
     sourceCount: t.sources.length,
   };
 }
-export function createApp(store: Store, engine = new Engine(store)) {
+export function createApp(
+  store: Store,
+  engine = new Engine(store),
+  observatory = new Observatory(store, undefined, engine.timestamps),
+) {
   const app = express();
   app.disable("x-powered-by");
   app.use((_req, res, next) => {
@@ -110,7 +116,9 @@ export function createApp(store: Store, engine = new Engine(store)) {
     }
     next();
   });
+  app.use("/api/observations", express.json({ limit: "160kb" }));
   app.use(express.json({ limit: "24kb" }));
+  observationRoutes(app, observatory);
   function idempotency(
     req: express.Request,
     res: express.Response,

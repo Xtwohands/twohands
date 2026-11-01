@@ -17,7 +17,9 @@ async function upstream(reply: RequestListener) {
   vi.stubGlobal("fetch", (_input: unknown, init: RequestInit) =>
     nativeFetch(`http://127.0.0.1:${address.port}`, init),
   );
-  config.timeoutMs = 100;
+  // Leave time for loopback headers under a parallel suite's CPU load; the
+  // intentionally stalled body must be the thing that reaches this deadline.
+  config.timeoutMs = 1000;
 }
 
 afterEach(async () => {

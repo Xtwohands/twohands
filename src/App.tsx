@@ -3,25 +3,25 @@ import {
   Activity,
   ArrowRight,
   ArrowUpRight,
-  BarChart3,
-  CheckCircle2,
+  BarChart03 as BarChart3,
+  CheckCircle as CheckCircle2,
   ChevronRight,
-  CircleDot,
-  Download,
-  FileSearch,
-  Fingerprint,
-  GitBranch,
-  Globe2,
-  Layers3,
-  LoaderCircle,
-  LockKeyhole,
+  Circle as CircleDot,
+  Download01 as Download,
+  FileSearch02 as FileSearch,
+  Fingerprint01 as Fingerprint,
+  GitBranch01 as GitBranch,
+  Globe02 as Globe2,
+  LayersThree01 as Layers3,
+  Loading02 as LoaderCircle,
+  Lock01 as LockKeyhole,
   Plus,
-  Search,
-  Settings2,
-  ShieldCheck,
+  SearchLg as Search,
+  Settings02 as Settings2,
+  ShieldTick as ShieldCheck,
   Terminal,
-  X,
-} from "lucide-react";
+  XClose as X,
+} from "@untitledui/icons";
 import { chooseTaskSnapshot } from "./task-state";
 import type { ServerHealth, TaskSummary } from "../server/types";
 import { api, money, setToken, type TaskDetail } from "./api";
@@ -228,7 +228,7 @@ export function App() {
           API<span>Layer</span>
           <span className="beta">LAB</span>
         </a>
-        <div className="space-label">RESEARCH CONTROL ROOM</div>
+        <div className="space-label">Research control room</div>
         <nav aria-label="Main navigation">
           {(
             [
@@ -252,7 +252,7 @@ export function App() {
         </nav>
         <div className="sidebar-divider" />
         <div className="side-heading">
-          <span>RECENT RESEARCH</span>
+          <span>Recent research</span>
           <button aria-label="New research" onClick={startResearch}>
             <Plus size={15} />
           </button>
@@ -352,7 +352,7 @@ export function App() {
                   </p>
                 </div>
                 <span className="version-tag">
-                  DEMO V1 <span>•</span> LIVE APIS ONLY
+                  DEMO V1 <span>•</span> Live APIS ONLY
                 </span>
               </div>
               {!task && selectedTaskId ? (
@@ -422,19 +422,19 @@ export function App() {
                   )}
                   <div className="stats-grid">
                     <Stat
-                      label="TASK BUDGET"
+                      label="Task budget"
                       value={money(task.intent.budgetMicros)}
                       detail="User-approved spending cap"
                       icon={<ShieldCheck size={17} />}
                     />
                     <Stat
-                      label="ESTIMATED SPEND"
+                      label="Estimated SPEND"
                       value={money(task.spentMicros)}
                       detail={`${money(task.intent.budgetMicros - task.spentMicros - task.reservedMicros)} remaining · not a billed charge`}
                       icon={<Activity size={17} />}
                     />
                     <Stat
-                      label="SOURCE URLS"
+                      label="Source urls"
                       value={String(
                         new Set(task.sources.map((s) => s.url)).size,
                       ).padStart(2, "0")}
@@ -442,7 +442,7 @@ export function App() {
                       icon={<Globe2 size={17} />}
                     />
                     <Stat
-                      label="VERIFIED ORGANIZATIONS"
+                      label="Verified organizations"
                       value={`${task.organizations.length} / ${task.intent.requiredCount}`}
                       detail="Human-reviewed against every criterion"
                       icon={<CheckCircle2 size={17} />}

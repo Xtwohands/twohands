@@ -5,7 +5,7 @@ test("saves explicit intent, persists it, inspects trace, and withholds unsuppor
 }, testInfo) => {
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
-  await page.goto("/");
+  await page.goto("/research/");
   await expect(
     page.getByRole("heading", { name: "Research, with a clear trail." }),
   ).toBeVisible();
@@ -60,7 +60,7 @@ test("saves explicit intent, persists it, inspects trace, and withholds unsuppor
 test("displays server-only key setup and memory-only access token", async ({
   page,
 }) => {
-  await page.goto("/");
+  await page.goto("/research/");
   await page.getByRole("button", { name: "Manage connections" }).click();
   await expect(page.getByRole("dialog")).toBeVisible();
   await expect(page.getByText("EXA_API_KEY", { exact: true })).toBeVisible();
@@ -74,7 +74,7 @@ test("displays server-only key setup and memory-only access token", async ({
 test("settings dialog supports keyboard closing and restores focus", async ({
   page,
 }) => {
-  await page.goto("/");
+  await page.goto("/research/");
   const opener = page.getByRole("button", { name: "Manage connections" });
   await opener.click();
   await expect(
@@ -98,7 +98,7 @@ test("historical live recording replays without keys, paid calls, task creation 
     if (r.method() === "POST" && /\/api\/tasks/.test(r.url()))
       paidRequests.push(r.url());
   });
-  await page.goto("/#inspector");
+  await page.goto("/research/#inspector");
   await page
     .getByRole("combobox", { name: "Inspect research session" })
     .selectOption("recording:firecrawl-missing-page");

@@ -4,7 +4,7 @@ test.use({ baseURL: "http://127.0.0.1:3106" });
 test("known links work without search keys; changed evidence needs re-review; privacy can be withdrawn and local history deleted", async ({
   page,
 }) => {
-  await page.goto("/");
+  await page.goto("/research/");
   await page.getByRole("button", { name: "Save intent" }).click();
   await expect(
     page.getByRole("button", { name: "Run live search", exact: true }),
@@ -74,7 +74,7 @@ test("known links work without search keys; changed evidence needs re-review; pr
 test("provider HTTP 200 does not hide an extracted page HTTP 404", async ({
   page,
 }) => {
-  await page.goto("/");
+  await page.goto("/research/");
   await page.getByRole("button", { name: "Save intent" }).click();
   await page.getByLabel("Public HTTPS URL").fill("https://example.com/missing");
   await page.getByRole("button", { name: "Add link", exact: true }).click();
@@ -107,7 +107,7 @@ test("a delayed older task response cannot restore a company accepted before its
   page,
   request,
 }) => {
-  await page.goto("/");
+  await page.goto("/research/");
   await page.getByRole("button", { name: "Save intent" }).click();
   await page
     .getByLabel("Public HTTPS URL")

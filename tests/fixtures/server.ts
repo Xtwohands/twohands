@@ -32,7 +32,7 @@ globalThis.fetch = async (input, init) => {
         data: {
           markdown:
             `TEST FIXTURE extraction evidence. Version ${++extractionVersion}. `.repeat(
-              40,
+              body.url.endsWith("/long") ? 600 : 40,
             ),
           metadata: {
             statusCode: body.url.endsWith("/missing") ? 404 : 200,

@@ -6,7 +6,7 @@ import { test, expect } from "@playwright/test";
 test("Back and Forward restore screens without creating extra history entries", async ({
   page,
 }) => {
-  await page.goto("/");
+  await page.goto("/research/");
   await page.getByRole("button", { name: /Routing inspector/ }).click();
   await expect(page).toHaveURL(/#inspector$/);
   await page.getByRole("button", { name: "Provider intelligence" }).click();
@@ -31,7 +31,7 @@ test("Back and Forward restore screens without creating extra history entries", 
 test("history restores the selected task as well as its screen", async ({
   page,
 }) => {
-  await page.goto("/");
+  await page.goto("/research/");
   await page
     .getByLabel("Search query", { exact: true })
     .fill("QA history first");
@@ -85,18 +85,18 @@ test("history restores the selected task as well as its screen", async ({
 test("same-document hash links switch screens and can clear a selected task", async ({
   page,
 }) => {
-  await page.goto("/");
+  await page.goto("/research/");
   await page.getByRole("button", { name: "Save intent" }).click();
   await expect(page.locator(".session-title")).toBeVisible();
   const taskId = new URL(page.url()).hash.split("/").at(-1)!;
-  await page.goto(`/#inspector/${taskId}`);
+  await page.goto(`/research/#inspector/${taskId}`);
   await expect(
     page.getByRole("heading", { name: "The execution behind the answer." }),
   ).toBeVisible();
   await expect(
     page.getByRole("combobox", { name: "Inspect research session" }),
   ).toHaveValue(taskId);
-  await page.goto("/#workspace");
+  await page.goto("/research/#workspace");
   await expect(page.getByRole("button", { name: "Save intent" })).toBeVisible();
   await expect(page.locator(".session-title")).toHaveCount(0);
 });
@@ -104,7 +104,7 @@ test("same-document hash links switch screens and can clear a selected task", as
 test("leaving a loading session prevents its late response from restoring it", async ({
   page,
 }) => {
-  await page.goto("/");
+  await page.goto("/research/");
   await page
     .getByLabel("Search query", { exact: true })
     .fill("QA delayed navigation");
@@ -125,7 +125,7 @@ test("leaving a loading session prevents its late response from restoring it", a
     await route.fulfill({ response });
     finish();
   });
-  await page.goto(`/#workspace/${taskId}`);
+  await page.goto(`/research/#workspace/${taskId}`);
   await expect(
     page.getByRole("heading", { name: "Loading research session…" }),
   ).toBeVisible();
@@ -149,7 +149,7 @@ test("leaving a loading session prevents its late response from restoring it", a
 test("an unavailable deep-linked task can be left through New research", async ({
   page,
 }) => {
-  await page.goto("/#workspace/00000000-0000-4000-8000-000000000000");
+  await page.goto("/research/#workspace/00000000-0000-4000-8000-000000000000");
   await expect(
     page.getByRole("heading", { name: "Research session unavailable" }),
   ).toBeVisible();

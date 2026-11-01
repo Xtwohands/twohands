@@ -7,7 +7,7 @@ test("a task created by another client appears in the selector when its link ope
   page,
   request,
 }) => {
-  await page.goto("/#inspector");
+  await page.goto("/research/#inspector");
   await expect(
     page.getByRole("heading", { name: "The execution behind the answer." }),
   ).toBeVisible();
@@ -27,7 +27,7 @@ test("a task created by another client appears in the selector when its link ope
   });
   expect(response.status()).toBe(201);
   const task = await response.json();
-  await page.goto(`/#inspector/${task.id}`);
+  await page.goto(`/research/#inspector/${task.id}`);
   const sessions = page.getByRole("combobox", {
     name: "Inspect research session",
   });

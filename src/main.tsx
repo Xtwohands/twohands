@@ -1,13 +1,18 @@
-import React from "react";
+import React, { lazy, Suspense } from "react";
 import { createRoot } from "react-dom/client";
-import { App } from "./App";
-import "@fontsource/dm-sans/latin-400.css";
-import "@fontsource/dm-sans/latin-500.css";
-import "@fontsource/dm-sans/latin-600.css";
-import "@fontsource/ibm-plex-mono/latin-400.css";
-import "./styles.css";
+import { ObservationApp } from "./ObservationApp";
+import "@fontsource-variable/geist";
+import "@fontsource-variable/geist-mono";
+import "./observation.css";
+const Legacy = lazy(() => import("./Legacy"));
 createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
-    <App />
+    <Suspense fallback={<p>Loading workspace…</p>}>
+      {location.pathname.startsWith("/research") ? (
+        <Legacy />
+      ) : (
+        <ObservationApp />
+      )}
+    </Suspense>
   </React.StrictMode>,
 );

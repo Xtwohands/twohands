@@ -23,7 +23,7 @@ test("analytics recovers after connecting without leaving the screen", async ({
       await route.continue();
     else await route.fulfill({ status: 401, json: { error: authError } });
   });
-  await page.goto("/#intelligence");
+  await page.goto("/research/#intelligence");
   await expect(
     page.getByText(authError, { exact: true }).first(),
   ).toBeVisible();
@@ -70,7 +70,7 @@ test("a delayed unauthorized analytics response cannot replace the connected vie
       finish();
     } else await route.fulfill({ status: 401, json: { error: authError } });
   });
-  await page.goto("/#intelligence");
+  await page.goto("/research/#intelligence");
   await expect.poll(() => intercepted).toBe(true);
   await connect(page, testToken);
   await expect(

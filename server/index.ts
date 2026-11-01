@@ -2,6 +2,7 @@ import { config } from "./config.js";
 import { Store } from "./store.js";
 import { Engine } from "./engine.js";
 import { createApp } from "./app.js";
+import { Observatory } from "./observation.js";
 if (
   !["127.0.0.1", "localhost", "::1"].includes(config.host) &&
   config.token.length < 24
@@ -12,10 +13,15 @@ if (
 const store = new Store(config.dbPath);
 store.recover();
 const engine = new Engine(store);
-const server = createApp(store, engine).listen(config.port, config.host, () =>
-  console.log(
-    `APILayer listening at http://${config.host}:${config.port}; provider credentials stay on the server.`,
-  ),
+const observatory = new Observatory(store, undefined, engine.timestamps);
+observatory.db.recover();
+const server = createApp(store, engine, observatory).listen(
+  config.port,
+  config.host,
+  () =>
+    console.log(
+      `APILayer listening at http://${config.host}:${config.port}; provider credentials stay on the server.`,
+    ),
 );
 let shuttingDown = false;
 for (const signal of ["SIGTERM", "SIGINT"])
@@ -27,7 +33,7 @@ for (const signal of ["SIGTERM", "SIGINT"])
     const deadline = setTimeout(() => process.exit(1), config.timeoutMs + 3000);
     deadline.unref();
     const drain = setInterval(() => {
-      if (engine.active.size === 0) {
+      if (engine.active.size === 0 && observatory.active.size === 0) {
         clearInterval(drain);
         clearTimeout(deadline);
         store.close();

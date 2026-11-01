@@ -8,6 +8,14 @@ export type TaskDetail = Task & {
     criteria: Record<string, string[]>;
   }[];
 };
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    public status: number,
+  ) {
+    super(message);
+  }
+}
 let accessToken = "";
 export function setToken(value: string) {
   accessToken = value;
@@ -27,7 +35,10 @@ export async function api<T = any>(path: string, body?: unknown): Promise<T> {
   });
   const data = await response.json();
   if (!response.ok)
-    throw new Error(data.error || `Request failed (${response.status})`);
+    throw new ApiError(
+      data.error || `Request failed (${response.status})`,
+      response.status,
+    );
   return data;
 }
 export function money(micros: number) {
