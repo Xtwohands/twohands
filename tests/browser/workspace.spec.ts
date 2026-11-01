@@ -1,0 +1,90 @@
+import AxeBuilder from "@axe-core/playwright";
+import { test, expect } from "@playwright/test";
+test("saves explicit intent, persists it, inspects trace, and withholds unsupported analytics", async ({
+  page,
+}, testInfo) => {
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  await page.goto("/");
+  await expect(
+    page.getByRole("heading", { name: "Research, with a clear trail." }),
+  ).toBeVisible();
+  await expect(page.getByText("0 providers configured")).toBeVisible();
+  const audit = await new AxeBuilder({ page })
+    .withTags(["wcag2a", "wcag2aa"])
+    .analyze();
+  expect(
+    audit.violations.map((v) => ({
+      id: v.id,
+      nodes: v.nodes.map((n) => n.target),
+    })),
+  ).toEqual([]);
+  await page.screenshot({
+    path: `test-results/workspace-${testInfo.project.name}.png`,
+    fullPage: true,
+  });
+  await page.getByRole("button", { name: "Save intent" }).click();
+  await expect(page.getByText("Your evidence trail starts here")).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Run live search", exact: true }),
+  ).toBeDisabled();
+  await expect(page.getByText("20", { exact: true })).toHaveCount(0);
+  await page.reload();
+  await expect(page.getByText("Your evidence trail starts here")).toBeVisible();
+  await page
+    .getByRole("button", { name: "Routing inspector", exact: false })
+    .click();
+  await expect(
+    page.getByRole("heading", { name: "The execution behind the answer." }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: /intent created/ }).click();
+  await expect(page.getByText("RECORDED EVENT PAYLOAD")).toBeVisible();
+  await page.screenshot({
+    path: `test-results/inspector-${testInfo.project.name}.png`,
+    fullPage: true,
+  });
+  await page.getByRole("button", { name: "Provider intelligence" }).click();
+  await expect(
+    page.getByRole("heading", { name: "Real insights need a real cohort." }),
+  ).toBeVisible();
+  await page.screenshot({
+    path: `test-results/intelligence-${testInfo.project.name}.png`,
+    fullPage: true,
+  });
+  const overflows = await page.evaluate(
+    () => document.documentElement.scrollWidth > window.innerWidth,
+  );
+  expect(overflows).toBe(false);
+  expect(errors).toEqual([]);
+});
+test("displays server-only key setup and memory-only access token", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Manage connections" }).click();
+  await expect(page.getByRole("dialog")).toBeVisible();
+  await expect(page.getByText("EXA_API_KEY", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Workspace access token")).toHaveAttribute(
+    "type",
+    "password",
+  );
+  await page.getByRole("button", { name: "Close settings" }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+});
+test("settings dialog supports keyboard closing and restores focus", async ({
+  page,
+}) => {
+  await page.goto("/");
+  const opener = page.getByRole("button", { name: "Manage connections" });
+  await opener.click();
+  await expect(
+    page.getByRole("button", { name: "Close settings" }),
+  ).toBeFocused();
+  await page.keyboard.press("Shift+Tab");
+  await expect(
+    page.getByRole("button", { name: "Connect to workspace" }),
+  ).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(opener).toBeFocused();
+});
