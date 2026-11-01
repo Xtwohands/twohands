@@ -11,13 +11,14 @@
 
 ## Automated verification
 
-Local verification: **38 unit/integration tests and 12 desktop/mobile browser scenarios passed**. `npm audit` reported zero vulnerabilities.
+Local verification: **38 unit/integration tests and 12 desktop/mobile browser scenarios passed**. `npm audit` reported zero vulnerabilities. GitHub CI also passes the build/test/browser job and the separate container job.
 
 - Strict TypeScript for client, server, and tests; browser and standalone Node production builds.
 - Unit/integration tests for normalized provider contracts, unknown signals, observed routing, budget reservations, fallback, compare mode, multi-query plans, errors/timeouts, domain enforcement, restart recovery, API validation/auth, content-free export, analytics gating, reviewed quality, and CSV escaping.
 - Playwright desktop and mobile flows for saving intent, reload persistence, inspector payloads, privacy gating, connection setup, fallback after an insufficient HTTP 200, both-provider comparison, evidence review/shortlist delivery, extraction, and CSV download.
 - Automated WCAG A/AA checks on the initial workspace and the fixture-backed evidence workflow, alongside overflow and browser-error checks. These are scoped automated checks, not a complete accessibility certification.
-- CI runs builds, tests, formatting, and the browser suite without provider secrets.
+- The non-root Docker image builds from a clean dependency install. Runtime checks pass for health, bearer authentication, task persistence, rejection of unconfigured paid operations, and persistence after restart.
+- CI runs builds, tests, formatting, browser scenarios, and the container/restart check without provider secrets.
 
 The fixture browser server intercepts only the three fixed provider URLs in its own isolated test process. Every generated source is explicitly marked **TEST FIXTURE**. Production never imports that server or exposes a mock-provider toggle. These tests verify contracts and behavior, not actual vendor availability, billing, or relative quality.
 

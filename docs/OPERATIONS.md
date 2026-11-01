@@ -65,4 +65,4 @@ SIGTERM/SIGINT stops accepting connections, asks active plans to stop between ca
 
 The Dockerfile builds both the browser and server, installs runtime dependencies separately, and runs as the non-root `node` user. Use a persistent `/app/data` volume. The server deliberately refuses public binding without a long token. Supply secrets through your hosting system and terminate TLS in front of the container.
 
-The Docker artifact has to be built and tested in the target deployment environment; it is not a claim that a hosted service has been deployed. Buyer interviews, vendor terms review, and willingness-to-pay validation remain operational tasks.
+The Docker artifact passes local and CI build/runtime/restart checks. It still has to be configured and validated in the target deployment environment; it is not a claim that a hosted service has been deployed. Buyer interviews, vendor terms review, and willingness-to-pay validation remain operational tasks.
