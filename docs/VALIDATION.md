@@ -2,18 +2,19 @@
 
 ## Implemented from the PRD
 
-| Area                 | Implementation                                                                                                 | Remaining live acceptance                                         |
-| -------------------- | -------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
-| M1 Integration       | Real Exa/Tavily adapters, optional Firecrawl, normalized evidence, env-only keys, classified errors            | Ten actual successful requests to each search vendor              |
-| M2 Router            | Eligibility, score components, explicit plan, estimate ledger, fallback/comparison, limits, full event history | Inspect selections and actual usage under real account plans      |
-| M3 Intent/evaluation | Editable rubric, criterion-specific links, explicit unknowns, human review, accepted shortlist                 | Review a live research task and demonstrate a real evidence gap   |
-| M4 Intelligence      | Three product screens, consent/cohort gates, aggregate metrics, sanitized export, company CSV                  | Consented live cohort; buyer interviews and usefulness assessment |
+| Area                 | Implementation                                                                                                 | Live acceptance status                                                                      |
+| -------------------- | -------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| M1 Integration       | Real Exa/Tavily adapters, optional Firecrawl, normalized evidence, env-only keys, classified errors            | Completed: ten successful REST calls each to Exa and Tavily; one keyed Firecrawl extraction |
+| M2 Router            | Eligibility, score components, explicit plan, estimate ledger, fallback/comparison, limits, full event history | Inspect selections and actual usage under real account plans                                |
+| M3 Intent/evaluation | Editable rubric, criterion-specific links, explicit unknowns, human review, accepted shortlist                 | Review a live research task and demonstrate a real evidence gap                             |
+| M4 Intelligence      | Three product screens, consent/cohort gates, aggregate metrics, sanitized export, company CSV                  | Consented live cohort; buyer interviews and usefulness assessment                           |
 
 ## Automated verification
 
-Local verification: **71 unit/integration tests and 20 desktop/mobile browser scenarios passed**. `npm audit` reported zero vulnerabilities. GitHub CI also passes the build/test/browser job and the separate container job.
+Local verification: **76 unit/integration tests and 36 desktop/mobile browser scenarios passed**. `npm audit` reported zero vulnerabilities. The local Docker build, authentication, and restart-persistence checks also passed. These local follow-up commits have not been pushed or run through GitHub CI.
 
 - Strict TypeScript for client, server, and tests; browser and standalone Node production builds.
+- Regression coverage for Back/Forward, same-document task links, missing and delayed sessions, authentication recovery, and deadlines while provider response bodies stream.
 - Unit/integration tests for normalized provider contracts, unknown signals, observed routing, budget reservations, fallback, compare mode, multi-query plans, errors/timeouts, domain enforcement, restart recovery, API validation/auth, content-free export, analytics gating, reviewed quality, and CSV escaping.
 - Playwright desktop and mobile flows for saving intent, reload persistence, inspector payloads, privacy gating, connection setup, fallback after an insufficient HTTP 200, both-provider comparison, evidence review/shortlist delivery, extraction, and CSV download.
 - Automated WCAG A/AA checks on the initial workspace and the fixture-backed evidence workflow, alongside overflow and browser-error checks. These are scoped automated checks, not a complete accessibility certification.
@@ -24,7 +25,7 @@ The fixture browser server intercepts only the three fixed provider URLs in its 
 
 ## Not claimed as complete
 
-No provider keys were provisioned in the build environment. Bounded real Firecrawl keyless extraction and an official Exa MCP probe succeeded; see [live evidence](LIVE_VALIDATION.md). The required Exa/Tavily REST acceptance calls, comparative provider performance, invoice reconciliation, and a verified live company list remain outstanding. `npm run smoke:live` provides an explicit paid acceptance runner for when keys and a budget are available.
+The account owner supplied server-side keys, and the required Exa/Tavily REST acceptance calls (ten successful responses each) plus one authenticated Firecrawl extraction passed; see [live evidence](LIVE_VALIDATION.md). Comparative provider performance, invoice reconciliation, and a verified live company list remain outstanding. `npm run smoke:live` remains the explicit budget-gated acceptance runner for other environments.
 
 This version uses explicit user queries plus human evidence assessment. It does not autonomously discover private intent, infer funding from ungrounded snippets, or assert task completion based on an HTTP response. Search coverage is intentionally separate from substantive rubric verification.
 
@@ -44,13 +45,13 @@ No deployment, buyer interviews, vendor redistribution permissions, revenue, wil
 
 ## PRD acceptance evidence matrix
 
-| PRD criterion                                                                        | Evidence now available                                                                                                      | Remaining dependency                                                                                             |
-| ------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| Every executed operation has task/call identity, timestamps, status and ledger entry | Engine/API tests; real Firecrawl success and missing-page traces; transactional reservations and repeat-request receipts    | Continue this instrumentation on authenticated search accounts                                                   |
-| Two comparable search providers are genuinely called                                 | Exa and Tavily REST contract tests; separate successful official Exa MCP probe                                              | Ten successful Exa REST and Tavily calls with legitimate server-side keys; MCP is not counted as REST acceptance |
-| Explain provider selection and show actual fallback or comparison                    | Deterministic candidate snapshots and replay; fixture-backed fallback/comparison tests                                      | A live Exa/Tavily fallback or controlled comparison after account setup                                          |
-| Distinguish API success from task usefulness                                         | Real Firecrawl API HTTP 200 with page HTTP 404, unusable evidence and no accepted company; replayable without keys          | Review substantive company funding/activity/relevance evidence on a live research task                           |
-| Three cross-provider insights traceable to permitted events                          | Consent/cohort-gated conversion, demand, and coverage/fallback metrics; tests verify no double counting or content exposure | A real consented cross-provider cohort; no production demand or quality benchmark is claimed yet                 |
-| Buyer validation                                                                     | Interview procedure and metrics hypothesis are documented                                                                   | Five actual buyer interviews; no outreach or purchasing claim was fabricated                                     |
+| PRD criterion                                                                        | Evidence now available                                                                                                      | Remaining dependency                                                                                           |
+| ------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| Every executed operation has task/call identity, timestamps, status and ledger entry | Engine/API tests; real Firecrawl success and missing-page traces; transactional reservations and repeat-request receipts    | Continue this instrumentation on authenticated search accounts                                                 |
+| Two comparable search providers are genuinely called                                 | Exa and Tavily REST contract tests plus ten authenticated successful calls to each provider                                 | Completed for this local account setup; ongoing vendor availability and invoice reconciliation remain separate |
+| Explain provider selection and show actual fallback or comparison                    | Deterministic candidate snapshots and replay; fixture-backed fallback/comparison tests                                      | Controlled live comparison completed; an observed live fallback remains scenario-dependent                     |
+| Distinguish API success from task usefulness                                         | Real Firecrawl API HTTP 200 with page HTTP 404, unusable evidence and no accepted company; replayable without keys          | Review substantive company funding/activity/relevance evidence on a live research task                         |
+| Three cross-provider insights traceable to permitted events                          | Consent/cohort-gated conversion, demand, and coverage/fallback metrics; tests verify no double counting or content exposure | A real consented cross-provider cohort; no production demand or quality benchmark is claimed yet               |
+| Buyer validation                                                                     | Interview procedure and metrics hypothesis are documented                                                                   | Five actual buyer interviews; no outreach or purchasing claim was fabricated                                   |
 
 The application is ready for a local demonstration of routing instrumentation, evidence lifecycle controls, and a genuine recorded outcome failure. This matrix keeps account-dependent search validation and commercial validation explicit rather than marking them complete because the UI or fixture suite works.

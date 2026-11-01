@@ -2,7 +2,7 @@
 
 An intent-aware research workspace: route real web searches across Exa and Tavily, inspect every routing decision, review company evidence, and measure cross-provider outcomes.
 
-Built from the **Agent Intent & Tool Intelligence Demo V1 PRD**. The repository started as an empty README. This implementation includes the three product screens and an executable backend; vendor credentials and live acceptance runs are still required.
+Built from the **Agent Intent & Tool Intelligence Demo V1 PRD**. The repository started as an empty README. This implementation includes the three product screens and an executable backend. Authenticated Exa/Tavily search and Firecrawl extraction have passed bounded live checks; see [the recorded evidence](docs/LIVE_VALIDATION.md). Configure your own server-side keys to run it.
 
 ![APILayer research workspace](docs/screenshots/workspace.png)
 
