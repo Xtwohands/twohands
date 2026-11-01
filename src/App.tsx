@@ -156,6 +156,7 @@ export function App() {
       setTask((current) => (current?.id === route.id ? current : undefined));
       setError("");
       if (route.id) void loadTask(route.id);
+      void refresh();
     }
     window.addEventListener("popstate", restoreRoute);
     window.addEventListener("hashchange", restoreRoute);
@@ -163,7 +164,7 @@ export function App() {
       window.removeEventListener("popstate", restoreRoute);
       window.removeEventListener("hashchange", restoreRoute);
     };
-  }, [loadTask, setSelection]);
+  }, [loadTask, refresh, setSelection]);
   useEffect(() => {
     const hash = `#${screen}${selectedTaskId ? `/${selectedTaskId}` : ""}`;
     if (location.hash !== hash) {
