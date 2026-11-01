@@ -5,6 +5,11 @@ import { createApp } from "../../server/app.js";
 config.keys.exa = "TEST_ONLY_EXA_KEY";
 config.keys.tavily = "TEST_ONLY_TAVILY_KEY";
 config.keys.firecrawl = "TEST_ONLY_FIRECRAWL_KEY";
+config.providerTestDailyBudgetMicros = 50_000_000;
+config.rpm = 1000;
+// Stable synthetic prices make legacy fallback tests independent of published rate updates.
+Object.assign(config.prices, { exa: 17000, tavily: 8000, firecrawl: 1000 });
+config.rateCardVersion = "synthetic-browser-fixture-v1";
 if (process.env.FIXTURE_EXTRACTION_ONLY === "true") {
   config.keys.exa = "";
   config.keys.tavily = "";

@@ -1,4 +1,7 @@
 import { OutcomeContent } from "./components/DeferredOutcomeContent";
+import { CompanyView } from "./CompanyView";
+import { ProviderLabView } from "./ProviderLabView";
+import "./provider.css";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   LayersTwo01,
@@ -77,7 +80,8 @@ import {
   statusLabel,
 } from "./observation-ui";
 
-type Page = "sessions" | "models" | "tools" | "cases" | "settings";
+type Page =
+  "sessions" | "models" | "tools" | "cases" | "settings" | "company" | "lab";
 type Summary = {
   sessions: number;
   pendingApproval: number;
@@ -114,21 +118,47 @@ type Catalog = {
   averageLatencyMs: number | null;
   successRate: number | null;
   quality: null;
+  controlledTestSample?:
+    import("../server/provider-lab-types").ControlledSample | null;
 }[];
 const pages = [
   { id: "sessions", label: "Sessions", icon: Grid01 },
   { id: "models", label: "Model evaluations", icon: BarChartSquare02 },
   { id: "tools", label: "Tool activity", icon: Link01 },
   { id: "cases", label: "Review cases", icon: ShieldTick },
+  { id: "lab", label: "Provider lab", icon: TerminalSquare },
 ] as const;
 function readRoute() {
-  const [page, id, section] = location.hash.slice(1).split("/");
+  const [page, id, section, finding] = location.hash.slice(1).split("/");
   return {
-    page: (["sessions", "models", "tools", "cases", "settings"].includes(page)
+    page: ([
+      "sessions",
+      "models",
+      "tools",
+      "cases",
+      "settings",
+      "company",
+      "lab",
+    ].includes(page)
       ? page
       : "sessions") as Page,
     id,
-    section: ["overview", "trace", "output", "record"].includes(section)
+    labProvider: ["exa", "tavily", "firecrawl"].includes(section)
+      ? section
+      : "all",
+    labFinding: ["missed", "unreviewed", "errors", "truncated"].includes(
+      finding,
+    )
+      ? finding
+      : "all",
+    section: [
+      "overview",
+      "trace",
+      "output",
+      "record",
+      "benchmarks",
+      "plans",
+    ].includes(section)
       ? section
       : "overview",
   };
@@ -209,10 +239,11 @@ export function ObservationApp() {
   const [filter, setFilter] = useState("all");
   const [query, setQuery] = useState("");
   const [token, setTokenInput] = useState("");
+  const [connectionRevision, setConnectionRevision] = useState(0);
   const generation = useRef(0);
   const detailGeneration = useRef(0);
-  const selectedId = useRef(route.id);
-  selectedId.current = route.id;
+  const selectedId = useRef<string | undefined>(route.id);
+  selectedId.current = route.page === "sessions" ? route.id : undefined;
   useEffect(() => {
     const onRoute = () => {
       setRoute(readRoute());
@@ -290,19 +321,19 @@ export function ObservationApp() {
     detailGeneration.current++;
     setSelected(undefined);
     setDetailError("");
-    if (!route.id) return;
+    if (!route.id || route.page !== "sessions") return;
     setDetailLoading(true);
     void reloadDetail(route.id);
     const timer = setInterval(() => void reloadDetail(route.id!), 3000);
     return () => clearInterval(timer);
-  }, [route.id, reloadDetail]);
+  }, [route.id, route.page, reloadDetail]);
   async function mutate(path: string, body: unknown, message: string) {
     setBusy(true);
     setNotice("");
     try {
       const data = await api(path, body);
       await refresh();
-      if (route.id) await reloadDetail(route.id);
+      if (route.id && route.page === "sessions") await reloadDetail(route.id);
       setNotice(message);
       return data;
     } finally {
@@ -329,9 +360,11 @@ export function ObservationApp() {
         (filter === "reviewed" && statusLabel(s) === "Reviewed")),
   );
   const currentTitle =
-    route.page === "settings"
-      ? "Connections & settings"
-      : pages.find((p) => p.id === route.page)?.label || "Sessions";
+    route.page === "company"
+      ? "Tool company"
+      : route.page === "settings"
+        ? "Connections & settings"
+        : pages.find((p) => p.id === route.page)?.label || "Sessions";
   const sidebarContent = (
     <>
       <a href="#sessions" className="obs-brand">
@@ -340,20 +373,53 @@ export function ObservationApp() {
         </span>
         APILayer
       </a>
+      <div className="workspace-mode-switch" aria-label="Dashboard view">
+        <a
+          href="#sessions"
+          aria-current={route.page !== "company" ? "page" : undefined}
+        >
+          Workspace
+        </a>
+        <a
+          href="#company/exa"
+          aria-current={route.page === "company" ? "page" : undefined}
+        >
+          Tool company
+        </a>
+      </div>
       <nav aria-label="Main navigation">
-        {pages.map((p) => (
-          <a
-            href={`#${p.id}`}
-            key={p.id}
-            className={route.page === p.id ? "selected" : ""}
-          >
-            <p.icon />
-            {p.label}
-            {p.id === "cases" && !!summary?.openCases && (
-              <span className="nav-count">{summary.openCases}</span>
-            )}
-          </a>
-        ))}
+        {route.page === "company"
+          ? [
+              { id: "overview", label: "Overview", icon: Grid01 },
+              {
+                id: "benchmarks",
+                label: "Controlled tests",
+                icon: BarChartSquare02,
+              },
+              { id: "plans", label: "Test plans", icon: FileCheck02 },
+            ].map((p) => (
+              <a
+                href={`#company/${route.id || "exa"}/${p.id}`}
+                key={p.id}
+                className={route.section === p.id ? "selected" : ""}
+              >
+                <p.icon />
+                {p.label}
+              </a>
+            ))
+          : pages.map((p) => (
+              <a
+                href={`#${p.id}`}
+                key={p.id}
+                className={route.page === p.id ? "selected" : ""}
+              >
+                <p.icon />
+                {p.label}
+                {p.id === "cases" && !!summary?.openCases && (
+                  <span className="nav-count">{summary.openCases}</span>
+                )}
+              </a>
+            ))}
       </nav>
       <div className="sidebar-bottom">
         <div className="host-card">
@@ -361,8 +427,16 @@ export function ObservationApp() {
             <TerminalSquare />
           </span>
           <div>
-            <strong>Agent workspace</strong>
-            <span>Local observation</span>
+            <strong>
+              {route.page === "company"
+                ? "Tool company preview"
+                : "Agent workspace"}
+            </strong>
+            <span>
+              {route.page === "company"
+                ? "Demo & local lab"
+                : "Local observation"}
+            </span>
           </div>
         </div>
         <a
@@ -424,7 +498,7 @@ export function ObservationApp() {
               {menuOpen ? <XClose /> : <Menu01 />}
             </Button>
             <span>{currentTitle}</span>
-            {route.id && (
+            {route.id && route.page === "sessions" && (
               <>
                 <span className="breadcrumb-slash">/</span>
                 <span className="breadcrumb-title">
@@ -444,7 +518,9 @@ export function ObservationApp() {
               onClick={() => navigate("settings")}
             >
               <TerminalSquare />
-              Connect agent
+              {route.page === "company"
+                ? "Workspace settings"
+                : "Connect agent"}
             </Button>
           </div>
         </header>
@@ -466,6 +542,25 @@ export function ObservationApp() {
                 <XClose />
               </button>
             </div>
+          )}
+          {route.page === "company" && (
+            <CompanyView
+              key={connectionRevision}
+              provider={
+                route.id === "tavily" || route.id === "firecrawl"
+                  ? route.id
+                  : "exa"
+              }
+              section={route.section}
+            />
+          )}
+          {route.page === "lab" && (
+            <ProviderLabView
+              key={connectionRevision}
+              runId={route.id}
+              providerFilter={route.labProvider}
+              evidenceFilter={route.labFinding}
+            />
           )}
           {route.page === "sessions" && !route.id && (
             <>
@@ -751,7 +846,7 @@ export function ObservationApp() {
                         <dd>{money(t.estimatedMicros)}</dd>
                       </div>
                       <div>
-                        <dt>Observed calls</dt>
+                        <dt>Recorded workspace calls</dt>
                         <dd>{t.sampleCount}</dd>
                       </div>
                       <div>
@@ -773,8 +868,26 @@ export function ObservationApp() {
                     </dl>
                     {t.sampleCount < 5 && (
                       <p className="field-hint">
-                        Latency and reliability need five observed calls.
+                        Latency and reliability need five completed calls.
                       </p>
+                    )}
+                    {t.controlledTestSample && (
+                      <div className="tool-lab-sample">
+                        <strong>Separate controlled sample</strong>
+                        <p>
+                          {t.controlledTestSample.attempted} forced test calls ·{" "}
+                          {t.controlledTestSample.referencePassed} /{" "}
+                          {t.controlledTestSample.referenceKnown} known
+                          reference checks
+                        </p>
+                        <a href={`#lab/${t.controlledTestSample.runId}`}>
+                          Inspect test evidence <ArrowUpRight />
+                        </a>
+                        <small>
+                          Does not count as organic selection or measured answer
+                          quality.
+                        </small>
+                      </div>
                     )}
                     <code className="tool-name">{t.tool}</code>
                   </Panel>
@@ -1032,9 +1145,11 @@ export function ObservationApp() {
               detailGeneration.current++;
               setSelected(undefined);
               setToken(token);
+              setConnectionRevision((v) => v + 1);
               const connected = await refresh();
               if (connected) {
-                if (route.id) void reloadDetail(route.id);
+                if (route.id && route.page === "sessions")
+                  void reloadDetail(route.id);
                 setConnectOpen(false);
                 setTokenInput("");
               }
@@ -1330,12 +1445,15 @@ function SessionView({
                               }
                             />
                             <span>{money(t.estimatedMicros)} estimated</span>
-                            <span>{t.sampleCount} observed calls</span>
+                            <span>
+                              {t.sampleCount} recorded calls across all sessions
+                            </span>
                           </div>
                         ))}
                         <p className="field-hint">
-                          Returned options do not prove the model considered
-                          every one.
+                          Usage includes successful and failed completed calls,
+                          as of this event. It does not measure answer quality
+                          or prove the model considered every option.
                         </p>
                       </div>
                     )}

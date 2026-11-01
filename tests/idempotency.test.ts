@@ -55,11 +55,13 @@ describe("paid-operation request receipts", () => {
   });
   it("returns an in-progress receipt for a duplicate rather than scheduling a second call", async () => {
     let release!: (r: Response) => void;
+    let calledProvider: "exa" | "tavily" = "tavily";
     vi.stubGlobal(
       "fetch",
       vi.fn(
-        () =>
+        (input: unknown) =>
           new Promise<Response>((r) => {
+            calledProvider = String(input).includes("exa") ? "exa" : "tavily";
             release = r;
           }),
       ),
@@ -78,7 +80,7 @@ describe("paid-operation request receipts", () => {
       .set("Idempotency-Key", key)
       .send({});
     expect(retry.body).toMatchObject({ replayed: true, pending: true });
-    release(new Response(JSON.stringify(providerResults("tavily"))));
+    release(new Response(JSON.stringify(providerResults(calledProvider))));
     await wait();
     expect(
       store.events(t.id).filter((e) => e.type === "provider_request"),

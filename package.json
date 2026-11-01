@@ -18,6 +18,7 @@
     "mcp": "node --env-file-if-exists=.env build/mcp-stdio.js",
     "mcp:install": "node scripts/install-mcp.mjs",
     "test:soak": "node --import tsx scripts/soak-observation.ts",
+    "test:soak:providers": "node --import tsx scripts/soak-provider-lab.ts",
     "verify:evidence": "node scripts/verify-evidence.mjs"
   },
   "engines": {

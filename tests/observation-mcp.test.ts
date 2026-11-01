@@ -109,6 +109,18 @@ it("runs from intent to provider evidence and output without consumer approval",
     }),
   );
   expect(offered.tools).toHaveLength(3);
+  expect(offered.tools.find((t: any) => t.provider === "exa")).toMatchObject({
+    description: expect.stringContaining("2,500 characters"),
+    adapter: { type: "auto", numResults: 10, textMaxCharacters: 2500 },
+    sampleCount: 0,
+  });
+  expect(
+    offered.tools.find((t: any) => t.provider === "tavily").description,
+  ).toContain("basic mode");
+  expect(offered.selectionGuidance).toContain(
+    "zero calls means unmeasured, not poor",
+  );
+  expect(offered.selectionGuidance).toContain("start with one focused search");
   const c = parse(
     await client.callTool({
       name: "firecrawl_extract",

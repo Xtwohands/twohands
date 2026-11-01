@@ -204,8 +204,7 @@ test("shows actual tool choices separately from stated explanations and keeps ra
   await page.getByRole("button", { name: /Tool options returned/ }).click();
   await expect(
     page.getByText(
-      "Returned options do not prove the model considered every one.",
-      { exact: true },
+      /It does not measure answer quality or prove the model considered every option/,
     ),
   ).toBeVisible();
   await page.getByRole("button", { name: /Tool result received/ }).click();

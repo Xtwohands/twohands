@@ -24,6 +24,12 @@ An offered tool set records an opportunity to choose. It does not prove attentio
 
 The recorded intent is what the agent submitted, authorized under backend policy for MCP-created sessions. It is not proof that a human approved its rubric or that the rubric captures every nuance of the person's original conversation. Backend authorization, operator acceptance, and reported intent remain distinct in the audit history.
 
+## Tool company learning loop
+
+The local demo now supports separate organic selection counts, forced-provider diagnostic runs, attributed usefulness reviews, and baseline/follow-up test plans. It can identify a concrete integration issue without inventing a provider ranking. The first live sample exposed a stale Exa cost estimate and product-page excerpts that matched the right URL but omitted necessary sizing rows. Those are actionable findings; neither proves that one provider is generally better.
+
+The next commercial proof should be a provider fixing one reproducible issue, then showing a repeatable improvement on a predeclared task family with independent evidence review. Interview providers about whether that feedback changes their decisions and what they would pay for it. More recorded calls alone do not establish product value, willingness to pay, or a reliable selection model.
+
 ## Next implementation priorities
 
 1. Add authenticated user, host, model, and reviewer provenance before treating local scores or approvals as independently attributable.

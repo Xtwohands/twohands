@@ -1,12 +1,16 @@
 import { config } from "./config.js";
 import { Store } from "./store.js";
 import { ObservationStore } from "./observation-store.js";
+import { ProviderLab } from "./provider-lab.js";
 const days = Number(process.env.RETENTION_DAYS ?? 30);
 if (!Number.isInteger(days) || days < 1)
   throw new Error("RETENTION_DAYS must be a positive integer");
 const store = new Store(config.dbPath);
 new ObservationStore(store);
 const cutoff = Date.now() - days * 86400000;
+const lab = new ProviderLab(store).pruneOlderThan(
+  new Date(cutoff).toISOString(),
+);
 const result = store.db
   .prepare(
     "DELETE FROM tasks WHERE json_extract(body,'$.updatedAt') < ? AND json_extract(body,'$.status') != 'running'",
@@ -22,6 +26,6 @@ const observations = store.db
   .run(new Date(cutoff).toISOString());
 store.db.exec("PRAGMA wal_checkpoint(TRUNCATE); VACUUM;");
 console.log(
-  `Deleted ${result.changes} research tasks and ${observations.changes} observation sessions older than ${days} days, including their evidence and audit histories. Active calls and open review cases were retained.`,
+  `Deleted ${result.changes} research tasks, ${observations.changes} observation sessions, ${lab.runs} provider test runs, and ${lab.plans} reviewed test plans older than ${days} days, including their evidence and audit histories. Active calls, open review cases, unfinished test plans, and linked provider tests were retained.`,
 );
 store.close();

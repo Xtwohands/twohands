@@ -6,6 +6,8 @@ The local MCP server works with Claude desktop and Codex CLI. Both have complete
 
 The [product direction](docs/PRODUCT_DIRECTION.md) connects this evidence to future model evaluation, refund review, and consented tool-company feedback, and identifies what still needs to be established for each.
 
+The sidebar now includes a **Tool company** demo and **Provider lab**. Explore illustrative company insights, turn findings into test plans, and compare real controlled provider samples separately from organic agent choices. See the [provider lab guide](docs/PROVIDER_LAB.md).
+
 ## Run locally
 
 Requires Node.js 24.5+ and npm.
@@ -92,6 +94,8 @@ SOAK_SECONDS=60 npm run test:soak
 ```
 
 Live checks require a deliberately accepted budget and configured provider credentials. Never treat fixture results as provider or model performance. The earlier `npm run smoke:live` command makes paid search calls and requires its explicit budget setting; see [its documentation](docs/RESEARCH_WORKFLOW.md).
+
+For the separate provider lab, the backend supplies the run and daily spending caps. A full fifteen-call suite is $0.080 at default estimates. Consumer sessions have no approval step. To exercise only synthetic lab workloads without network calls, run `SOAK_SECONDS=60 npm run test:soak:providers`.
 
 ## Verify an exported evidence record
 

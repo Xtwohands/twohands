@@ -15,13 +15,12 @@ store.recover();
 const engine = new Engine(store);
 const observatory = new Observatory(store, undefined, engine.timestamps);
 observatory.db.recover();
-const server = createApp(store, engine, observatory).listen(
-  config.port,
-  config.host,
-  () =>
-    console.log(
-      `APILayer listening at http://${config.host}:${config.port}; provider credentials stay on the server.`,
-    ),
+const app = createApp(store, engine, observatory);
+app.locals.providerLab.recover();
+const server = app.listen(config.port, config.host, () =>
+  console.log(
+    `APILayer listening at http://${config.host}:${config.port}; provider credentials stay on the server.`,
+  ),
 );
 let shuttingDown = false;
 for (const signal of ["SIGTERM", "SIGINT"])
@@ -29,11 +28,17 @@ for (const signal of ["SIGTERM", "SIGINT"])
     if (shuttingDown) return;
     shuttingDown = true;
     for (const id of engine.active) engine.cancel(id);
+    for (const id of app.locals.providerLab.active)
+      app.locals.providerLab.cancel(id);
     server.close();
     const deadline = setTimeout(() => process.exit(1), config.timeoutMs + 3000);
     deadline.unref();
     const drain = setInterval(() => {
-      if (engine.active.size === 0 && observatory.active.size === 0) {
+      if (
+        engine.active.size === 0 &&
+        observatory.active.size === 0 &&
+        app.locals.providerLab.active.size === 0
+      ) {
         clearInterval(drain);
         clearTimeout(deadline);
         store.close();

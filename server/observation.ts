@@ -1,4 +1,8 @@
 import { z } from "zod";
+import {
+  toolCapabilities,
+  providerSelectionGuidance,
+} from "./provider-capabilities.js";
 import { config, providerEstimate } from "./config.js";
 import { search, scrape, ProviderError } from "./providers.js";
 import { publicEvidenceUrl } from "./url-policy.js";
@@ -105,6 +109,9 @@ const names = {
 export class Observatory {
   db: ObservationStore;
   active = new Set<string>();
+  controlledSamples?: () => Partial<
+    Record<ProviderId, import("./provider-lab-types.js").ControlledSample>
+  >;
   constructor(
     store: Store,
     private adapters = { search, scrape },
@@ -215,6 +222,7 @@ export class Observatory {
   }
   catalog() {
     const calls = this.db.list().flatMap((s) => this.db.calls(s.id));
+    const controlled = this.controlledSamples?.() ?? {};
     return (Object.keys(names) as ToolName[]).map((tool) => {
       const provider = names[tool];
       const samples = calls.filter(
@@ -223,14 +231,14 @@ export class Observatory {
       return {
         tool,
         provider,
-        description:
-          tool === "firecrawl_extract"
-            ? "Extract readable content from one public HTTPS page."
-            : `Search the public web using ${provider === "exa" ? "Exa" : "Tavily"}. The agent chooses the query and provider.`,
+        ...toolCapabilities[tool],
         available: Boolean(config.keys[provider]),
         estimatedMicros: providerEstimate(provider),
         rateCardVersion: config.rateCardVersion,
         sampleCount: samples.length,
+        sampleScope:
+          "Completed organic calls across this workspace; includes successes and failures. Controlled tests are excluded. Usage is not quality.",
+        controlledTestSample: controlled[provider] ?? null,
         averageLatencyMs:
           samples.length >= 5
             ? Math.round(
@@ -262,6 +270,7 @@ export class Observatory {
       offerId,
       tools,
       note: "Choose explicitly. No provider is selected automatically. Performance is local observed execution, not an accuracy benchmark.",
+      selectionGuidance: providerSelectionGuidance,
     };
   }
   async execute(id: string, raw: z.infer<typeof callInput>) {

@@ -11,6 +11,9 @@ import { publicEvidenceUrl } from "./url-policy.js";
 import { acceptedOrganizations, resultCsv } from "./results.js";
 import { Observatory } from "./observation.js";
 import { observationRoutes } from "./observation-api.js";
+import { ProviderLab } from "./provider-lab.js";
+import { providerLabRoutes } from "./provider-lab-api.js";
+import { companyReport } from "./company-insights.js";
 const domain = z
   .string()
   .trim()
@@ -51,8 +54,11 @@ export function createApp(
   store: Store,
   engine = new Engine(store),
   observatory = new Observatory(store, undefined, engine.timestamps),
+  providerLab = new ProviderLab(store, undefined, engine.timestamps),
 ) {
   const app = express();
+  app.locals.providerLab = providerLab;
+  observatory.controlledSamples = () => providerLab.controlledSamples();
   app.disable("x-powered-by");
   app.use((_req, res, next) => {
     res.set({
@@ -119,6 +125,22 @@ export function createApp(
   app.use("/api/observations", express.json({ limit: "160kb" }));
   app.use(express.json({ limit: "24kb" }));
   observationRoutes(app, observatory);
+  providerLabRoutes(app, providerLab);
+  app.get("/api/company-insights/:provider", (req, res) => {
+    const p = z
+      .enum(["exa", "tavily", "firecrawl"])
+      .safeParse(req.params.provider);
+    const source = z
+      .enum(["demo", "local"])
+      .safeParse(req.query.source ?? "demo");
+    if (!p.success || !source.success) {
+      res
+        .status(400)
+        .json({ error: "Choose a supported provider and data source." });
+      return;
+    }
+    res.json(companyReport(p.data, source.data, observatory, providerLab));
+  });
   function idempotency(
     req: express.Request,
     res: express.Response,

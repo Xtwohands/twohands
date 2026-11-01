@@ -1,0 +1,58 @@
+import type { ToolName } from "./observation-types.js";
+
+/** Describes this adapter, not every feature sold by the provider. */
+export const toolCapabilities: Record<
+  ToolName,
+  {
+    description: string;
+    useWhen: string;
+    limitations: string;
+    documentationUrl: string;
+    adapter: Record<string, string | number | boolean>;
+  }
+> = {
+  exa_search: {
+    description:
+      "Search with Exa auto mode and request up to 2,500 characters of page text per result. Up to 10 results; optional domain restriction.",
+    useWhen:
+      "Use when source text returned with search may answer the question or reduce follow-up page extractions. Compare the returned evidence with the task's needs.",
+    limitations:
+      "Page text is partial and can be absent. No guarantee of live inventory, complete coverage, or answer accuracy. This adapter does not expose Exa's other search modes.",
+    documentationUrl: "https://exa.ai/docs/reference/search",
+    adapter: { type: "auto", numResults: 10, textMaxCharacters: 2500 },
+  },
+  tavily_search: {
+    description:
+      "Search with Tavily basic mode for up to 10 ranked results and content excerpts. Optional domain restriction; generated answers and raw page content are disabled.",
+    useWhen:
+      "Use for finding candidate pages and focused factual lookups when excerpts are sufficient. Retrieve a specific page when the excerpt does not support the needed claim.",
+    limitations:
+      "Excerpts are not full pages. Per-call estimates do not establish end-to-end task cost or quality. Advanced search and raw content are not exposed by this adapter.",
+    documentationUrl:
+      "https://docs.tavily.com/documentation/api-reference/endpoint/search",
+    adapter: {
+      searchDepth: "basic",
+      maxResults: 10,
+      includeAnswer: false,
+      includeRawContent: false,
+    },
+  },
+  firecrawl_extract: {
+    description:
+      "Retrieve the main content of one public HTTPS page as Markdown with Firecrawl. Captures up to 20,000 characters and reports truncation and page status when available.",
+    useWhen:
+      "Use when a known page needs closer inspection, such as a specification, price, or source passage not present in search excerpts.",
+    limitations:
+      "This is page extraction, not web search. Dynamic options and stock can be incomplete; API success can contain an error page. A truncated receipt is not the full page.",
+    documentationUrl:
+      "https://docs.firecrawl.dev/api-reference/endpoint/scrape",
+    adapter: {
+      formats: "markdown",
+      onlyMainContent: true,
+      captureCharacters: 20000,
+    },
+  },
+};
+
+export const providerSelectionGuidance =
+  "Choose based on the evidence needed, adapter capabilities, and total expected task cost. Historical usage counts reflect prior selection, not quality; zero calls means unmeasured, not poor. Do not force provider exploration during a consumer task. Controlled provider comparisons belong in the backend lab. For a simple recommendation, start with one focused search, inspect the returned evidence, and extract only pages needed to resolve material gaps. Add a search only for a specific unresolved need; avoid redundant queries and stop when the answer is supported. Explain a provider-specific choice briefly when useful, without private reasoning.";

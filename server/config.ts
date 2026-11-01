@@ -14,7 +14,8 @@ function price(name: string, fallback: number) {
   return Math.ceil(n * 1_000_000);
 }
 const prices: Record<ProviderId, number> = {
-  exa: price("EXA_SEARCH_USD", 0.017),
+  // Auto search, <=10 results with page text: published $7/1k, checked 2026-11-01.
+  exa: price("EXA_SEARCH_USD", 0.007),
   tavily: price("TAVILY_SEARCH_USD", 0.008),
   firecrawl: price("FIRECRAWL_SCRAPE_USD", 0.001),
 };
@@ -32,6 +33,18 @@ export const config = {
     100000,
     0,
     5_000_000,
+  ),
+  providerTestBudgetMicros: integer(
+    "PROVIDER_TEST_BUDGET_MICROS",
+    150000,
+    0,
+    5_000_000,
+  ),
+  providerTestDailyBudgetMicros: integer(
+    "PROVIDER_TEST_DAILY_BUDGET_MICROS",
+    500000,
+    0,
+    50_000_000,
   ),
   minCohort: integer("ANALYTICS_MIN_TASKS", 5, 5, 10000),
   prices,

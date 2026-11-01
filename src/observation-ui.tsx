@@ -377,6 +377,10 @@ export function EvaluationForm({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [editing, setEditing] = useState(!previous);
+  const [evidenceCriterion, setEvidenceCriterion] = useState<number | null>(
+    null,
+  );
+  const [evidenceQuery, setEvidenceQuery] = useState("");
   if (previous && !editing)
     return (
       <div className="saved-evaluation">
@@ -513,41 +517,107 @@ export function EvaluationForm({
               rows={2}
             />
             {session.calls.length > 0 && (
-              <fieldset className="evidence-checks">
-                <legend>Supporting tool calls</legend>
-                {session.calls.map((call) => (
-                  <label key={call.id}>
-                    <Checkbox
-                      checked={rows[i].evidenceCallIds.includes(call.id)}
-                      onCheckedChange={(checked) =>
-                        setRows((r) =>
-                          r.map((x, j) =>
-                            i === j
-                              ? {
-                                  ...x,
-                                  evidenceCallIds:
-                                    checked === true
-                                      ? [...x.evidenceCallIds, call.id]
-                                      : x.evidenceCallIds.filter(
-                                          (id) => id !== call.id,
-                                        ),
-                                }
-                              : x,
-                          ),
-                        )
-                      }
-                    />
-                    <span>
-                      {call.tool.replaceAll("_", " ")} · {call.id.slice(0, 8)} ·{" "}
-                      {call.status}
-                    </span>
-                  </label>
-                ))}
-              </fieldset>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setEvidenceQuery("");
+                  setEvidenceCriterion(i);
+                }}
+                aria-label={`${rows[i].evidenceCallIds.length ? `${rows[i].evidenceCallIds.length} linked ${rows[i].evidenceCallIds.length === 1 ? "call" : "calls"} · Edit evidence` : "Link supporting evidence"} for ${c.text}`}
+              >
+                {rows[i].evidenceCallIds.length
+                  ? `${rows[i].evidenceCallIds.length} linked ${rows[i].evidenceCallIds.length === 1 ? "call" : "calls"} · Edit evidence`
+                  : "Link supporting evidence"}
+              </Button>
             )}
           </div>
         ))}
       </div>
+      <Dialog
+        open={evidenceCriterion !== null}
+        onOpenChange={(open) => {
+          if (!open) setEvidenceCriterion(null);
+        }}
+      >
+        <DialogContent className="evidence-picker-dialog">
+          <DialogHeader>
+            <DialogTitle>Choose supporting evidence</DialogTitle>
+            <DialogDescription>
+              {evidenceCriterion === null
+                ? ""
+                : session.criteria[evidenceCriterion].text}
+            </DialogDescription>
+          </DialogHeader>
+          <Input
+            aria-label="Search recorded calls"
+            placeholder="Search a query, page, or tool…"
+            value={evidenceQuery}
+            onChange={(e) => setEvidenceQuery(e.target.value)}
+          />
+          <p className="field-hint">
+            {session.calls.length} calls in this session. Linking existing
+            evidence makes no new provider calls.
+          </p>
+          <div className="evidence-picker-list">
+            {session.calls
+              .filter((call) =>
+                `${call.tool} ${call.arguments.query || call.arguments.url || ""} ${call.id} ${call.status}`
+                  .toLowerCase()
+                  .includes(evidenceQuery.toLowerCase()),
+              )
+              .map((call) => (
+                <label key={call.id} className="evidence-picker-row">
+                  <Checkbox
+                    checked={
+                      evidenceCriterion !== null &&
+                      rows[evidenceCriterion].evidenceCallIds.includes(call.id)
+                    }
+                    onCheckedChange={(checked) =>
+                      setRows((r) =>
+                        r.map((x, j) =>
+                          j === evidenceCriterion
+                            ? {
+                                ...x,
+                                evidenceCallIds:
+                                  checked === true
+                                    ? [
+                                        ...new Set([
+                                          ...x.evidenceCallIds,
+                                          call.id,
+                                        ]),
+                                      ]
+                                    : x.evidenceCallIds.filter(
+                                        (id) => id !== call.id,
+                                      ),
+                              }
+                            : x,
+                        ),
+                      )
+                    }
+                  />
+                  <span>
+                    <strong>
+                      {call.arguments.query ||
+                        call.arguments.url ||
+                        call.tool.replaceAll("_", " ")}
+                    </strong>
+                    <small>
+                      {call.tool.replaceAll("_", " ")} · {call.id.slice(0, 8)} ·{" "}
+                      {call.status}
+                    </small>
+                  </span>
+                </label>
+              ))}
+          </div>
+          <DialogFooter>
+            <Button type="button" onClick={() => setEvidenceCriterion(null)}>
+              Done
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       <InlineError message={error} />
       <div className="form-footer">
         <span className="subtle">

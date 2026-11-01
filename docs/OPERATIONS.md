@@ -36,23 +36,25 @@ Default documented retention: **30 days**. Scheduling cleanup is the operator's 
 RETENTION_DAYS=30 npm run retention
 ```
 
-The command deletes expired research tasks and observation sessions with their evidence and event histories. It skips running research tasks, observation sessions with active provider calls, and observation sessions with open review cases. Expiration uses the last materialized update. Closed cases are subject to ordinary retention. It then checkpoints WAL and vacuums SQLite. MCP client connection metadata is operational history and remains until the workspace is removed; it contains client name/version and timestamps, not conversation content. A paused task is not a complete backup. Apply equivalent retention to exported files, screenshots, backups, and hosting volumes. Filesystem snapshots and external backups are outside this application's deletion control.
+The command deletes expired research tasks and observation sessions with their evidence and event histories. It skips running research tasks, observation sessions with active provider calls, and observation sessions with open review cases. Expiration uses the last materialized update. Closed cases are subject to ordinary retention. Provider lab maintenance deletes expired reviewed plans and completed unlinked runs, while preserving running tests, recent usefulness reviews, unfinished plans, and runs linked by retained plans. It then checkpoints WAL and vacuums SQLite. MCP client connection metadata is operational history and remains until the workspace is removed; it contains client name/version and timestamps, not conversation content. A paused task is not a complete backup. Apply equivalent retention to exported files, screenshots, backups, and hosting volumes. Filesystem snapshots and external backups are outside this application's deletion control.
 
 ## Limits and pricing
 
-| Variable                      | Default                  | Meaning                                                                                        |
-| ----------------------------- | ------------------------ | ---------------------------------------------------------------------------------------------- |
-| `EXA_SEARCH_USD`              | 0.017                    | Estimate for one search with text from up to 10 returned pages                                 |
-| `TAVILY_SEARCH_USD`           | 0.008                    | Estimate for one basic search                                                                  |
-| `FIRECRAWL_SCRAPE_USD`        | 0.001                    | Estimate for one extraction                                                                    |
-| `PROVIDER_TIMEOUT_MS`         | 20000                    | HTTP request deadline                                                                          |
-| `PROVIDER_RPM`                | 20                       | Process-local requests per provider per rolling minute                                         |
-| `AGENT_SESSION_BUDGET_MICROS` | 100000                   | Backend cap per automatically authorized MCP session ($0.10); 0 blocks positive-estimate calls |
-| `ANALYTICS_MIN_TASKS`         | 5                        | Minimum consented cohort, cannot be configured below 5                                         |
-| `DB_PATH`                     | `./data/apilayer.sqlite` | Workspace database                                                                             |
-| `HOST` / `PORT`               | `127.0.0.1` / `3001`     | HTTP listener                                                                                  |
+| Variable                            | Default                  | Meaning                                                                                        |
+| ----------------------------------- | ------------------------ | ---------------------------------------------------------------------------------------------- |
+| `EXA_SEARCH_USD`                    | 0.007                    | Estimate for one search with text from up to 10 returned pages                                 |
+| `TAVILY_SEARCH_USD`                 | 0.008                    | Estimate for one basic search                                                                  |
+| `FIRECRAWL_SCRAPE_USD`              | 0.001                    | Estimate for one extraction                                                                    |
+| `PROVIDER_TIMEOUT_MS`               | 20000                    | HTTP request deadline                                                                          |
+| `PROVIDER_RPM`                      | 20                       | Process-local requests per provider per rolling minute                                         |
+| `AGENT_SESSION_BUDGET_MICROS`       | 100000                   | Backend cap per automatically authorized MCP session ($0.10); 0 blocks positive-estimate calls |
+| `PROVIDER_TEST_BUDGET_MICROS`       | 150000                   | Backend cap per controlled provider run ($0.15)                                                |
+| `PROVIDER_TEST_DAILY_BUDGET_MICROS` | 500000                   | Controlled-test allowance per UTC start day ($0.50), separate from organic research            |
+| `ANALYTICS_MIN_TASKS`               | 5                        | Minimum consented cohort, cannot be configured below 5                                         |
+| `DB_PATH`                           | `./data/apilayer.sqlite` | Workspace database                                                                             |
+| `HOST` / `PORT`                     | `127.0.0.1` / `3001`     | HTTP listener                                                                                  |
 
-Prices are **configurable planning assumptions**, not verified current plan prices. Exa's default includes an allowance for text retrieval; vendor plans, search types, returned contents, credit packages, and discounts can change actual charges. Confirm the official price card and your account plan before use:
+Prices are **configurable planning assumptions**, not verified current plan prices. Exa's default is $0.007 for Auto search with up to ten results and page text, checked against its published price card and five provider-reported responses on November 1, 2026. The prior $0.017 default double-counted an allowance for content. Historical receipts keep their original rate card and estimates. Vendor plans, search types, returned contents, credit packages, and discounts can change actual charges. Confirm the official price card and your account plan before use:
 
 - https://exa.ai/pricing
 - https://www.tavily.com/pricing
@@ -62,7 +64,7 @@ The ledger enforces the task cap against those configured estimates. Actual vend
 
 MCP sessions start automatically under backend policy. Consumers do not configure research spending or approve sessions; a shopping budget remains part of their product request. `AGENT_SESSION_BUDGET_MICROS` is read by the HTTP server, not accepted from the agent. Changing it affects new sessions after restart; existing sessions retain their recorded cap. Automatic authorization is an observed backend event, separate from human acceptance and commercial consent. The cap is per session, not an account-wide quota or tenant isolation mechanism. Existing manual operator sessions retain their explicit acceptance flow.
 
-Each observation session and legacy research task has a maximum of 50 provider attempts across search and extraction. The rolling provider rate limit is shared across both workflows within the process. Observation calls are explicitly selected by the external agent and are never automatically retried. Legacy research additionally limits each plan to five queries and two search attempts per query, with at most three legacy tasks active simultaneously. The legacy three-task limit does not apply to observation sessions; their admission uses accepted budgets, call counts, and shared provider rate limits. Run a single process per database; process-local limits are not distributed rate limiting. Database exclusive ownership prevents another server, retention command, or direct-database live runner from claiming that database while the server is running. Stop the server before maintenance.
+Each observation session and legacy research task has a maximum of 50 provider attempts across search and extraction. The rolling provider rate limit is shared across organic research and the provider lab within the process. Observation calls are explicitly selected by the external agent and are never automatically retried. Legacy research additionally limits each plan to five queries and two search attempts per query, with at most three legacy tasks active simultaneously. The legacy three-task limit does not apply to observation sessions; their admission uses accepted budgets, call counts, and shared provider rate limits. Run a single process per database; process-local limits are not distributed rate limiting. Database exclusive ownership prevents another server, retention command, or direct-database live runner from claiming that database while the server is running. Stop the server before maintenance.
 
 ## Optional keyless extraction
 
@@ -78,7 +80,7 @@ The start/development/CLI scripts enable Node's environment proxy support (`--us
 
 ## Shutdown, recovery, and health
 
-SIGTERM/SIGINT stops accepting connections, asks active legacy plans to stop between calls, and waits for in-flight legacy and observation operations to settle. If the process is killed before settlement, startup conservatively consumes outstanding estimates, records interrupted-call and settlement events, and marks affected tasks partial. Observation calls are marked interrupted and retain a conservative estimate; the same request key returns the recorded interruption rather than repeating the provider operation. Repeated recovery does not charge the same reservation twice.
+SIGTERM/SIGINT stops accepting connections, asks active legacy plans and controlled provider tests to stop between calls, and waits for in-flight legacy, observation, and lab operations to settle. If the process is killed before settlement, startup conservatively consumes outstanding estimates, records interrupted-call and settlement events, and marks affected tasks partial. Observation calls are marked interrupted and retain a conservative estimate; the same request key returns the recorded interruption rather than repeating the provider operation. Repeated recovery does not charge the same reservation twice.
 
 `GET /healthz` tests the database connection and returns only `{ "ok": true }`. It does not verify vendor credentials or prove an external provider is healthy. `/api/health` is authenticated when a workspace token is configured and provides connection configuration, not vendor uptime.
 

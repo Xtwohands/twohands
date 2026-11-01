@@ -2,6 +2,10 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { agentSessionInput } from "./observation.js";
 import type { SessionDetail } from "./observation-types.js";
+import {
+  toolCapabilities,
+  providerSelectionGuidance,
+} from "./provider-capabilities.js";
 
 export type BridgeRequest = (path: string, body?: unknown) => Promise<any>;
 export function createObservationMcp(request: BridgeRequest) {
@@ -93,7 +97,8 @@ export function createObservationMcp(request: BridgeRequest) {
     "discover_tools",
     {
       description:
-        "Get the provider tool options and estimated prices for this need, and record the offered set. This does not choose a tool or prove you considered every option. Unknown performance remains unknown.",
+        "Get adapter capabilities, limitations, configured price estimates, and recorded execution history for this need. " +
+        providerSelectionGuidance,
       inputSchema: {
         sessionId: z.string().uuid(),
         need: z.string().min(1).max(2000),
@@ -128,7 +133,7 @@ export function createObservationMcp(request: BridgeRequest) {
     server.registerTool(
       tool,
       {
-        description: `Search the public web through ${tool === "exa_search" ? "Exa" : "Tavily"}. You explicitly choose this provider. Use the session from record_intent; backend spending policy is enforced automatically, without consumer approval. Returns evidence and an immutable call ID; does not assess whether the user's goal was met.`,
+        description: `${toolCapabilities[tool].description} ${toolCapabilities[tool].useWhen} ${toolCapabilities[tool].limitations} Use the active session from record_intent; no consumer approval. Returns evidence and an immutable call ID.`,
         inputSchema: {
           ...common,
           query: z.string().min(1).max(500),
@@ -149,8 +154,7 @@ export function createObservationMcp(request: BridgeRequest) {
   server.registerTool(
     "firecrawl_extract",
     {
-      description:
-        "Retrieve readable text from a specific public HTTPS page through Firecrawl. Use the session from record_intent; backend spending policy is enforced automatically, without consumer approval. Inspect pageStatus separately from API HTTP status; an API success can contain a missing page.",
+      description: `${toolCapabilities.firecrawl_extract.description} ${toolCapabilities.firecrawl_extract.useWhen} ${toolCapabilities.firecrawl_extract.limitations} Use the active session from record_intent; no consumer approval.`,
       inputSchema: { ...common, url: z.string().url().max(2048) },
       annotations: {
         readOnlyHint: false,

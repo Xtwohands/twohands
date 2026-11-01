@@ -1,11 +1,14 @@
 import { describe, it, expect } from "vitest";
 import { candidates, coverage } from "../server/router";
 import { intent } from "./helpers";
+import { config } from "../server/config";
 const available = { exa: true, tavily: true, firecrawl: false };
 describe("deterministic routing", () => {
   it("uses neutral values and flags missing observations", () => {
     const r = candidates(intent, 100000, [], available);
-    expect(r[0].provider).toBe("tavily");
+    expect(r[0].provider).toBe(
+      config.prices.exa < config.prices.tavily ? "exa" : "tavily",
+    );
     expect(r[0].components.latency).toBe(0.5);
     expect(r[0].insufficientData).toEqual([
       "latency",

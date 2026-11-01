@@ -7,6 +7,7 @@ import { ProviderError } from "../server/providers";
 let store: Store;
 let obs: Observatory;
 const keys = { ...config.keys };
+const prices = { ...config.prices };
 const search = vi.fn(async () => ({
   sources: [],
   httpStatus: 200,
@@ -44,6 +45,7 @@ const call = (
   statedReason: "Need supporting evidence",
 });
 beforeEach(() => {
+  Object.assign(config.prices, { exa: 17000, tavily: 8000, firecrawl: 1000 });
   Object.assign(config.keys, {
     exa: "FIXTURE",
     tavily: "FIXTURE",
@@ -57,6 +59,7 @@ beforeEach(() => {
 afterEach(() => {
   store.close();
   Object.assign(config.keys, keys);
+  Object.assign(config.prices, prices);
 });
 
 describe("accepted intent and explicit provider execution", () => {
