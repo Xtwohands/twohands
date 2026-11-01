@@ -1,4 +1,4 @@
-import { beforeEach, afterEach, it, expect } from "vitest";
+import { beforeEach, afterEach, it, expect, vi } from "vitest";
 import request from "supertest";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
@@ -211,6 +211,28 @@ it("preserves backend authorization provenance in summary exports", async () => 
     .find((e) => e.type === "intent_recorded");
   expect(recorded?.provenance).toBe("agent_reported");
   expect(recorded?.data).not.toHaveProperty("budgetMicros");
+});
+it("rolls back automatic session creation if its authorization event cannot be saved", async () => {
+  const original = obs.db.event.bind(obs.db);
+  const record = vi.spyOn(obs.db, "event").mockImplementation((...args) => {
+    if (args[1] === "intent_authorized")
+      throw new Error("Synthetic audit write failure");
+    return original(...args);
+  });
+  try {
+    const response = await request(app)
+      .post("/api/observations/agent-sessions")
+      .send(intent)
+      .expect(500);
+    expect(response.body.error).not.toContain("Synthetic audit write failure");
+    expect(obs.db.list()).toHaveLength(0);
+    const rows = store.db
+      .prepare("SELECT count(*) AS count FROM observation_events")
+      .get();
+    expect(rows?.count).toBe(0);
+  } finally {
+    record.mockRestore();
+  }
 });
 it("validates tool arguments before bridge execution", async () => {
   const r = await client.callTool({

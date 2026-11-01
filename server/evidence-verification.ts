@@ -42,6 +42,11 @@ export function verifyPrivateEvidence(value: unknown) {
       previous = hash;
     }
     const intentEvents = s.events.filter((e) => e.type === "intent_recorded");
+    const approvals = s.events.filter((e) => e.type === "intent_approved");
+    const authorizations = s.events.filter(
+      (e) => e.type === "intent_authorized",
+    );
+    const backendAuthorized = s.authorizationSource === "backend_policy";
     if (
       intentEvents.length !== 1 ||
       intentEvents[0].data.intentHash !== s.intentHash ||
@@ -49,16 +54,33 @@ export function verifyPrivateEvidence(value: unknown) {
         objective: intentEvents[0].data.objective,
         criteria: intentEvents[0].data.criteria,
         constraints: intentEvents[0].data.constraints,
-        budgetMicros: intentEvents[0].data.budgetMicros,
+        budgetMicros: backendAuthorized
+          ? authorizations[0]?.data.budgetMicros
+          : intentEvents[0].data.budgetMicros,
       }) !== s.intentHash
     )
       fail("Recorded intent event does not match the accepted intent.");
-    const approvals = s.events.filter((e) => e.type === "intent_approved");
-    if (
-      s.approvedAt
+    if (backendAuthorized) {
+      const authorization = authorizations[0];
+      if (
+        !s.approvedAt ||
+        approvals.length !== 0 ||
+        authorizations.length !== 1 ||
+        authorization?.provenance !== "observed" ||
+        authorization?.data.authorizationSource !== "backend_policy" ||
+        authorization?.data.policy !== "agent-session-budget-v1" ||
+        authorization?.data.intentHash !== s.intentHash ||
+        authorization?.data.budgetMicros !== s.budgetMicros
+      )
+        fail("Backend authorization state does not match its policy event.");
+    } else if (
+      authorizations.length !== 0 ||
+      (s.authorizationSource !== undefined &&
+        s.authorizationSource !== "workspace_operator") ||
+      (s.approvedAt
         ? approvals.length !== 1 ||
           approvals[0].data.intentHash !== s.intentHash
-        : approvals.length !== 0
+        : approvals.length !== 0)
     )
       fail("Intent approval state does not match its events.");
     const outcomes = s.events.filter((e) => e.type === "outcome_submitted");

@@ -3,6 +3,9 @@ import assert from "node:assert/strict";
 import { readFile, writeFile } from "node:fs/promises";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+const { verifyPrivateEvidence } = await import(
+  `${process.cwd()}/build/evidence-verification.js`
+);
 const base = "http://127.0.0.1:3001/api/observations";
 const headers = {
   Authorization: `Bearer ${process.env.API_TOKEN}`,
@@ -30,6 +33,13 @@ if (process.argv[2] === "persist") {
   assert.equal(session.cases[0].status, "resolved");
   assert.equal(session.spentMicros, 0);
   assert.equal(session.commercialConsent, false);
+  assert.equal(session.authorizationSource, "backend_policy");
+  assert.ok(session.events.some((e) => e.type === "intent_authorized"));
+  assert.ok(!session.events.some((e) => e.type === "intent_approved"));
+  assert.equal(
+    verifyPrivateEvidence({ version: "private-evidence-v1", session }).valid,
+    true,
+  );
   assert.ok(session.events.some((e) => e.type === "client_observed"));
   console.log(
     "Packaged observation intent, output, evaluation, case, and client history survived restart.",
@@ -62,13 +72,15 @@ if (process.argv[2] === "persist") {
       criteria: [
         { text: "Independent verification remains unknown", weight: 1 },
       ],
-      budgetMicros: 0,
       model: "Synthetic fixture",
       host: "Container test",
     });
-    assert.equal(s.approvalRequired, true);
-    assert.equal(s.commercialConsent, false);
-    await request(`/${s.id}/approve`, { intentHash: s.intentHash });
+    assert.equal(s.status, "active");
+    assert.equal(s.approvalRequired, undefined);
+    assert.equal(s.dashboardPath, undefined);
+    const session = await tool("get_session", { sessionId: s.id });
+    assert.equal(session.commercialConsent, false);
+    assert.equal(session.authorizationSource, "backend_policy");
     const unavailable = await client.callTool({
       name: "firecrawl_extract",
       arguments: {
@@ -92,7 +104,7 @@ if (process.argv[2] === "persist") {
       },
       criteria: [
         {
-          criterionId: s.criteria[0].id,
+          criterionId: session.criteria[0].id,
           verdict: "unknown",
           note: "This synthetic output has not been independently verified.",
           evidenceCallIds: [],
@@ -110,6 +122,7 @@ if (process.argv[2] === "persist") {
     const summary = await request(`/${s.id}/export`);
     assert.equal(summary.includesResearchContent, false);
     assert.equal(summary.estimatedMicros, 0);
+    assert.equal(summary.authorizationSource, "backend_policy");
     assert.ok(!JSON.stringify(summary).includes("Synthetic container output"));
     await writeFile(
       record,
@@ -117,7 +130,7 @@ if (process.argv[2] === "persist") {
       { mode: 0o600 },
     );
     console.log(
-      "Packaged MCP transport, authenticated API, approval, missing-key guard, output/review/case, and minimized export: passed.",
+      "Packaged MCP transport, authenticated API, automatic backend authorization, missing-key guard, output/review/case, and minimized export: passed.",
     );
   } finally {
     await client.close();

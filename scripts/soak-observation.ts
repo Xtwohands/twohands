@@ -9,6 +9,9 @@ import { ProviderError } from "../server/providers.js";
 import { verifyPrivateEvidence } from "../server/evidence-verification.js";
 const duration = Number(process.env.SOAK_SECONDS || 60);
 assert(Number.isFinite(duration) && duration > 0 && duration <= 7200);
+const sessionMode = process.env.SOAK_SESSION_MODE || "manual";
+assert(["manual", "backend"].includes(sessionMode));
+if (sessionMode === "backend") config.agentSessionBudgetMicros = 1000;
 const dir = resolve(
   process.env.SOAK_REPORT_DIR || `.gstack/qa-reports/soak-${Date.now()}`,
 );
@@ -66,6 +69,7 @@ const results = {
   failures: 0,
   synthetic: true,
   networkRequests: 0,
+  sessionMode,
   heapStart,
   heapEnd: 0,
   peakCycleMs: 0,
@@ -74,31 +78,44 @@ try {
   do {
     const tick = Date.now();
     cycles++;
-    const s = obs.create(
-      sessionInput.parse({
-        title: `Synthetic soak ${cycles}`,
-        objective: "Validate deterministic receipt persistence.",
-        criteria: [
-          { text: "Preserves source evidence", weight: 2 },
-          { text: "Reports limitations", weight: 1 },
-        ],
-        budgetMicros: 2000,
-        model: "Synthetic fixture — excluded from live workspace",
-        host: "Soak test",
-      }),
-      "operator_entered",
-    );
-    await assert.rejects(
-      obs.execute(s.id, {
-        tool: "firecrawl_extract",
-        url: "https://example.com",
-        requestKey: "blocked",
-        domains: [],
-        statedReason: "",
-      }),
-      /Approve/,
-    );
-    obs.approve(s.id, s.intentHash);
+    const intent = sessionInput.parse({
+      title: `Synthetic soak ${cycles}`,
+      objective: "Validate deterministic receipt persistence.",
+      criteria: [
+        { text: "Preserves source evidence", weight: 2 },
+        { text: "Reports limitations", weight: 1 },
+      ],
+      budgetMicros: 2000,
+      model: "Synthetic fixture — excluded from live workspace",
+      host: "Soak test",
+    });
+    const { budgetMicros: _budget, ...agentIntent } = intent;
+    const s =
+      sessionMode === "backend"
+        ? obs.createAgentSession(agentIntent)
+        : obs.create(intent, "operator_entered");
+    if (sessionMode === "backend") {
+      assert.equal(s.status, "active");
+      assert.equal(s.authorizationSource, "backend_policy");
+      assert.equal(s.budgetMicros, 1000);
+      assert.equal(s.commercialConsent, false);
+      assert.equal(
+        obs.db.events(s.id).some((e) => e.type === "intent_approved"),
+        false,
+      );
+    } else {
+      await assert.rejects(
+        obs.execute(s.id, {
+          tool: "firecrawl_extract",
+          url: "https://example.com",
+          requestKey: "blocked",
+          domains: [],
+          statedReason: "",
+        }),
+        /Approve/,
+      );
+      obs.approve(s.id, s.intentHash);
+    }
     obs.discover(s.id, "Validate a known public URL");
     const input = {
       tool: "firecrawl_extract" as const,
@@ -139,6 +156,13 @@ try {
     assert.equal(reviewed.outcomes.length, 1);
     assert.equal(reviewed.spentMicros, 1000);
     assert.equal(reviewed.reservedMicros, 0);
+    if (sessionMode === "backend") {
+      await assert.rejects(
+        obs.execute(s.id, { ...input, requestKey: "over-cap" }),
+        /budget/,
+      );
+      assert.equal(executions, before + 1);
+    }
     if (cycles % 4 === 0) {
       const withCase = obs.openCase(
         s.id,
@@ -206,6 +230,14 @@ try {
       restarts++;
       assert.equal(obs.db.detail(s.id)?.integrity, true);
       assert.equal(obs.db.get(s.id)?.spentMicros, 1000);
+      if (sessionMode === "backend") {
+        assert.equal(obs.db.get(s.id)?.authorizationSource, "backend_policy");
+        await assert.rejects(
+          obs.execute(s.id, { ...input, requestKey: "over-cap-after-restart" }),
+          /budget/,
+        );
+        assert.equal(executions, before + 1);
+      }
     }
     results.peakCycleMs = Math.max(results.peakCycleMs, Date.now() - tick);
     Object.assign(results, {

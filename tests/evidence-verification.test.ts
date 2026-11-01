@@ -1,6 +1,10 @@
 import { beforeEach, afterEach, it, expect } from "vitest";
 import { Store } from "../server/store";
-import { Observatory, sessionInput } from "../server/observation";
+import {
+  Observatory,
+  sessionInput,
+  agentSessionInput,
+} from "../server/observation";
 import { verifyPrivateEvidence } from "../server/evidence-verification";
 import { config } from "../server/config";
 let store: Store, obs: Observatory, id: string;
@@ -146,4 +150,50 @@ it("accepts a session still awaiting approval and treats it as an incomplete wor
       session: obs.db.detail(s.id),
     }).valid,
   ).toBe(true);
+});
+
+it("verifies backend authorization and detects changes to its source or policy", async () => {
+  const s = obs.createAgentSession(
+    agentSessionInput.parse({
+      title: "Automatic authorization fixture",
+      objective: "Research without a consumer approval step.",
+      criteria: [{ text: "Preserves backend policy provenance" }],
+    }),
+  );
+  const call = await obs.execute(s.id, {
+    tool: "firecrawl_extract",
+    url: "https://example.com",
+    requestKey: "auto",
+    domains: [],
+    statedReason: "Read the fixture source",
+  });
+  obs.outcome(s.id, {
+    requestKey: "auto-final",
+    text: "Synthetic automatic output",
+    evidenceCallIds: [call.id],
+  });
+  const clean = {
+    version: "private-evidence-v1",
+    session: obs.db.detail(s.id)!,
+  };
+  expect(verifyPrivateEvidence(clean)).toMatchObject({
+    valid: true,
+    errors: [],
+  });
+  for (const source of [undefined, "workspace_operator"] as const) {
+    const changed = structuredClone(clean);
+    changed.session.authorizationSource = source;
+    expect(verifyPrivateEvidence(changed).valid).toBe(false);
+  }
+  const budget = structuredClone(clean);
+  budget.session.budgetMicros++;
+  expect(verifyPrivateEvidence(budget).errors.join(" ")).toContain(
+    "Backend authorization",
+  );
+  const event = structuredClone(clean);
+  event.session.events.find((e) => e.type === "intent_authorized")!.provenance =
+    "workspace_review";
+  expect(verifyPrivateEvidence(event).errors.join(" ")).toContain(
+    "Backend authorization",
+  );
 });
