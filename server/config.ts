@@ -1,0 +1,37 @@
+import { createHash } from "node:crypto";
+import type { ProviderId } from "./types.js";
+function integer(name: string, fallback: number, min: number, max: number) {
+  const raw = process.env[name];
+  const n = raw === undefined ? fallback : Number(raw);
+  if (!Number.isInteger(n) || n < min || n > max)
+    throw new Error(`Invalid ${name}`);
+  return n;
+}
+function price(name: string, fallback: number) {
+  const n = Number(process.env[name] ?? fallback);
+  if (!Number.isFinite(n) || n < 0 || n > 10)
+    throw new Error(`Invalid ${name}`);
+  return Math.ceil(n * 1_000_000);
+}
+const prices: Record<ProviderId, number> = {
+  exa: price("EXA_SEARCH_USD", 0.015),
+  tavily: price("TAVILY_SEARCH_USD", 0.008),
+  firecrawl: price("FIRECRAWL_SCRAPE_USD", 0.001),
+};
+export const config = {
+  port: integer("PORT", 3001, 1, 65535),
+  host: process.env.HOST || "127.0.0.1",
+  token: process.env.API_TOKEN || "",
+  dbPath: process.env.DB_PATH || "./data/apilayer.sqlite",
+  timeoutMs: integer("PROVIDER_TIMEOUT_MS", 20000, 100, 120000),
+  rpm: integer("PROVIDER_RPM", 20, 1, 1000),
+  minCohort: integer("ANALYTICS_MIN_TASKS", 5, 5, 10000),
+  prices,
+  keys: {
+    exa: process.env.EXA_API_KEY || "",
+    tavily: process.env.TAVILY_API_KEY || "",
+    firecrawl: process.env.FIRECRAWL_API_KEY || "",
+  } as Record<ProviderId, string>,
+  rateCardVersion: `configured-estimates-v1:${createHash("sha256").update(JSON.stringify(prices)).digest("hex").slice(0, 12)}`,
+  policyVersion: "deterministic-v1",
+};

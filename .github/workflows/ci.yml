@@ -1,0 +1,53 @@
+name: Verify workspace
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+      - run: npm run format:check
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: browser-verification
+          path: test-results/
+          retention-days: 7
+  container:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t apilayer:ci .
+      - run: docker run -d --name apilayer-ci -e API_TOKEN=ci-runtime-validation-token-0001 apilayer:ci
+      - name: Verify packaged runtime
+        run: |
+          for attempt in {1..20}; do
+            if docker exec apilayer-ci node -e 'fetch("http://127.0.0.1:3001/healthz").then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))'; then break; fi
+            sleep 1
+          done
+          docker exec -i apilayer-ci node --input-type=module - < tests/container-smoke.mjs
+          docker restart --time 10 apilayer-ci
+          for attempt in {1..20}; do
+            if docker exec apilayer-ci node -e 'fetch("http://127.0.0.1:3001/healthz").then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))'; then break; fi
+            sleep 1
+          done
+          docker exec -i apilayer-ci node --input-type=module - persist < tests/container-smoke.mjs
+      - name: Container logs
+        if: failure()
+        run: docker logs apilayer-ci
+      - name: Clean up
+        if: always()
+        run: docker rm -f apilayer-ci || true
