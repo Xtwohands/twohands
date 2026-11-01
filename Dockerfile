@@ -11,12 +11,12 @@ RUN npm run build
 FROM node:24-bookworm-slim AS runtime
 ENV NODE_ENV=production HOST=0.0.0.0 PORT=3001 DB_PATH=/app/data/apilayer.sqlite
 WORKDIR /app
-COPY package*.json ./
+COPY --chown=node:node package*.json ./
 RUN --mount=type=secret,id=proxy_ca \
     if [ -f /run/secrets/proxy_ca ]; then export NODE_EXTRA_CA_CERTS=/run/secrets/proxy_ca; fi; \
     npm ci --omit=dev --strict-ssl=true && npm cache clean --force
-COPY --from=build /app/build ./build
-COPY --from=build /app/dist ./dist
+COPY --chown=node:node --from=build /app/build ./build
+COPY --chown=node:node --from=build /app/dist ./dist
 RUN mkdir -p /app/data && chown node:node /app/data && chmod 700 /app/data
 USER node
 EXPOSE 3001

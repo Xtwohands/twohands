@@ -51,6 +51,10 @@ The ledger enforces the task cap against those configured estimates. Actual vend
 
 Each task has a maximum of 50 paid attempts across search and extraction; each run has at most five queries and two search attempts per query. At most three tasks can perform operations simultaneously. Run a single process per database; process-local limits are not distributed rate limiting.
 
+## HTTPS proxies
+
+The start/development/CLI scripts enable Node's environment proxy support (`--use-env-proxy`, requiring Node 24.5+). This respects configured HTTP_PROXY/HTTPS_PROXY/NO_PROXY rather than attempting direct egress in managed environments. TLS verification remains enabled. If your proxy uses a private CA, provide NODE_EXTRA_CA_CERTS to the Node process. Docker builds support an optional BuildKit `proxy_ca` secret, mounted only during npm installation; runtime containers need the appropriate read-only CA mount separately. No session CA or proxy credential is embedded in the image.
+
 ## Shutdown, recovery, and health
 
 SIGTERM/SIGINT stops accepting connections, asks active plans to stop between calls, and waits for in-flight operations to settle. If the process is killed before settlement, startup conservatively consumes outstanding estimates, records interrupted-call and settlement events, and marks affected tasks partial. Repeated recovery does not charge the same reservation twice.

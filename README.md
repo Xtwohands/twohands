@@ -8,7 +8,7 @@ Built from the **Agent Intent & Tool Intelligence Demo V1 PRD**. The repository 
 
 ## Run locally
 
-Requires **Node.js 24+** (uses built-in SQLite).
+Requires **Node.js 24.5+** (uses built-in SQLite).
 
 ```bash
 npm ci
