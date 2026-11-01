@@ -44,11 +44,21 @@ export function Intelligence() {
           AGGREGATED & DE-IDENTIFIED
         </span>
       </div>
-      {error && <div className="error-banner">{error}</div>}
-      {!data ? (
-        <div className="empty-state">
-          <LoaderCircle className="spin" />
+      {error && (
+        <div className="error-banner" role="alert">
+          {error}
         </div>
+      )}
+      {!data ? (
+        !error && (
+          <div
+            className="empty-state"
+            role="status"
+            aria-label="Loading provider analytics"
+          >
+            <LoaderCircle className="spin" />
+          </div>
+        )
       ) : data.suppressed ? (
         <>
           <div className="stats-grid">

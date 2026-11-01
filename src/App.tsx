@@ -58,6 +58,7 @@ export function App() {
   const [busy, setBusy] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [tokenInput, setTokenInput] = useState("");
+  const [connectionRevision, setConnectionRevision] = useState(0);
   const modalRef = useRef<HTMLElement>(null);
   useEffect(() => {
     if (!showSettings) return;
@@ -727,7 +728,9 @@ export function App() {
               onExport={exportTask}
             />
           )}
-          {screen === "intelligence" && <Intelligence />}
+          {screen === "intelligence" && (
+            <Intelligence key={connectionRevision} />
+          )}
           <footer>
             <span>
               <Layers3 size={13} />
@@ -830,6 +833,7 @@ export function App() {
               className="button primary full"
               onClick={() => {
                 setToken(tokenInput);
+                setConnectionRevision((revision) => revision + 1);
                 void refresh(true);
                 if (selectedId.current) void loadTask(selectedId.current);
                 setShowSettings(false);
