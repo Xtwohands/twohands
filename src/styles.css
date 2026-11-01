@@ -98,9 +98,8 @@ svg {
   flex-shrink: 0;
 }
 button {
-  transition:
-    background 0.15s,
-    opacity 0.15s;
+  /* Enabled controls must regain readable contrast immediately. */
+  transition: background 0.15s;
 }
 button:hover:not(:disabled) {
   filter: brightness(0.97);
