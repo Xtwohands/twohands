@@ -34,6 +34,8 @@ The source was `https://example.com/apilayer-validation-not-found`. The successf
 
 Open Routing inspector and select **Historical live: API 200 / page 404**. The banner marks it historical, read-only, sanitized, and captured on the date above. Replay makes no provider request, creates no workspace task, and contributes nothing to provider analytics. Live workspace traces remain a separate selection. The downloaded recording is sanitized again by the same shared field allowlist as the server export.
 
+![Read-only historical replay](screenshots/historical-recording.png)
+
 ## Reviewable evidence
 
 - [Successful keyless extraction: sanitized trace](live-validation/firecrawl-keyless-success.json)

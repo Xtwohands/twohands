@@ -53,3 +53,5 @@ Started 1 November 2026, 12:22 UTC. Scope: one additional hour of implementation
 ## Second-pass verification checkpoint
 
 71 unit/integration tests pass, including a real subprocess kill/restart test. The desktop/mobile suite has 20 passing scenarios, including historical replay without any provider operation, evidence invalidation, consent withdrawal/deletion, a page-404/API-200 distinction, and protection against delayed older task responses. Account-dependent Exa/Tavily REST acceptance remains blocked, with the exact key handoff described in LIVE_VALIDATION.md.
+
+- The packaged non-root runtime also serves historical recordings, preserves user-input source provenance across restart, rejects unconfigured search/extraction, and blocks a concurrent retention process from acquiring its live database. These checks make no external API request.

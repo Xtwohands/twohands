@@ -582,8 +582,9 @@ export function App() {
                             />
                           </div>
                           <p className="tiny muted">
-                            Charges are configurable rate-card estimates. Vendor
-                            billing has not been reconciled.
+                            Keyless requests use the free tier. Other costs use
+                            the configured rate card and are estimates, not
+                            invoice charges.
                           </p>
                           <button
                             className="button secondary full"
