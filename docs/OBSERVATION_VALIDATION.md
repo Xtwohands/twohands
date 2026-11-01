@@ -2,7 +2,23 @@
 
 This records local implementation validation, not a model benchmark or a claim of insurance coverage. Provider results below came from real public-source calls; automated fixtures ran in separate databases and processes.
 
-## Live external-agent sessions
+## Automatic backend authorization update
+
+The consumer MCP flow now starts research immediately. `record_intent` accepts no research-budget input and returns an active session without an approval flag or dashboard link. The backend supplies the estimated cap. A consumer's equipment budget stays in the task constraints. `intent_authorized` has observed provenance and is distinct from an operator's `intent_approved` event; existing manual proposals remain unchanged.
+
+Code revision `6454012499bba733e5d76f9073e1d6cba9ca534d` passed [the full CI run](https://github.com/royli25/APILayer/actions/runs/41354118827): **145 unit/API/protocol tests across 20 files**, **71 browser checks passed with one intentionally skipped desktop instance of a mobile-only check**, formatting, and both packaged-runtime checks across a container restart. The automatic-session tests cover backend cap selection, rejected client overrides, a zero cap, rollback when authorization-event recording fails, two-client retry behavior, export provenance, and desktop/mobile presentation without an approval button.
+
+The first durability attempt exposed an outdated verifier assumption that every authorized session must have a human-approval event. The fix verifies the backend policy event and its cap, and detects changes to authorization provenance. A separate initial CI attempt exposed a container smoke test that still expected full session details from `record_intent`; it now uses `get_session` for those internal details. The successful run above includes both corrections.
+
+The corrected backend-mode durability run completed its full **20-minute window**, from 21:47:41 to 22:07:41 UTC: **100 cycles, 100 synthetic provider executions, 10 database reopenings, zero failures, and zero network requests**. Each cycle checked automatic authorization, concurrent retry receipts, output versions, review/case records, spending limits, and offline evidence verification. Every reopening also checked that the backend cap still prevented another execution. Injected adapters and a separate SQLite file kept this workload out of production provider and model statistics.
+
+A real consumer research request was then completed through a fresh stdio MCP SDK connection: **5 Tavily searches and 6 Firecrawl extractions**, all successful, with **$0.046 in configured estimated cost** under the backend's $0.10 session cap. This was the primary Codex agent driving the SDK client, not a second autonomous host or an independent model test. The recorded host is `Codex via MCP SDK`; model identity is not reported. A delivered output was submitted with receipt IDs. No evaluation was invented, no purchase was made, and commercial sharing remains off. This estimate is separate from the earlier live runs below and is not a vendor invoice.
+
+Some extraction receipts are explicitly truncated. Supplementary read-only storefront checks happened through the host's browser tool, outside APILayer, and are not presented as APILayer-observed calls. After restarting the local HTTP service, a fresh MCP connection recovered the completed session and an identical cached source receipt. Call count, estimated spending, output versions, and consent stayed unchanged. The private export passes offline verification. No fixture records entered the production workspace.
+
+Local records for this update are in `.gstack/qa-reports/backend-policy-live-2026-11-01/` and `.gstack/qa-reports/backend-policy-2026-11-01-fixed/`, excluded from source control. The live private export is local operational evidence; research content and provider credentials are not included in this documentation.
+
+## Earlier live external-agent sessions
 
 | Host           | Task                                                          | Actual APILayer provider calls             | Configured estimate |
 | -------------- | ------------------------------------------------------------- | ------------------------------------------ | ------------------- |
@@ -36,7 +52,7 @@ Additional process-level checks exercise the real MCP SDK over stdio to authenti
 
 Browser coverage runs at desktop and mobile sizes and includes the earlier research workflow. Checks cover approval, review and revision, historical output/case selection, direct saved-evidence reads, safe Markdown, partial extraction, authentication recovery, stale responses, keyboard navigation, responsive dialogs, and axe accessibility scans.
 
-Latest completed unit/API/protocol run: **140 tests across 20 files passed**. This includes simultaneous retries from two independent MCP clients against one server, with exactly one execution and one budget charge. The final browser run completed with **69 passed and one intentionally skipped desktop instance of a mobile-only drawer check**. It includes original-text fallback when the optional document renderer cannot load.
+Before the automatic-authorization update, the completed unit/API/protocol run had **140 tests across 20 files passed**. This includes simultaneous retries from two independent MCP clients against one server, with exactly one execution and one budget charge. That browser run completed with **69 passed and one intentionally skipped desktop instance of a mobile-only drawer check**. It includes original-text fallback when the optional document renderer cannot load. The newer counts are recorded above.
 
 The document renderer is loaded on demand. The initial JavaScript bundle decreased from approximately 607 kB to 444 kB (134 kB gzip); this is an asset-size measurement, not a measured page-load speed claim. A timing-sensitive response-body test was given a one-second fixture deadline so parallel CPU load does not cause it to expire before loopback headers arrive. Production provider deadlines were unchanged.
 
@@ -68,6 +84,7 @@ npm run test:e2e
 npm run format:check
 npm audit
 SOAK_SECONDS=60 npm run test:soak
+SOAK_SESSION_MODE=backend SOAK_SECONDS=1200 npm run test:soak
 npm run verify:evidence -- /path/to/private-evidence.json
 ```
 

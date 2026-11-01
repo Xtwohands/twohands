@@ -27,6 +27,12 @@ npm run mcp:install -- project  # Only project .mcp.json, for Claude Code
 
 Restart Claude desktop or start a new Codex session. Claude Code may ask to enable the project server. The dashboard’s Connections page records client names/versions from actual MCP initialization or bridge requests. A last-seen timestamp is not a continuous connection-health signal, and the client name is not verified model identity.
 
+### Updating an existing connection
+
+After pulling the automatic-session update, run `npm run build`, restart the local HTTP service, and restart the host's MCP connection (or start a new Codex chat). Both processes matter: an older stdio bridge keeps its old tool schema, approval instructions, and proposal endpoint even after the HTTP service is restarted. A fresh `record_intent` response contains an active session ID with no `approvalRequired` flag, dashboard link, or budget field. Existing pending proposals remain historical records; they are not rewritten into backend authorizations.
+
+To test the consumer path, ask: “Use APILayer to find a snowboard around $500 for an intermediate rider, 135 lb, with US men's 8.5 boots.” The agent should ask only useful shopping questions, record intent internally, and continue searching. The $500 remains an equipment constraint. Operators can inspect the resulting authorization, calls, and output in the dashboard afterward.
+
 For manual Codex registration:
 
 ```bash

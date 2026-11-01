@@ -40,7 +40,7 @@ You can target one client with `npm run mcp:install -- claude`, `-- codex`, or `
 4. Review the output against each criterion. Pass, fail, and unknown are separate; link supporting calls and explain judgments.
 5. If needed, open a review case against a particular evaluation. Earlier outputs and retrospective reviews stay attached to their own versions.
 
-Set `AGENT_SESSION_BUDGET_MICROS` on the backend to control the per-session research cap (default 100000 = $0.10; 0 blocks paid calls). This is separate from any shopping budget in a user's request. `record_intent` exposes no budget input or approval link. Backend authorization is recorded as an observed policy event, not human approval. The dashboard remains an operator inspection and review surface. Its manual intent flow remains available for operator-created sessions. APILayer’s MCP tool catalog contains no approval, evaluation, consent, payment, or refund tool.
+Set `AGENT_SESSION_BUDGET_MICROS` on the backend to control the per-session research cap (default 100000 = $0.10; 0 blocks positive-estimate calls). This is separate from any shopping budget in a user's request. `record_intent` exposes no budget input or approval link. Backend authorization is recorded as an observed policy event, not human approval. The dashboard remains an operator inspection and review surface. Its manual intent flow remains available for operator-created sessions. APILayer’s MCP tool catalog contains no approval, evaluation, consent, payment, or refund tool.
 
 ## What gets recorded
 
