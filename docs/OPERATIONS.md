@@ -40,16 +40,17 @@ The command deletes expired research tasks and observation sessions with their e
 
 ## Limits and pricing
 
-| Variable               | Default                  | Meaning                                                        |
-| ---------------------- | ------------------------ | -------------------------------------------------------------- |
-| `EXA_SEARCH_USD`       | 0.017                    | Estimate for one search with text from up to 10 returned pages |
-| `TAVILY_SEARCH_USD`    | 0.008                    | Estimate for one basic search                                  |
-| `FIRECRAWL_SCRAPE_USD` | 0.001                    | Estimate for one extraction                                    |
-| `PROVIDER_TIMEOUT_MS`  | 20000                    | HTTP request deadline                                          |
-| `PROVIDER_RPM`         | 20                       | Process-local requests per provider per rolling minute         |
-| `ANALYTICS_MIN_TASKS`  | 5                        | Minimum consented cohort, cannot be configured below 5         |
-| `DB_PATH`              | `./data/apilayer.sqlite` | Workspace database                                             |
-| `HOST` / `PORT`        | `127.0.0.1` / `3001`     | HTTP listener                                                  |
+| Variable                      | Default                  | Meaning                                                                                        |
+| ----------------------------- | ------------------------ | ---------------------------------------------------------------------------------------------- |
+| `EXA_SEARCH_USD`              | 0.017                    | Estimate for one search with text from up to 10 returned pages                                 |
+| `TAVILY_SEARCH_USD`           | 0.008                    | Estimate for one basic search                                                                  |
+| `FIRECRAWL_SCRAPE_USD`        | 0.001                    | Estimate for one extraction                                                                    |
+| `PROVIDER_TIMEOUT_MS`         | 20000                    | HTTP request deadline                                                                          |
+| `PROVIDER_RPM`                | 20                       | Process-local requests per provider per rolling minute                                         |
+| `AGENT_SESSION_BUDGET_MICROS` | 100000                   | Backend cap per automatically authorized MCP session ($0.10); 0 blocks positive-estimate calls |
+| `ANALYTICS_MIN_TASKS`         | 5                        | Minimum consented cohort, cannot be configured below 5                                         |
+| `DB_PATH`                     | `./data/apilayer.sqlite` | Workspace database                                                                             |
+| `HOST` / `PORT`               | `127.0.0.1` / `3001`     | HTTP listener                                                                                  |
 
 Prices are **configurable planning assumptions**, not verified current plan prices. Exa's default includes an allowance for text retrieval; vendor plans, search types, returned contents, credit packages, and discounts can change actual charges. Confirm the official price card and your account plan before use:
 
@@ -58,6 +59,8 @@ Prices are **configurable planning assumptions**, not verified current plan pric
 - https://www.firecrawl.dev/pricing
 
 The ledger enforces the task cap against those configured estimates. Actual vendor charges can differ. Provider response usage is displayed separately when available and is not an invoice reconciliation. Set vendor-side caps and validate estimates before larger runs. Errors/timeouts conservatively retain estimates because their billing status is uncertain.
+
+MCP sessions start automatically under backend policy. Consumers do not configure research spending or approve sessions; a shopping budget remains part of their product request. `AGENT_SESSION_BUDGET_MICROS` is read by the HTTP server, not accepted from the agent. Changing it affects new sessions after restart; existing sessions retain their recorded cap. Automatic authorization is an observed backend event, separate from human acceptance and commercial consent. The cap is per session, not an account-wide quota or tenant isolation mechanism. Existing manual operator sessions retain their explicit acceptance flow.
 
 Each observation session and legacy research task has a maximum of 50 provider attempts across search and extraction. The rolling provider rate limit is shared across both workflows within the process. Observation calls are explicitly selected by the external agent and are never automatically retried. Legacy research additionally limits each plan to five queries and two search attempts per query, with at most three legacy tasks active simultaneously. The legacy three-task limit does not apply to observation sessions; their admission uses accepted budgets, call counts, and shared provider rate limits. Run a single process per database; process-local limits are not distributed rate limiting. Database exclusive ownership prevents another server, retention command, or direct-database live runner from claiming that database while the server is running. Stop the server before maintenance.
 

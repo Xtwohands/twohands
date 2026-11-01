@@ -14,6 +14,7 @@ let server: ReturnType<typeof createObservationMcp>;
 let app: ReturnType<typeof createApp>;
 const oldKeys = { ...config.keys };
 const oldToken = config.token;
+const oldBudget = config.agentSessionBudgetMicros;
 const intent = {
   title: "MCP fixture",
   objective: "Return a supported answer from a public page.",
@@ -21,7 +22,6 @@ const intent = {
     { text: "Names the page", weight: 1 },
     { text: "Includes a source", weight: 1 },
   ],
-  budgetMicros: 26000,
   model: "Protocol fixture, no model",
   host: "MCP test client",
 };
@@ -66,6 +66,7 @@ afterEach(async () => {
   store.close();
   Object.assign(config.keys, oldKeys);
   config.token = oldToken;
+  config.agentSessionBudgetMicros = oldBudget;
 });
 it("exposes distinct provider tools and no approval, scoring, consent, or refund tool", async () => {
   const { tools } = await client.listTools();
@@ -84,23 +85,23 @@ it("exposes distinct provider tools and no approval, scoring, consent, or refund
   expect(
     tools.some((t) => /approve|refund|evaluate|consent/.test(t.name)),
   ).toBe(false);
+  expect(
+    tools.find((t) => t.name === "record_intent")?.inputSchema.properties,
+  ).not.toHaveProperty("budgetMicros");
 });
-it("carries a real protocol flow from proposed intent to selected tool to output", async () => {
+it("runs from intent to provider evidence and output without consumer approval", async () => {
   const s = parse(
     await client.callTool({ name: "record_intent", arguments: intent }),
   );
-  expect(s.approvalRequired).toBe(true);
+  expect(s.status).toBe("active");
+  expect(s.approvalRequired).toBeUndefined();
+  expect(s.dashboardPath).toBeUndefined();
+  expect(s.budgetMicros).toBeUndefined();
   expect(s.modelSource).toBe("agent_reported");
-  const blocked = await client.callTool({
-    name: "exa_search",
-    arguments: { sessionId: s.id, query: "Fixture", requestKey: "search-1" },
-  });
-  expect(blocked.isError).toBe(true);
-  expect(obs.db.calls(s.id)).toHaveLength(0);
-  await request(app)
-    .post(`/api/observations/${s.id}/approve`)
-    .send({ intentHash: s.intentHash })
-    .expect(200);
+  expect(obs.require(s.id).authorizationSource).toBe("backend_policy");
+  expect(obs.db.events(s.id).some((e) => e.type === "intent_approved")).toBe(
+    false,
+  );
   const offered = parse(
     await client.callTool({
       name: "discover_tools",
@@ -144,6 +145,72 @@ it("carries a real protocol flow from proposed intent to selected tool to output
   expect(read.evaluations).toHaveLength(0);
   expect(read.calls[0].result).toBeUndefined();
   expect(obs.db.detail(s.id)?.integrity).toBe(true);
+});
+it("uses server policy, enforces its cap, and records authorization without human approval", async () => {
+  config.agentSessionBudgetMicros = 1000;
+  const s = parse(
+    await client.callTool({ name: "record_intent", arguments: intent }),
+  );
+  expect(obs.require(s.id)).toMatchObject({
+    budgetMicros: 1000,
+    authorizationSource: "backend_policy",
+    commercialConsent: false,
+  });
+  expect(
+    obs.db.events(s.id).find((e) => e.type === "intent_authorized"),
+  ).toMatchObject({ provenance: "observed", data: { budgetMicros: 1000 } });
+  const args = {
+    sessionId: s.id,
+    url: "https://example.com",
+    requestKey: "one",
+  };
+  const first = parse(
+    await client.callTool({ name: "firecrawl_extract", arguments: args }),
+  );
+  expect(first.status).toBe("succeeded");
+  const replay = parse(
+    await client.callTool({ name: "firecrawl_extract", arguments: args }),
+  );
+  expect(replay.id).toBe(first.id);
+  const blocked = await client.callTool({
+    name: "firecrawl_extract",
+    arguments: { ...args, requestKey: "two" },
+  });
+  expect(blocked.isError).toBe(true);
+  expect(obs.require(s.id).spentMicros).toBe(1000);
+  expect(obs.db.calls(s.id)).toHaveLength(1);
+});
+it("rejects client budget overrides and keeps a zero server budget effective", async () => {
+  await request(app)
+    .post("/api/observations/agent-sessions")
+    .send({ ...intent, budgetMicros: 5_000_000 })
+    .expect(400);
+  expect(obs.db.list()).toHaveLength(0);
+  config.agentSessionBudgetMicros = 0;
+  const s = parse(
+    await client.callTool({ name: "record_intent", arguments: intent }),
+  );
+  const blocked = await client.callTool({
+    name: "exa_search",
+    arguments: { sessionId: s.id, query: "Fixture", requestKey: "blocked" },
+  });
+  expect(blocked.isError).toBe(true);
+  expect(obs.db.calls(s.id)).toHaveLength(0);
+  expect(obs.require(s.id).budgetMicros).toBe(0);
+});
+it("preserves backend authorization provenance in summary exports", async () => {
+  const s = parse(
+    await client.callTool({ name: "record_intent", arguments: intent }),
+  );
+  const exported = await request(app)
+    .get(`/api/observations/${s.id}/export`)
+    .expect(200);
+  expect(exported.body.authorizationSource).toBe("backend_policy");
+  const recorded = obs.db
+    .events(s.id)
+    .find((e) => e.type === "intent_recorded");
+  expect(recorded?.provenance).toBe("agent_reported");
+  expect(recorded?.data).not.toHaveProperty("budgetMicros");
 });
 it("validates tool arguments before bridge execution", async () => {
   const r = await client.callTool({

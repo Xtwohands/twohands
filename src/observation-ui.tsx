@@ -628,7 +628,7 @@ export function IntentContent({ session }: { session: ObservationSession }) {
       <div className="intent-meta">
         <span>
           {session.approvedAt
-            ? `Accepted ${date(session.approvedAt)}`
+            ? `${session.authorizationSource === "backend_policy" ? "Backend authorized" : "Accepted"} ${date(session.approvedAt)}`
             : "Awaiting your approval"}
         </span>
         <span>Tool budget {money(session.budgetMicros)}</span>

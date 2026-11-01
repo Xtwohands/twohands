@@ -62,6 +62,7 @@ export interface ObservationSession {
   createdAt: string;
   updatedAt: string;
   approvedAt: string | null;
+  authorizationSource?: "backend_policy" | "workspace_operator";
   commercialConsent: boolean;
   outcomes: Outcome[];
   evaluations: Evaluation[];

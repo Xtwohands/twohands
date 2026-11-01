@@ -143,6 +143,7 @@ function eventLabel(e: ObservationEvent) {
         client_observed: "Agent client observed",
         intent_recorded: "Intent recorded",
         intent_approved: "Intent accepted",
+        intent_authorized: "Backend authorization",
         tools_offered: "Tool options returned",
         selection_explanation: "Agent’s stated reason",
         tool_called: "Tool requested",
@@ -174,6 +175,8 @@ function eventText(e: ObservationEvent) {
     return `${d.score === null ? "Unscored" : `${d.score}% intent match`} · ${d.coverage}% review coverage`;
   if (e.type === "intent_approved")
     return "Intent and tool budget accepted by the workspace operator.";
+  if (e.type === "intent_authorized")
+    return "Session authorized automatically under backend spending policy.";
   return "Recorded in this session’s audit history.";
 }
 
@@ -917,8 +920,8 @@ export function ObservationApp() {
                     <div>
                       <span>3</span>
                       <p>
-                        Record and approve an intent here, then copy the session
-                        prompt into Claude or Codex.
+                        Ask Claude or Codex to use APILayer. Sessions start
+                        automatically under the backend spending policy.
                       </p>
                     </div>
                   </div>

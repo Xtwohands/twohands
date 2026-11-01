@@ -27,6 +27,12 @@ export const config = {
   allowKeylessFirecrawl: process.env.FIRECRAWL_ALLOW_KEYLESS === "true",
   timeoutMs: integer("PROVIDER_TIMEOUT_MS", 20000, 100, 120000),
   rpm: integer("PROVIDER_RPM", 20, 1, 1000),
+  agentSessionBudgetMicros: integer(
+    "AGENT_SESSION_BUDGET_MICROS",
+    100000,
+    0,
+    5_000_000,
+  ),
   minCohort: integer("ANALYTICS_MIN_TASKS", 5, 5, 10000),
   prices,
   keys: {

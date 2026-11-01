@@ -87,17 +87,12 @@ it("bridges stdio to authenticated HTTP and records the client alongside cached 
         title: "Process boundary test",
         objective: "Return a supported source summary.",
         criteria: [{ text: "Includes evidence", weight: 1 }],
-        budgetMicros: 1000,
         model: "Synthetic fixture",
         host: "Protocol test",
       },
     }),
   );
-  await request(app)
-    .post(`/api/observations/${s.id}/approve`)
-    .set("Authorization", "Bearer stdio-test-token")
-    .send({ intentHash: s.intentHash })
-    .expect(200);
+  expect(s.status).toBe("active");
   const call = payload(
     await client.callTool({
       name: "firecrawl_extract",
@@ -257,15 +252,10 @@ it("deduplicates concurrent operations from two independent MCP hosts", async ()
           title: "Concurrent host fixture",
           objective: "Preserve one operation across two client retries.",
           criteria: [{ text: "No duplicate execution", weight: 1 }],
-          budgetMicros: 1000,
         },
       }),
     );
-    await request(app)
-      .post(`/api/observations/${s.id}/approve`)
-      .set("Authorization", "Bearer stdio-test-token")
-      .send({ intentHash: s.intentHash })
-      .expect(200);
+    expect(s.status).toBe("active");
     const args = {
       sessionId: s.id,
       url: "https://example.com",

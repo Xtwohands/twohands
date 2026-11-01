@@ -2,6 +2,8 @@
 
 The product records what a person wanted, what an external agent actually did through APILayer, what it delivered, and how that delivery was evaluated. It should become a reliable evidence layer across agent hosts, rather than another research chat or planning harness.
 
+APILayer is infrastructure in the consumer's existing conversation. A consumer asks for snowboard recommendations and receives research; session creation, tool routing, authorization, and research spending policy happen internally. New MCP sessions are authorized automatically by backend policy. The consumer's shopping budget remains a product constraint. The operator dashboard is for inspection and evaluation, not a required checkpoint in the consumer journey.
+
 The useful unit is an **accepted intent and a versioned outcome**, not an HTTP request. A tool can return successfully while the answer misses the goal. An agent can report a setup failure honestly without demonstrating poor factual accuracy. Keep those distinctions in every score, case, and commercial dataset.
 
 ## Three uses of the same evidence
@@ -20,7 +22,7 @@ The external host owns the conversation, planning, and tool decisions. APILayer'
 
 An offered tool set records an opportunity to choose. It does not prove attention to every option or establish the counterfactual outcome of a tool not selected. A later vendor dataset should distinguish exposure, selection, execution, and outcome attribution. It should not label every unselected provider as rejected or every successful API call as a fulfilled intent.
 
-The recorded intent is what was explicitly submitted and accepted. It is not proof that the rubric captures every nuance of the person's original conversation. Future host integrations can improve this with authenticated user acceptance and a visible version history for scope changes.
+The recorded intent is what the agent submitted, authorized under backend policy for MCP-created sessions. It is not proof that a human approved its rubric or that the rubric captures every nuance of the person's original conversation. Backend authorization, operator acceptance, and reported intent remain distinct in the audit history.
 
 ## Next implementation priorities
 

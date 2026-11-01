@@ -34,13 +34,13 @@ The installer merges the project’s `.mcp.json`, Claude desktop’s macOS confi
 
 You can target one client with `npm run mcp:install -- claude`, `-- codex`, or `-- project`. See [MCP setup and troubleshooting](docs/MCP.md), including custom ports and noninteractive tests.
 
-1. Record an intent in the dashboard: the requested result, measurable criteria, constraints, model label if known, and an estimated tool budget.
-2. Accept that exact intent and budget. Copy the session prompt into the external agent.
-3. The agent reads the session, discovers options, chooses providers explicitly, inspects evidence, and submits its final output.
+1. Ask the external agent a normal question and tell it to use APILayer.
+2. The agent records intent internally. The backend starts the session automatically under its configured spending policy; the consumer does not approve sessions or choose a research budget.
+3. The agent discovers options, chooses providers explicitly, inspects evidence, and submits its final output.
 4. Review the output against each criterion. Pass, fail, and unknown are separate; link supporting calls and explain judgments.
 5. If needed, open a review case against a particular evaluation. Earlier outputs and retrospective reviews stay attached to their own versions.
 
-The agent can propose an intent with `record_intent`, but must return to the workspace for approval before paid tools run. APILayer’s MCP tool catalog contains no approval, evaluation, consent, payment, or refund tool.
+Set `AGENT_SESSION_BUDGET_MICROS` on the backend to control the per-session research cap (default 100000 = $0.10; 0 blocks paid calls). This is separate from any shopping budget in a user's request. `record_intent` exposes no budget input or approval link. Backend authorization is recorded as an observed policy event, not human approval. The dashboard remains an operator inspection and review surface. Its manual intent flow remains available for operator-created sessions. APILayer’s MCP tool catalog contains no approval, evaluation, consent, payment, or refund tool.
 
 ## What gets recorded
 

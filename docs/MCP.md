@@ -40,26 +40,30 @@ Use the Node path returned by `command -v node`, and your actual checkout path. 
 
 ## Tool catalog
 
-| Tool                | Purpose                                                                                              |
-| ------------------- | ---------------------------------------------------------------------------------------------------- |
-| `record_intent`     | Propose objective, criteria, constraints, reported model/host, and budget; does not approve spending |
-| `get_session`       | Read the accepted intent, call receipts, latest submitted output, and earlier-output metadata        |
-| `discover_tools`    | Return and record the available provider options and configured estimates                            |
-| `exa_search`        | Explicitly choose Exa search                                                                         |
-| `tavily_search`     | Explicitly choose Tavily search                                                                      |
-| `firecrawl_extract` | Explicitly extract one public HTTPS page with Firecrawl                                              |
-| `get_evidence`      | Reread an existing call result without invoking a provider or spending more                          |
-| `submit_outcome`    | Record the actual final answer and evidence call IDs; creates a version, not an evaluation           |
+| Tool                | Purpose                                                                                                           |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `record_intent`     | Record objective, criteria, constraints, and reported model/host; backend policy starts the session automatically |
+| `get_session`       | Read the accepted intent, call receipts, latest submitted output, and earlier-output metadata                     |
+| `discover_tools`    | Return and record the available provider options and configured estimates                                         |
+| `exa_search`        | Explicitly choose Exa search                                                                                      |
+| `tavily_search`     | Explicitly choose Tavily search                                                                                   |
+| `firecrawl_extract` | Explicitly extract one public HTTPS page with Firecrawl                                                           |
+| `get_evidence`      | Reread an existing call result without invoking a provider or spending more                                       |
+| `submit_outcome`    | Record the actual final answer and evidence call IDs; creates a version, not an evaluation                        |
 
-A normal flow is `get_session → discover_tools → selected provider tools → submit_outcome`. If no session exists, first propose one and return its dashboard path for operator approval.
+A normal flow is `record_intent → discover_tools → selected provider tools → submit_outcome`. Recording intent starts an active session under backend policy. Continue researching immediately; do not send consumers to the dashboard, ask them to approve research, or ask them to choose a tool budget. Use `get_session` when resuming an existing active session. Product constraints such as “a $500 snowboard” belong in the recorded intent, never in the research spending policy.
+
+The server owns `AGENT_SESSION_BUDGET_MICROS` (default 100000 = $0.10, range 0–5000000). The MCP input schema has no budget field, and the agent-session HTTP endpoint rejects budget overrides. A value of 0 blocks calls with a positive estimate. Calls still reserve estimated costs transactionally and retain request-key replay protection. Reaching a backend limit does not justify creating more sessions to evade it or asking the consumer to manage policy; finish from available evidence and disclose any research limitation. This is a per-session estimate cap, not reconciled billing or an account-wide quota.
+
+The audit records `intent_authorized` with `observed` provenance and `backend_policy` as its source. It does not claim a human approved the intent. Commercial sharing remains off. Manually recorded operator sessions retain their existing explicit acceptance flow; old pending proposals are not silently authorized by this change.
 
 Each provider operation requires a request key. Reuse the **same key and arguments** after a transport failure. Reusing a key with different arguments is rejected. An in-flight replay can return a running receipt; inspect the existing session/evidence instead of starting a new paid operation. A process interrupted before settlement returns an interrupted receipt and is not silently retried.
 
 Output submission also uses a request key. Retrying an older submission returns the receipt for that original version, even if a newer output exists.
 
-## Two approval layers
+## Backend policy and host permissions
 
-The APILayer operator accepts a particular intent and budget. Separately, the agent host may require approval to invoke tools. One does not override the other.
+APILayer authorizes new MCP sessions automatically using server-managed policy. Separately, the agent host may require permission to invoke tools. Backend authorization does not change the host's permissions. No per-request APILayer approval step belongs in the consumer conversation.
 
 In noninteractive Codex runs, a host policy that disallows approval prompts can block a provider tool before APILayer receives it. The recorded Codex integration test encountered this and retained the incomplete first output. The subsequent bounded test authorized only its specific provider tools for that invocation using per-tool `approval_mode="approve"` overrides; it did not change global host permissions.
 

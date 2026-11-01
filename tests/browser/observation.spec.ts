@@ -57,6 +57,37 @@ async function nav(page: any, name: string) {
   await expect(page.getByRole("dialog")).toHaveCount(0);
 }
 
+test("backend-authorized sessions show evidence without a consumer approval step", async ({
+  page,
+  request,
+}) => {
+  const { budgetMicros: _budget, ...intent } = proposal;
+  const response = await request.post("/api/observations/agent-sessions", {
+    data: intent,
+  });
+  expect(response.status()).toBe(201);
+  const s = await response.json();
+  expect(s.authorizationSource).toBe("backend_policy");
+  await output(request, s);
+  await page.goto(`/#sessions/${s.id}`);
+  await expect(
+    page.getByRole("heading", { name: proposal.title, exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Accept intent & budget" }),
+  ).toHaveCount(0);
+  await expect(page.getByText(/Backend authorized/)).toBeVisible();
+  await page.goto(`/#sessions/${s.id}/trace`);
+  await expect(
+    page.getByText("Backend authorization", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText(
+      "Session authorized automatically under backend spending policy.",
+    ),
+  ).toBeVisible();
+});
+
 test("records and approves intent, receives an output, evaluates it, and opens a case", async ({
   page,
   request,

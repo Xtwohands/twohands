@@ -10,6 +10,7 @@ import {
   Observatory,
   ObservationError,
   sessionInput,
+  agentSessionInput,
   callInput,
   outcomeInput,
   evaluationInput,
@@ -95,6 +96,14 @@ export function observationRoutes(app: Express, obs: Observatory) {
       res
         .status(201)
         .json(obs.create(sessionInput.parse(req.body), "operator_entered")),
+    ),
+  );
+  app.post(
+    "/api/observations/agent-sessions",
+    route((req, res) =>
+      res
+        .status(201)
+        .json(obs.createAgentSession(agentSessionInput.parse(req.body))),
     ),
   );
   app.post(
@@ -225,6 +234,8 @@ export function observationRoutes(app: Express, obs: Observatory) {
         id: s.id,
         intentHash: s.intentHash,
         approvedAt: s.approvedAt,
+        authorizationSource:
+          s.authorizationSource ?? (s.approvedAt ? "workspace_operator" : null),
         status: s.status,
         createdAt: s.createdAt,
         estimatedMicros: s.spentMicros,

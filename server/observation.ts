@@ -35,6 +35,8 @@ export const sessionInput = z
     host: text(100).default("External agent"),
   })
   .strict();
+// Research spending is backend policy, never an agent/consumer input.
+export const agentSessionInput = sessionInput.omit({ budgetMicros: true });
 export const callInput = z
   .object({
     tool: z.enum(["exa_search", "tavily_search", "firecrawl_extract"]),
@@ -118,6 +120,7 @@ export class Observatory {
   create(
     input: z.infer<typeof sessionInput>,
     source: ObservationSession["modelSource"],
+    backendAuthorized = false,
   ) {
     const data = sessionInput.parse(input);
     if (
@@ -139,8 +142,11 @@ export class Observatory {
       id: this.db.newId(),
       intentHash,
       modelSource: source,
-      status: "awaiting_approval",
-      approvedAt: null,
+      status: backendAuthorized ? "active" : "awaiting_approval",
+      approvedAt: backendAuthorized ? at : null,
+      ...(backendAuthorized
+        ? { authorizationSource: "backend_policy" as const }
+        : {}),
       spentMicros: 0,
       reservedMicros: 0,
       createdAt: at,
@@ -161,14 +167,29 @@ export class Observatory {
           objective: s.objective,
           criteria,
           constraints: s.constraints,
-          budgetMicros: s.budgetMicros,
+          ...(backendAuthorized ? {} : { budgetMicros: s.budgetMicros }),
           model: s.model,
           modelSource: source,
           host: s.host,
         },
       );
+      if (backendAuthorized)
+        this.db.event(s.id, "intent_authorized", "observed", {
+          intentHash: s.intentHash,
+          budgetMicros: s.budgetMicros,
+          policy: "agent-session-budget-v1",
+          authorizationSource: "backend_policy",
+        });
     });
     return s;
+  }
+  createAgentSession(input: z.infer<typeof agentSessionInput>) {
+    const data = agentSessionInput.parse(input);
+    return this.create(
+      { ...data, budgetMicros: config.agentSessionBudgetMicros },
+      "agent_reported",
+      true,
+    );
   }
   approve(id: string, intentHash: string) {
     return this.db.transaction(() => {
@@ -181,6 +202,7 @@ export class Observatory {
       if (!s.approvedAt) {
         s.approvedAt = new Date().toISOString();
         s.status = "active";
+        s.authorizationSource = "workspace_operator";
         this.db.save(s);
         this.db.event(id, "intent_approved", "workspace_review", {
           intentHash,
