@@ -32,19 +32,28 @@ import { Inspector } from "./components/Inspector";
 import { AddEvidence, TaskPrivacy } from "./components/TaskControls";
 import { Intelligence } from "./components/Intelligence";
 type Screen = "workspace" | "inspector" | "intelligence";
+function readRoute() {
+  const [view, id] = location.hash.slice(1).split("/");
+  return {
+    screen: (["workspace", "inspector", "intelligence"].includes(view)
+      ? view
+      : "workspace") as Screen,
+    id: id || undefined,
+  };
+}
 export function App() {
-  const [screen, setScreen] = useState<Screen>(() => {
-    const view = location.hash.slice(1).split("/")[0];
-    return ["workspace", "inspector", "intelligence"].includes(view)
-      ? (view as Screen)
-      : "workspace";
-  });
+  const [screen, setScreen] = useState<Screen>(() => readRoute().screen);
   const [health, setHealth] = useState<ServerHealth>();
   const [tasks, setTasks] = useState<TaskSummary[]>([]);
   const [task, setTask] = useState<TaskDetail>();
-  const selectedId = useRef<string | undefined>(
-    location.hash.slice(1).split("/")[1],
+  const [selectedTaskId, setSelectedTaskId] = useState<string | undefined>(
+    () => readRoute().id,
   );
+  const selectedId = useRef<string | undefined>(readRoute().id);
+  const setSelection = useCallback((id: string | undefined) => {
+    selectedId.current = id;
+    setSelectedTaskId(id);
+  }, []);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
@@ -105,16 +114,23 @@ export function App() {
   useEffect(() => {
     void refresh();
   }, [refresh]);
-  const loadTask = useCallback(async (id: string, selection = false) => {
-    if (selection) selectedId.current = id;
-    try {
-      const data = await api<TaskDetail>(`/tasks/${id}`);
-      if (selectedId.current === id)
-        setTask((current) => chooseTaskSnapshot(current, data));
-    } catch (e) {
-      if (selectedId.current === id) setError((e as Error).message);
-    }
-  }, []);
+  const loadTask = useCallback(
+    async (id: string, selection = false) => {
+      if (selection) {
+        setSelection(id);
+        setTask((current) => (current?.id === id ? current : undefined));
+        setError("");
+      }
+      try {
+        const data = await api<TaskDetail>(`/tasks/${id}`);
+        if (selectedId.current === id)
+          setTask((current) => chooseTaskSnapshot(current, data));
+      } catch (e) {
+        if (selectedId.current === id) setError((e as Error).message);
+      }
+    },
+    [setSelection],
+  );
   useEffect(() => {
     if (!task || task.status !== "running") return;
     const timer = setInterval(() => {
@@ -124,19 +140,41 @@ export function App() {
     return () => clearInterval(timer);
   }, [task?.id, task?.status, loadTask, refresh]);
   useEffect(() => {
-    const id = location.hash.slice(1).split("/")[1];
+    const id = readRoute().id;
     if (id) void loadTask(id);
   }, [loadTask]);
+  const lastRoute = useRef(location.hash);
+  const routeInitialized = useRef(false);
   useEffect(() => {
-    history.replaceState(
-      null,
-      "",
-      `#${screen}${task?.id || selectedId.current ? `/${task?.id || selectedId.current}` : ""}`,
-    );
-  }, [screen, task?.id]);
+    function restoreRoute() {
+      if (lastRoute.current === location.hash) return;
+      lastRoute.current = location.hash;
+      const route = readRoute();
+      setSelection(route.id);
+      setScreen(route.screen);
+      setTask((current) => (current?.id === route.id ? current : undefined));
+      setError("");
+      if (route.id) void loadTask(route.id);
+    }
+    window.addEventListener("popstate", restoreRoute);
+    window.addEventListener("hashchange", restoreRoute);
+    return () => {
+      window.removeEventListener("popstate", restoreRoute);
+      window.removeEventListener("hashchange", restoreRoute);
+    };
+  }, [loadTask, setSelection]);
+  useEffect(() => {
+    const hash = `#${screen}${selectedTaskId ? `/${selectedTaskId}` : ""}`;
+    if (location.hash !== hash) {
+      if (routeInitialized.current) history.pushState(null, "", hash);
+      else history.replaceState(null, "", hash);
+    }
+    lastRoute.current = hash;
+    routeInitialized.current = true;
+  }, [screen, selectedTaskId]);
   async function select(id: string) {
-    await loadTask(id, true);
     setScreen("workspace");
+    await loadTask(id, true);
   }
   async function run(query?: string) {
     if (!task) return;
@@ -172,6 +210,12 @@ export function App() {
     health && Object.values(health.providers).filter(Boolean).length;
   const searchReady =
     health && (health.providers.exa || health.providers.tavily);
+  function startResearch() {
+    setSelection(undefined);
+    setTask(undefined);
+    setScreen("workspace");
+    setError("");
+  }
   return (
     <div className="app-shell">
       <aside className="sidebar">
@@ -207,14 +251,7 @@ export function App() {
         <div className="sidebar-divider" />
         <div className="side-heading">
           <span>RECENT RESEARCH</span>
-          <button
-            aria-label="New research"
-            onClick={() => {
-              selectedId.current = undefined;
-              setTask(undefined);
-              setScreen("workspace");
-            }}
-          >
+          <button aria-label="New research" onClick={startResearch}>
             <Plus size={15} />
           </button>
         </div>
@@ -316,7 +353,23 @@ export function App() {
                   DEMO V1 <span>•</span> LIVE APIS ONLY
                 </span>
               </div>
-              {!task ? (
+              {!task && selectedTaskId ? (
+                <div className="panel empty-state" role="status">
+                  <h3>
+                    {error
+                      ? "Research session unavailable"
+                      : "Loading research session…"}
+                  </h3>
+                  <p>
+                    {error
+                      ? "Choose another recent session or start new research."
+                      : "Retrieving the saved intent and evidence trail."}
+                  </p>
+                  <button className="button secondary" onClick={startResearch}>
+                    New research
+                  </button>
+                </div>
+              ) : !task ? (
                 <IntentForm
                   health={health}
                   onCreate={async (body) => {
@@ -353,10 +406,7 @@ export function App() {
                     </div>
                     <button
                       className="button secondary"
-                      onClick={() => {
-                        selectedId.current = undefined;
-                        setTask(undefined);
-                      }}
+                      onClick={startResearch}
                     >
                       {" "}
                       <Plus size={15} />
@@ -649,8 +699,10 @@ export function App() {
                         onRefresh={() => loadTask(task.id)}
                         onError={setError}
                         onDeleted={() => {
-                          selectedId.current = undefined;
-                          setTask(undefined);
+                          if (selectedId.current === task.id) {
+                            setSelection(undefined);
+                            setTask(undefined);
+                          }
                           void refresh();
                         }}
                       />
