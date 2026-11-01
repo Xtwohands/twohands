@@ -160,6 +160,7 @@ export async function scrape(url: string): Promise<{
 }
 async function request(endpoint: string, provider: ProviderId, body: unknown) {
   let response: Response;
+  const signal = AbortSignal.timeout(config.timeoutMs);
   try {
     response = await fetch(endpoint, {
       method: "POST",
@@ -172,7 +173,7 @@ async function request(endpoint: string, provider: ProviderId, body: unknown) {
             : { Authorization: `Bearer ${config.keys[provider]}` }),
       },
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(config.timeoutMs),
+      signal,
       redirect: "error",
     });
   } catch (e) {
@@ -210,6 +211,9 @@ async function request(endpoint: string, provider: ProviderId, body: unknown) {
     if (!json || typeof json !== "object") throw new Error("Invalid response");
     return { response, json };
   } catch {
-    throw new ProviderError("invalid_response", response.status);
+    throw new ProviderError(
+      signal.aborted ? "timeout" : "invalid_response",
+      response.status,
+    );
   }
 }
