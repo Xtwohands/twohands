@@ -1,11 +1,13 @@
 import express from "express";
+import { sanitizedEventData } from "./sanitized.js";
 import { analytics } from "./analytics.js";
 import { randomUUID, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
-import { config } from "./config.js";
+import { config, providerAuthMode } from "./config.js";
 import { Store } from "./store.js";
 import { Engine } from "./engine.js";
 import type { Task } from "./types.js";
+import { publicEvidenceUrl } from "./url-policy.js";
 import { acceptedOrganizations, resultCsv } from "./results.js";
 const domain = z
   .string()
@@ -113,10 +115,17 @@ export function createApp(store: Store, engine = new Engine(store)) {
     res.json({
       ok: true,
       providers: engine.available(),
+      providerAuth: Object.fromEntries(
+        (["exa", "tavily", "firecrawl"] as const).map((p) => [
+          p,
+          engine.available()[p] ? providerAuthMode(p) : "unconfigured",
+        ]),
+      ),
       estimates: config.prices,
       rateCardVersion: config.rateCardVersion,
       policyVersion: config.policyVersion,
       minCohort: config.minCohort,
+      providerIssues: engine.providerIssues(),
     }),
   );
   app.get("/api/tasks", (_req, res) => res.json(store.tasks().map(publicTask)));
@@ -173,6 +182,114 @@ export function createApp(store: Store, engine = new Engine(store)) {
       organizations: acceptedOrganizations(task),
     });
   });
+  app.post("/api/tasks/:id/sources", (req, res) => {
+    const task = store.get(req.params.id);
+    if (!task) {
+      res.status(404).json({ error: "Task not found" });
+      return;
+    }
+    if (engine.active.has(task.id)) {
+      res.status(409).json({
+        error: "Wait for the active operation to finish before adding evidence",
+      });
+      return;
+    }
+    const parsed = z
+      .object({
+        url: z.string().trim().max(4096),
+        title: z.string().trim().max(200).optional(),
+      })
+      .safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: "Provide a valid evidence URL" });
+      return;
+    }
+    let url: string;
+    try {
+      url = publicEvidenceUrl(parsed.data.url, task.intent.domains);
+    } catch (e) {
+      res.status(400).json({ error: (e as Error).message });
+      return;
+    }
+    const existing = task.sources.find((s) => s.url === url);
+    if (existing) {
+      res.json(existing);
+      return;
+    }
+    if (task.sources.filter((s) => s.provider === "user").length >= 20) {
+      res
+        .status(409)
+        .json({ error: "Limit of 20 manually supplied evidence URLs reached" });
+      return;
+    }
+    const source = {
+      id: randomUUID(),
+      title: parsed.data.title || new URL(url).hostname,
+      url,
+      snippet: "",
+      provider: "user" as const,
+      callId: null,
+      contentVersion: 1,
+    };
+    task.sources.push(source);
+    task.updatedAt = new Date().toISOString();
+    store.transaction(() => {
+      store.save(task);
+      store.event(task.id, "evidence_added", {
+        sourceId: source.id,
+        url,
+        origin: "user",
+        note: "User-supplied URL; no provider request or verified content yet",
+      });
+    });
+    res.status(201).json(source);
+  });
+  app.post("/api/tasks/:id/privacy", (req, res) => {
+    const task = store.get(req.params.id);
+    if (!task) {
+      res.status(404).json({ error: "Task not found" });
+      return;
+    }
+    const parsed = z.object({ consent: z.boolean() }).safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: "Provide an explicit consent choice" });
+      return;
+    }
+    task.intent.consent = parsed.data.consent;
+    task.updatedAt = new Date().toISOString();
+    store.transaction(() => {
+      store.save(task);
+      store.event(task.id, "consent_updated", {
+        consent: parsed.data.consent,
+        scope: parsed.data.consent
+          ? "de-identified local aggregates"
+          : "local task storage only",
+      });
+    });
+    res.json({ ok: true, consent: task.intent.consent });
+  });
+  app.post("/api/tasks/:id/delete", (req, res) => {
+    const task = store.get(req.params.id);
+    if (!task) {
+      res.status(404).json({ error: "Task not found" });
+      return;
+    }
+    if (req.body?.confirmTaskId !== task.id) {
+      res.status(400).json({
+        error: "Confirm the exact task ID to delete its local history",
+      });
+      return;
+    }
+    if (engine.active.has(task.id) || task.reservedMicros > 0) {
+      res.status(409).json({
+        error:
+          "Stop the active operation and let its ledger settle before deleting",
+      });
+      return;
+    }
+    store.db.prepare("DELETE FROM tasks WHERE id=?").run(task.id);
+    res.json({ ok: true });
+  });
   app.post("/api/tasks/:id/run", (req, res) => {
     const task = store.get(req.params.id);
     if (!task) {
@@ -204,7 +321,7 @@ export function createApp(store: Store, engine = new Engine(store)) {
     ) {
       res.status(409).json({
         error:
-          "Task safety cap of 50 paid attempts reached. Create a new task to continue.",
+          "Task safety cap of 50 provider attempts reached. Create a new task to continue.",
       });
       return;
     }
@@ -263,7 +380,11 @@ export function createApp(store: Store, engine = new Engine(store)) {
       return;
     }
     if (!engine.available().firecrawl) {
-      res.status(409).json({ error: "Firecrawl is not configured" });
+      res.status(409).json({
+        error:
+          engine.providerIssues().firecrawl ||
+          "Configure FIRECRAWL_API_KEY or explicitly enable FIRECRAWL_ALLOW_KEYLESS for capped free extraction",
+      });
       return;
     }
     if (engine.active.has(task.id) || engine.active.size >= 3) {
@@ -304,6 +425,9 @@ export function createApp(store: Store, engine = new Engine(store)) {
         organization: z.string().trim().max(120),
         criteria: z.record(z.string(), z.enum(["pass", "fail", "unknown"])),
         disposition: z.enum(["accepted", "rejected", "pending"]),
+        evidenceVersions: z
+          .record(z.string().uuid(), z.number().int().min(1))
+          .optional(),
         note: z.string().trim().max(2000),
         evidence: z
           .record(z.string(), z.array(z.string().uuid()).min(1).max(20))
@@ -314,7 +438,12 @@ export function createApp(store: Store, engine = new Engine(store)) {
       res.status(400).json({ error: "Invalid assessment" });
       return;
     }
-    const a = parsed.data;
+    const a = {
+      ...parsed.data,
+      updatedAt: new Date().toISOString(),
+      evidenceVersions:
+        parsed.data.evidenceVersions || ({} as Record<string, number>),
+    };
     if (
       !task.sources.some((s) => s.id === a.sourceId) ||
       Object.keys(a.criteria).length !== task.intent.criteria.length ||
@@ -352,6 +481,45 @@ export function createApp(store: Store, engine = new Engine(store)) {
     }
     a.evidence = Object.fromEntries(
       task.intent.criteria.map((c) => [c, a.evidence?.[c] || [a.sourceId]]),
+    );
+    const referenced = Object.values(a.evidence).flat();
+    if (
+      a.disposition === "accepted" &&
+      referenced.some(
+        (id) =>
+          a.evidenceVersions[id] !==
+          (task.sources.find((s) => s.id === id)!.contentVersion ?? 1),
+      )
+    ) {
+      res.status(409).json({
+        error:
+          "Evidence changed or its version was not supplied. Reload the task and review the current evidence before accepting.",
+      });
+      return;
+    }
+    if (
+      a.disposition === "accepted" &&
+      referenced.some((id) => {
+        const source = task.sources.find((s) => s.id === id)!;
+        return (
+          source.extraction?.pageStatus !== undefined &&
+          source.extraction.pageStatus >= 400
+        );
+      })
+    ) {
+      res.status(409).json({
+        error:
+          "A referenced page returned an HTTP error. Replace or re-extract that evidence before accepting.",
+      });
+      return;
+    }
+    a.evidenceVersions = Object.fromEntries(
+      Object.values(a.evidence)
+        .flat()
+        .map((id) => [
+          id,
+          task.sources.find((s) => s.id === id)!.contentVersion ?? 1,
+        ]),
     );
     task.assessments = task.assessments
       .filter((v) => v.sourceId !== a.sourceId)
@@ -393,42 +561,7 @@ export function createApp(store: Store, engine = new Engine(store)) {
       callId: e.callId,
       type: e.type,
       at: e.at,
-      ...(e.type === "provider_candidates"
-        ? {
-            candidates: e.data.candidates.map((c: any) => ({
-              provider: c.provider,
-              eligible: c.eligible,
-              reasons: c.reasons,
-              score: c.score,
-              components: c.components,
-              insufficientData: c.insufficientData,
-            })),
-          }
-        : {}),
-      ...Object.fromEntries(
-        [
-          "invocationId",
-          "provider",
-          "policyVersion",
-          "rateCardVersion",
-          "estimateMicros",
-          "chargeType",
-          "billingStatus",
-          "httpStatus",
-          "latencyMs",
-          "resultCount",
-          "success",
-          "pass",
-          "usable",
-          "returned",
-          "taskCriteria",
-          "status",
-          "evaluator",
-          "usage",
-        ]
-          .filter((k) => Object.hasOwn(e.data, k))
-          .map((k) => [k, e.data[k]]),
-      ),
+      ...sanitizedEventData(e.data, e.type),
     }));
     res.setHeader(
       "Content-Disposition",

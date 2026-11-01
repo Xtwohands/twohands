@@ -8,11 +8,21 @@ export class Store {
     if (path !== ":memory:")
       mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
     this.db = new DatabaseSync(path);
-    this.db.exec(`PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;
+    try {
+      this.db
+        .exec(`PRAGMA locking_mode=EXCLUSIVE; PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;
       CREATE TABLE IF NOT EXISTS tasks(id TEXT PRIMARY KEY, body TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS events(id INTEGER PRIMARY KEY AUTOINCREMENT, task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE, call_id TEXT, type TEXT NOT NULL, at TEXT NOT NULL, data TEXT NOT NULL);
       CREATE INDEX IF NOT EXISTS events_task ON events(task_id,id);
       CREATE UNIQUE INDEX IF NOT EXISTS event_ledger_once ON events(call_id,type) WHERE call_id IS NOT NULL AND type IN ('budget_reserved','budget_settled','provider_request','provider_response');`);
+    } catch (error) {
+      this.db.close();
+      if (error instanceof Error && /locked|busy/i.test(error.message))
+        throw new Error(
+          "Workspace database is already in use. Stop the other server or maintenance process before retrying.",
+        );
+      throw error;
+    }
   }
   save(task: Task) {
     this.db
@@ -151,8 +161,12 @@ export class Store {
               {
                 provider: pending.data.provider,
                 estimateMicros: pending.data.estimateMicros,
-                chargeType: "estimate",
-                billingStatus: "unknown",
+                chargeType: pending.data.chargeType || "estimate",
+                authMode: pending.data.authMode,
+                billingStatus:
+                  pending.data.authMode === "keyless"
+                    ? "keyless-free-tier"
+                    : "unknown",
                 rateCardVersion: pending.data.rateCardVersion,
               },
               pending.callId,

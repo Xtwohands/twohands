@@ -2254,3 +2254,110 @@ footer > span:first-child {
     padding: 12px 15px;
   }
 }
+.supplied-evidence form {
+  padding: 18px 21px;
+}
+.supplied-evidence form > div {
+  display: flex;
+  gap: 9px;
+  align-items: center;
+  margin-top: 8px;
+}
+.supplied-evidence input {
+  flex: 1;
+  min-width: 0;
+}
+.supplied-evidence .tiny {
+  margin-top: 10px;
+}
+.privacy-checkbox {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  font-size: 10px;
+  line-height: 1.7;
+}
+.privacy-checkbox input {
+  accent-color: #087f65;
+  margin: 2px 0 0;
+}
+.privacy-controls .tiny {
+  margin-top: 11px;
+}
+.delete-task {
+  margin-top: 18px;
+  font-size: 9px;
+}
+.delete-confirm {
+  margin-top: 15px;
+  border: 1px solid #e9d9d1;
+  background: #fcf8f5;
+  padding: 11px;
+  border-radius: 5px;
+}
+.delete-confirm p {
+  font-size: 9px;
+  line-height: 1.8;
+  color: #93604f;
+}
+.delete-confirm > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 11px;
+}
+.delete-confirm .button {
+  font-size: 8px;
+  padding: 7px;
+  min-height: 30px;
+}
+.setup-link {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+  color: #366e59;
+  font-size: 9px;
+  margin-top: 6px;
+}
+.extraction-provenance {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+  margin: 12px 0 0 30px;
+  font-size: 9px;
+  color: #4c705c;
+}
+.page-error {
+  margin: 12px 0 0 30px;
+  border: 1px solid #ecd9c9;
+  border-radius: 5px;
+  background: #fcf5ee;
+  color: #8e5538;
+  padding: 10px 12px;
+  font-size: 10px;
+  line-height: 1.75;
+}
+.historical-banner {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  border: 1px solid #cfded6;
+  background: #edf5f0;
+  color: #3e6651;
+  padding: 15px 18px;
+  margin-bottom: 18px;
+  border-radius: 7px;
+}
+.historical-banner svg {
+  margin-top: 2px;
+}
+.historical-banner strong {
+  font-size: 11px;
+  font-weight: 550;
+}
+.historical-banner p {
+  font-size: 10px;
+  line-height: 1.8;
+  margin-top: 5px;
+  max-width: 770px;
+}

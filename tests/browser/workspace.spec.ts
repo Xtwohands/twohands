@@ -88,3 +88,43 @@ test("settings dialog supports keyboard closing and restores focus", async ({
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(opener).toBeFocused();
 });
+test("historical live recording replays without keys, paid calls, task creation or analytics contributions", async ({
+  page,
+  request,
+}) => {
+  const before = await (await request.get("/api/tasks")).json();
+  const paidRequests: string[] = [];
+  page.on("request", (r) => {
+    if (r.method() === "POST" && /\/api\/tasks/.test(r.url()))
+      paidRequests.push(r.url());
+  });
+  await page.goto("/#inspector");
+  await page
+    .getByRole("combobox", { name: "Inspect research session" })
+    .selectOption("recording:firecrawl-missing-page");
+  await expect(
+    page.getByText("Historical live recording · read only"),
+  ).toBeVisible();
+  await page
+    .getByRole("button", { name: /provider response.*HTTP 200/ })
+    .click();
+  await expect(page.getByLabel("Recorded event JSON")).toContainText(
+    '"pageStatus": 404',
+  );
+  await page.getByRole("button", { name: "Replay trace", exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: "Pause replay" }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Show full trace" }).click();
+  await expect(
+    page.getByRole("button", {
+      name: /extraction received.*unusable evidence/,
+    }),
+  ).toBeVisible();
+  expect(paidRequests).toEqual([]);
+  const after = await (await request.get("/api/tasks")).json();
+  expect(after.length).toBe(before.length);
+  expect((await (await request.get("/api/analytics")).json()).cohortSize).toBe(
+    0,
+  );
+});

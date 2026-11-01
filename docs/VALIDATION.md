@@ -11,7 +11,7 @@
 
 ## Automated verification
 
-Local verification: **38 unit/integration tests and 12 desktop/mobile browser scenarios passed**. `npm audit` reported zero vulnerabilities. GitHub CI also passes the build/test/browser job and the separate container job.
+Local verification: **62 unit/integration tests and 18 desktop/mobile browser scenarios passed**. `npm audit` reported zero vulnerabilities. GitHub CI also passes the build/test/browser job and the separate container job.
 
 - Strict TypeScript for client, server, and tests; browser and standalone Node production builds.
 - Unit/integration tests for normalized provider contracts, unknown signals, observed routing, budget reservations, fallback, compare mode, multi-query plans, errors/timeouts, domain enforcement, restart recovery, API validation/auth, content-free export, analytics gating, reviewed quality, and CSV escaping.
@@ -24,7 +24,7 @@ The fixture browser server intercepts only the three fixed provider URLs in its 
 
 ## Not claimed as complete
 
-No provider keys were provisioned in the build environment. Therefore real API acceptance calls, real provider performance, invoice reconciliation, and a live researched company list cannot be verified here. `npm run smoke:live` provides an explicit paid acceptance runner for when keys and a budget are available.
+No provider keys were provisioned in the build environment. Bounded real Firecrawl keyless extraction and an official Exa MCP probe succeeded; see [live evidence](LIVE_VALIDATION.md). The required Exa/Tavily REST acceptance calls, comparative provider performance, invoice reconciliation, and a verified live company list remain outstanding. `npm run smoke:live` provides an explicit paid acceptance runner for when keys and a budget are available.
 
 This version uses explicit user queries plus human evidence assessment. It does not autonomously discover private intent, infer funding from ungrounded snippets, or assert task completion based on an HTTP response. Search coverage is intentionally separate from substantive rubric verification.
 

@@ -20,6 +20,8 @@ npm start
 
 Open **http://127.0.0.1:3001**. With no keys, the app still saves intent, shows the inspector, and explains setup. It does **not** synthesize research or fill analytics with invented performance data.
 
+For a bounded extraction demo without account keys, explicitly set `FIRECRAWL_ALLOW_KEYLESS=true` in `.env`, restart, save an intent, and add a public HTTPS evidence link. Extract page uses Firecrawl's documented free keyless tier. It stops on refusal and has a default session cap of ten calls; it never silently upgrades to paid access. This does not enable Exa/Tavily search or satisfy their live acceptance checks.
+
 For development, `npm run dev` starts the API on port 3001 and Vite on **http://127.0.0.1:5173**. Provider credentials stay in the Node process; never use `VITE_` environment variables for them.
 
 ## What works
@@ -28,12 +30,16 @@ For development, `npm run dev` starts the API on port 3001 and Vite on **http://
 - **Live adapters:** Exa and Tavily search normalized into common sources; optional Firecrawl v2 page extraction as a separate capability. Keys present in configuration are labeled configured; access is only verified by an actual call.
 - **Deterministic routing:** capability eligibility, credential availability, estimated cost, observed latency/reliability, and fully reviewed outcome quality. Missing observations stay neutral and are flagged. Balanced, cost, and latency profiles are selectable.
 - **Budget controls:** integer USD micro-units, transactional reservation before each paid attempt, conservative settlement on errors/timeouts, task cap of 50 attempts, provider request limits, and a maximum of three active tasks. Compare mode explicitly opts into both paid search providers.
-- **Trace inspector:** append-only task/call events, candidate scores and exclusions, selected reasons, credential-redacted request arguments, response metadata, vendor-reported usage when available, budget ledger, fallback decisions, and human feedback.
+- **Trace inspector:** clearly labeled, read-only historical live recordings for key-free replay; append-only task/call events, candidate scores and exclusions, selected reasons, credential-redacted request arguments, response metadata, vendor-reported usage when available, budget ledger, fallback decisions, and human feedback.
 - **Evidence review:** pass/fail/unknown per criterion, different evidence links for different criteria, accepted/rejected/pending findings, deduplicated organization shortlist, and spreadsheet-safe CSV export.
-- **Provider intelligence:** only opted-in task aggregates; at least five contributing tasks before reporting and separate provider cohort suppression. No raw prompts, queries, evidence text, organization names, or source URLs in the analytics response.
+- **Provider intelligence:** only opted-in task aggregates; at least five contributing tasks before reporting and separate provider cohort suppression. No raw prompts, queries, evidence text, organization names, or source URLs in the analytics response. Consent can be withdrawn per task, and local task/history deletion has an explicit confirmation.
 - **Persistence and recovery:** local SQLite with WAL, restart reconciliation of in-flight estimates, graceful draining, a retention command, and sanitized trace exports.
 
+Known evidence URLs can be added without a search request. Extracted page status is tracked separately from provider API status; changed evidence requires re-review.
+
 The controlled agent executes an **explicit user-supplied plan**. It is not an autonomous LLM researcher. Search evidence is never automatically asserted to prove funding, activity, or relevance. HTTP success, evidence coverage, and human-reviewed task completion are separate observations.
+
+Without keys, open **Routing inspector** and choose **Historical live: API 200 / page 404**. It replays the captured, sanitized real call without creating a workspace task, making an API call, or contributing to analytics.
 
 ## A useful demo
 
@@ -46,7 +52,7 @@ The controlled agent executes an **explicit user-supplied plan**. It is not an a
 7. Export your reviewed company shortlist, or share a **sanitized** trace without task content.
 8. Analytics unlock after five opted-in tasks; small provider cohorts remain withheld.
 
-See [demo and validation status](docs/VALIDATION.md), [architecture and routing](docs/ARCHITECTURE.md), [API contract](docs/API.md), and [privacy/operations](docs/OPERATIONS.md).
+See [the test/improvement plan](docs/TEST_IMPROVEMENT_PLAN.md), [actual live validation evidence](docs/LIVE_VALIDATION.md), [demo and validation status](docs/VALIDATION.md), [architecture and routing](docs/ARCHITECTURE.md), [API contract](docs/API.md), and [privacy/operations](docs/OPERATIONS.md).
 
 ## Verification
 
@@ -66,7 +72,7 @@ npm run build
 LIVE_VALIDATION_BUDGET_USD=0.25 npm run smoke:live
 ```
 
-Stop the workspace server before running this direct-database check, then restart it to inspect the task. This command **makes paid calls**. It requires both real keys and an explicit cap sufficient for the configured estimates (default total $0.230). It stores an inspectable validation task, excludes it from provider analytics, and fails unless both providers produce ten successful responses. It has not been run in an environment without provider keys.
+Stop the workspace server before running this direct-database check, then restart it to inspect the task. This command **makes paid calls**. It requires both real keys and an explicit cap sufficient for the configured estimates (default total $0.250). It stores an inspectable validation task, excludes it from provider analytics, and fails unless both providers produce ten successful responses. It has not been run in an environment without provider keys.
 
 ## Deployment
 
@@ -74,6 +80,6 @@ The default is a single-user, local workspace. Set a long `API_TOKEN` before bin
 
 A non-root, multi-stage `Dockerfile` is included. Pass `API_TOKEN` (24+ characters), provider keys, and a persistent volume at `/app/data`; publish port 3001 behind HTTPS. `/healthz` is a minimal unauthenticated liveness endpoint. `/api/*` requires the token when configured.
 
-Run **one server process per SQLite database**. This version has a shared workspace token, not tenant isolation or per-user authorization. Avoid exposing it as a public SaaS service. All prices are configurable estimates, not vendor invoices; the hard budget applies to that estimate ledger. Set vendor-side spending limits as well.
+Run **one server process per SQLite database**; exclusive database ownership enforces this and prevents concurrent maintenance from changing a running server’s tasks. This version has a shared workspace token, not tenant isolation or per-user authorization. Avoid exposing it as a public SaaS service. All prices are configurable estimates, not vendor invoices; the hard budget applies to that estimate ledger. Set vendor-side spending limits as well.
 
 No x402, wallet custody, insurance claims, fabricated revenue, or provider willingness-to-pay assertions are included.

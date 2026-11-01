@@ -42,7 +42,7 @@ Plans contain up to five explicit queries. The runner issues them in sequence an
 ## Three different outcomes
 
 1. **API execution:** observed HTTP outcome and latency. A 200 response can contain an invalid payload or unusable evidence.
-2. **Search coverage:** at least three normalized sources, each with an excerpt of 80+ characters. This intentionally modest check says nothing about whether a company is active or funded. It is named and versioned `search-coverage-v1`.
+2. **Search coverage:** at least three distinct normalized source URLs, each with an excerpt of 80+ characters. This intentionally modest check says nothing about whether a company is active or funded. It is named and versioned `search-coverage-v2`.
 3. **Task evidence:** human pass/fail/unknown assessments against the explicit rubric. Acceptance requires an organization name, all criteria passing, and an evidence note. Evidence may differ by criterion. Unresolved evidence is unknown, not failed. The shortlist counts distinct normalized organization names, not URLs.
 
 Search execution marked complete never asserts that the company target is complete. The workspace reports both source counts and accepted organization counts.
@@ -55,9 +55,11 @@ All executed attempts retain their estimate, including HTTP errors, network fail
 
 The rate-card version includes a digest of the configured provider prices, so configuration changes remain distinguishable in historical traces.
 
+Known evidence URLs retain user-input provenance, separate from search provider returns. Firecrawl extraction stores its own call ID, access mode, and retrieved page status. Source versions protect against accepting stale reviews; content/page-state changes invalidate every dependent criterion.
+
 The database enforces one reserve, settlement, request, and response event per call ID. Settlement is idempotent. On restart, unmatched reservations become conservative settled estimates with unknown billing and interrupted-call events. Task history is append-only during normal operation; retention deletes whole expired tasks and cascades their events.
 
-This architecture supports one application process and one shared workspace. It has no distributed queue or multi-process coordination for the in-memory active-task and rate-limit state.
+This architecture supports one application process and one shared workspace. SQLite exclusive ownership blocks a second server or maintenance process before it can recover the live process’s tasks. It has no distributed queue or multi-process coordination for the in-memory active-task and rate-limit state.
 
 ## Actual vendor requests
 
