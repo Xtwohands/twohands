@@ -45,3 +45,11 @@ Started 1 November 2026, 12:22 UTC. Scope: one additional hour of implementation
 - Consent can be withdrawn immediately; local task/history deletion requires an explicit in-product confirmation and is blocked while requests are active or reserved.
 - SQLite exclusive ownership now prevents a second server or maintenance process from recovering a live process's tasks.
 - Browser testing caught and fixed delayed checkbox feedback in the consent control.
+
+- Request receipts now protect repeated /run and /fetch operations when clients reuse an Idempotency-Key. Failure responses are replayed; uncertain interrupted operations stop for review instead of automatically repeating a vendor request.
+- A real subprocess crash test validates SQLite/WAL recovery and interrupted-request receipts without contacting any vendor.
+- A delayed-response browser test proves that an older task snapshot cannot restore a company after a newer source change invalidated its acceptance.
+
+## Second-pass verification checkpoint
+
+71 unit/integration tests pass, including a real subprocess kill/restart test. The desktop/mobile suite has 20 passing scenarios, including historical replay without any provider operation, evidence invalidation, consent withdrawal/deletion, a page-404/API-200 distinction, and protection against delayed older task responses. Account-dependent Exa/Tavily REST acceptance remains blocked, with the exact key handoff described in LIVE_VALIDATION.md.

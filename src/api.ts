@@ -17,6 +17,9 @@ export async function api<T = any>(path: string, body?: unknown): Promise<T> {
     headers: {
       ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
       ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
+      ...(/\/(run|fetch)$/.test(path) && body !== undefined
+        ? { "Idempotency-Key": crypto.randomUUID() }
+        : {}),
     },
     ...(body !== undefined
       ? { method: "POST", body: JSON.stringify(body) }

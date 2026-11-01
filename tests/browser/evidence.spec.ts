@@ -103,3 +103,66 @@ test("provider HTTP 200 does not hide an extracted page HTTP 404", async ({
     '"pageStatus": 404',
   );
 });
+test("a delayed older task response cannot restore a company accepted before its evidence changed", async ({
+  page,
+  request,
+}) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Save intent" }).click();
+  await page
+    .getByLabel("Public HTTPS URL")
+    .fill("https://example.com/stale-response-test");
+  await page.getByRole("button", { name: "Add link", exact: true }).click();
+  const card = page.locator(".source-card").first();
+  await card.getByRole("button", { name: "Extract page", exact: true }).click();
+  await card.getByRole("button", { name: "Review evidence" }).click();
+  await card
+    .getByLabel("Organization name")
+    .fill("Test-only stale response case");
+  for (const criterion of [
+    "Currently operating",
+    "External funding evidence",
+    "Agent payments relevance",
+  ])
+    await card.getByLabel(criterion, { exact: true }).selectOption("pass");
+  await card
+    .getByLabel("Evidence note")
+    .fill("Test fixture assessment before the source changes.");
+  await card.getByRole("button", { name: "Accept organization" }).click();
+  await expect(page.locator(".company-item")).toHaveCount(1);
+  const taskId = new URL(page.url()).hash.split("/").at(-1)!;
+  const old = await (await request.get(`/api/tasks/${taskId}`)).json();
+  let release!: () => void;
+  let completed!: () => void;
+  const gate = new Promise<void>((r) => (release = r));
+  const finished = new Promise<void>((r) => (completed = r));
+  let intercepted = false;
+  await page.route(`**/api/tasks/${taskId}`, async (route) => {
+    if (route.request().method() === "GET" && !intercepted) {
+      intercepted = true;
+      await gate;
+      await route.fulfill({ json: old });
+      completed();
+    } else await route.continue();
+  });
+  await page.getByRole("button", { name: /Routing inspector/ }).click();
+  await page
+    .getByRole("combobox", { name: "Inspect research session" })
+    .selectOption(taskId);
+  await expect.poll(() => intercepted).toBe(true);
+  await page
+    .getByRole("button", { name: "Agent workspace", exact: true })
+    .click();
+  await card.getByRole("button", { name: "Extract page", exact: true }).click();
+  await expect(page.locator(".company-item")).toHaveCount(0);
+  release();
+  await finished;
+  await page.evaluate(
+    () =>
+      new Promise((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(resolve)),
+      ),
+  );
+  await expect(page.locator(".company-item")).toHaveCount(0);
+  await expect(card.locator(".badge")).toHaveText("pending");
+});

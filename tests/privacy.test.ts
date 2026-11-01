@@ -78,6 +78,10 @@ describe("consent withdrawal and deletion", () => {
     const deleted = createTask(store, { consent: true });
     const kept = createTask(store);
     store.event(deleted.id, "intent_created", { prompt: "private content" });
+    store.beginReceipt(deleted.id, "research.search", "delete-receipt", "hash");
+    store.finishReceipt(deleted.id, "research.search", "delete-receipt", 202, {
+      taskId: deleted.id,
+    });
     store.event(kept.id, "intent_created", { prompt: "other content" });
     expect(
       (
@@ -87,6 +91,9 @@ describe("consent withdrawal and deletion", () => {
       ).status,
     ).toBe(200);
     expect(store.get(deleted.id)).toBeUndefined();
+    expect(
+      store.receipt(deleted.id, "research.search", "delete-receipt"),
+    ).toBeUndefined();
     expect(store.events(deleted.id)).toEqual([]);
     expect(store.get(kept.id)).toBeDefined();
     expect(store.events(kept.id)).toHaveLength(1);

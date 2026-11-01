@@ -11,7 +11,7 @@
 
 ## Automated verification
 
-Local verification: **62 unit/integration tests and 18 desktop/mobile browser scenarios passed**. `npm audit` reported zero vulnerabilities. GitHub CI also passes the build/test/browser job and the separate container job.
+Local verification: **71 unit/integration tests and 20 desktop/mobile browser scenarios passed**. `npm audit` reported zero vulnerabilities. GitHub CI also passes the build/test/browser job and the separate container job.
 
 - Strict TypeScript for client, server, and tests; browser and standalone Node production builds.
 - Unit/integration tests for normalized provider contracts, unknown signals, observed routing, budget reservations, fallback, compare mode, multi-query plans, errors/timeouts, domain enforcement, restart recovery, API validation/auth, content-free export, analytics gating, reviewed quality, and CSV escaping.

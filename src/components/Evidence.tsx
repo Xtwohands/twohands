@@ -298,7 +298,11 @@ export function SourceCard({
             <ChevronDown size={12} />
           </button>
         )}
-        <button className="text-button" onClick={() => setOpen(!open)}>
+        <button
+          className="text-button"
+          disabled={busy}
+          onClick={() => setOpen(!open)}
+        >
           <ShieldCheck size={14} />
           {existing ? "Edit review" : "Review evidence"}
           <ChevronDown size={13} />
@@ -309,7 +313,11 @@ export function SourceCard({
             !health?.providers.firecrawl || busy || task.status === "running"
           }
           onClick={() => void extract()}
-          title="Paid Firecrawl extraction, within task budget"
+          title={
+            health?.providerAuth?.firecrawl === "keyless"
+              ? "Free keyless extraction, subject to allowance and session limits"
+              : "Firecrawl extraction, estimated against the task budget"
+          }
         >
           {busy ? (
             <LoaderCircle className="spin" size={13} />

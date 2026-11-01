@@ -14,6 +14,7 @@ export class Store {
       CREATE TABLE IF NOT EXISTS tasks(id TEXT PRIMARY KEY, body TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS events(id INTEGER PRIMARY KEY AUTOINCREMENT, task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE, call_id TEXT, type TEXT NOT NULL, at TEXT NOT NULL, data TEXT NOT NULL);
       CREATE INDEX IF NOT EXISTS events_task ON events(task_id,id);
+      CREATE TABLE IF NOT EXISTS request_receipts(task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,operation TEXT NOT NULL,request_key TEXT NOT NULL,args_hash TEXT NOT NULL,state TEXT NOT NULL,http_status INTEGER NOT NULL,body TEXT NOT NULL,PRIMARY KEY(task_id,operation,request_key));
       CREATE UNIQUE INDEX IF NOT EXISTS event_ledger_once ON events(call_id,type) WHERE call_id IS NOT NULL AND type IN ('budget_reserved','budget_settled','provider_request','provider_response');`);
     } catch (error) {
       this.db.close();
@@ -127,7 +128,63 @@ export class Store {
         };
       });
   }
+  receipt(taskId: string, operation: string, key: string) {
+    const row = this.db
+      .prepare(
+        "SELECT * FROM request_receipts WHERE task_id=? AND operation=? AND request_key=?",
+      )
+      .get(taskId, operation, key);
+    return row
+      ? {
+          argsHash: row.args_hash as string,
+          state: row.state as string,
+          status: Number(row.http_status),
+          body: JSON.parse(row.body as string),
+        }
+      : undefined;
+  }
+  beginReceipt(
+    taskId: string,
+    operation: string,
+    key: string,
+    argsHash: string,
+  ) {
+    this.db
+      .prepare("INSERT INTO request_receipts VALUES (?,?,?,?,?,?,?)")
+      .run(
+        taskId,
+        operation,
+        key,
+        argsHash,
+        "pending",
+        202,
+        JSON.stringify({ taskId, operation, pending: true }),
+      );
+  }
+  finishReceipt(
+    taskId: string,
+    operation: string,
+    key: string,
+    status: number,
+    body: object,
+  ) {
+    this.db
+      .prepare(
+        "UPDATE request_receipts SET state='complete',http_status=?,body=? WHERE task_id=? AND operation=? AND request_key=? AND state='pending'",
+      )
+      .run(status, JSON.stringify(body), taskId, operation, key);
+  }
   recover() {
+    this.db
+      .prepare(
+        "UPDATE request_receipts SET state='interrupted',http_status=409,body=? WHERE state='pending'",
+      )
+      .run(
+        JSON.stringify({
+          error:
+            "The previous operation was interrupted. Inspect its task trace before issuing a new request; it was not retried.",
+        }),
+      );
     for (const task of this.tasks())
       if (task.status === "running" || task.reservedMicros > 0)
         this.transaction(() => {

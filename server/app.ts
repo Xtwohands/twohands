@@ -1,7 +1,7 @@
 import express from "express";
 import { sanitizedEventData } from "./sanitized.js";
 import { analytics } from "./analytics.js";
-import { randomUUID, timingSafeEqual } from "node:crypto";
+import { randomUUID, timingSafeEqual, createHash } from "node:crypto";
 import { z } from "zod";
 import { config, providerAuthMode } from "./config.js";
 import { Store } from "./store.js";
@@ -111,6 +111,38 @@ export function createApp(store: Store, engine = new Engine(store)) {
     next();
   });
   app.use(express.json({ limit: "24kb" }));
+  function idempotency(
+    req: express.Request,
+    res: express.Response,
+    taskId: string,
+    operation: string,
+    args: unknown,
+  ) {
+    const key = req.get("Idempotency-Key");
+    if (!key) return { handled: false, key: undefined, hash: undefined };
+    if (!/^[a-zA-Z0-9._:-]{8,128}$/.test(key)) {
+      res.status(400).json({
+        error: "Idempotency-Key must be 8–128 opaque identifier characters",
+      });
+      return { handled: true };
+    }
+    const hash = createHash("sha256")
+      .update(JSON.stringify(args))
+      .digest("hex");
+    const receipt = store.receipt(taskId, operation, key);
+    if (receipt) {
+      if (receipt.argsHash !== hash) {
+        res.status(409).json({
+          error:
+            "This Idempotency-Key was already used for different arguments",
+        });
+      } else {
+        res.status(receipt.status).json({ ...receipt.body, replayed: true });
+      }
+      return { handled: true };
+    }
+    return { handled: false, key, hash };
+  }
   app.get("/api/health", (_req, res) =>
     res.json({
       ok: true,
@@ -303,6 +335,14 @@ export function createApp(store: Store, engine = new Engine(store)) {
       res.status(400).json({ error: "Invalid query" });
       return;
     }
+    const queries =
+      parsed.data.query ?? task.intent.queries ?? task.intent.query;
+    const receipt = idempotency(req, res, task.id, "research.search", {
+      queries,
+      domains: task.intent.domains,
+      mode: task.intent.mode,
+    });
+    if (receipt.handled) return;
     if (engine.active.has(task.id)) {
       res
         .status(409)
@@ -348,15 +388,26 @@ export function createApp(store: Store, engine = new Engine(store)) {
         .json({ error: "The remaining task budget cannot cover a search." });
       return;
     }
+    store.transaction(() => {
+      if (receipt.key)
+        store.beginReceipt(
+          task.id,
+          "research.search",
+          receipt.key,
+          receipt.hash!,
+        );
+      task.status = "running";
+      task.error = undefined;
+      task.updatedAt = new Date().toISOString();
+      store.save(task);
+    });
     engine.active.add(task.id);
-    task.status = "running";
-    task.error = undefined;
-    task.updatedAt = new Date().toISOString();
-    store.save(task);
-    void engine.execute(
-      task.id,
-      parsed.data.query ?? task.intent.queries ?? task.intent.query,
-    );
+    void engine.execute(task.id, queries).then(() => {
+      if (receipt.key)
+        store.finishReceipt(task.id, "research.search", receipt.key, 202, {
+          taskId: task.id,
+        });
+    });
     res.status(202).json({ taskId: task.id });
   });
   app.post("/api/tasks/:id/cancel", (req, res) => {
@@ -379,6 +430,10 @@ export function createApp(store: Store, engine = new Engine(store)) {
       res.status(400).json({ error: "Invalid source ID" });
       return;
     }
+    const receipt = idempotency(req, res, task.id, "research.fetch_url", {
+      sourceId: parsed.data.sourceId,
+    });
+    if (receipt.handled) return;
     if (!engine.available().firecrawl) {
       res.status(409).json({
         error:
@@ -393,25 +448,47 @@ export function createApp(store: Store, engine = new Engine(store)) {
       });
       return;
     }
-    engine.active.add(task.id);
     const previousStatus = task.status;
-    task.status = "running";
-    store.save(task);
+    store.transaction(() => {
+      if (receipt.key)
+        store.beginReceipt(
+          task.id,
+          "research.fetch_url",
+          receipt.key,
+          receipt.hash!,
+        );
+      task.status = "running";
+      store.save(task);
+    });
+    engine.active.add(task.id);
+    let responseStatus = 200;
+    let responseBody: Record<string, unknown> = { ok: true };
     try {
       await engine.fetchUrl(task, parsed.data.sourceId);
-      res.json({ ok: true });
     } catch (e) {
-      res
-        .status(400)
-        .json({ error: e instanceof Error ? e.message : "Extraction failed" });
+      responseStatus = 400;
+      responseBody = {
+        error: e instanceof Error ? e.message : "Extraction failed",
+      };
     } finally {
       engine.active.delete(task.id);
       engine.cancelled.delete(task.id);
       const fresh = store.get(task.id)!;
       fresh.status = previousStatus;
       fresh.updatedAt = new Date().toISOString();
-      store.save(fresh);
+      store.transaction(() => {
+        store.save(fresh);
+        if (receipt.key)
+          store.finishReceipt(
+            task.id,
+            "research.fetch_url",
+            receipt.key,
+            responseStatus,
+            responseBody,
+          );
+      });
     }
+    res.status(responseStatus).json(responseBody);
   });
   app.post("/api/tasks/:id/assessments", (req, res) => {
     const task = store.get(req.params.id);
