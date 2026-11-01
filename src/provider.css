@@ -19,7 +19,7 @@
 }
 .workspace-mode-switch a[aria-current="page"] {
   background: #343434;
-  color: #f0f0f0;
+  color: var(--brand-lavender);
   box-shadow: 0 1px 2px #0004;
 }
 .provider-page {
@@ -145,6 +145,7 @@
 }
 .company-tabs [data-slot="tabs-trigger"]::after {
   bottom: 0 !important;
+  background: var(--brand-orange);
 }
 .company-tabs [data-slot="tabs-content"] {
   display: grid;

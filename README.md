@@ -4,6 +4,8 @@ A general-purpose tool router and observation layer for **Claude, Codex, and oth
 
 The vector brand mark lives in [`public/octolab.svg`](public/octolab.svg) and is shared by the app logo and favicon. Existing MCP registrations and technical identifiers remain `apilayer` for compatibility.
 
+The interface uses dark neutral surfaces with restrained `#FF6A00` selection indicators and `#A8B4CF` logo, focus, and small state accents.
+
 The local MCP server works with Claude desktop and Codex CLI. Both have completed live research sessions through it. See [validation evidence](docs/OBSERVATION_VALIDATION.md) for the exact scope and limitations.
 
 The [product direction](docs/PRODUCT_DIRECTION.md) connects this evidence to future model evaluation, refund review, and consented tool-company feedback, and identifies what still needs to be established for each.
