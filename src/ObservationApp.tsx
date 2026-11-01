@@ -1109,16 +1109,6 @@ export function ObservationApp() {
                   Nothing is automatically sent or sold to tool companies.
                 </p>
               </Panel>
-              <Panel
-                title="Legacy research workspace"
-                description="The earlier company-research workflow and its saved runs, preserved for reference."
-              >
-                <Button variant="outline" asChild>
-                  <a href="/research/#workspace">
-                    Open legacy workspace <ArrowUpRight />
-                  </a>
-                </Button>
-              </Panel>
             </>
           )}
         </main>

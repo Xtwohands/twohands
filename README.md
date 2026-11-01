@@ -1,6 +1,6 @@
 # APILayer
 
-An observation workspace for agent intent, tool choices, evidence, and outcomes. Have the research conversation in **Claude, Codex, or another MCP host**. APILayer supplies explicit provider tools and records what happens; its dark grayscale dashboard is for inspection, evaluation, and review.
+A general-purpose tool router and observation layer for **Claude, Codex, and other MCP hosts**. People bring their own tasks and continue a free-flowing conversation with their AI. APILayer supplies provider tools and records intent, tool choices, evidence, and outcomes; it does not prescribe a task category or a fixed research workflow. Its dashboard is for inspection, evaluation, and review.
 
 The local MCP server works with Claude desktop and Codex CLI. Both have completed live research sessions through it. See [validation evidence](docs/OBSERVATION_VALIDATION.md) for the exact scope and limitations.
 
