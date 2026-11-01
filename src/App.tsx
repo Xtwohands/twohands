@@ -12,7 +12,6 @@ import {
   Fingerprint01 as Fingerprint,
   GitBranch01 as GitBranch,
   Globe02 as Globe2,
-  LayersThree01 as Layers3,
   Loading02 as LoaderCircle,
   Lock01 as LockKeyhole,
   Plus,
@@ -221,12 +220,15 @@ export function App() {
   return (
     <div className="app-shell">
       <aside className="sidebar">
-        <a className="brand" href="/" aria-label="APILayer home">
-          <span className="brand-icon">
-            <Layers3 size={21} />
-          </span>
-          API<span>Layer</span>
-          <span className="beta">LAB</span>
+        <a className="brand" href="/" aria-label="octolab home">
+          <img
+            className="brand-icon"
+            src="/octolab.svg"
+            alt=""
+            width="32"
+            height="32"
+          />
+          octolab
         </a>
         <div className="space-label">Research control room</div>
         <nav aria-label="Main navigation">
@@ -734,8 +736,8 @@ export function App() {
           )}
           <footer>
             <span>
-              <Layers3 size={13} />
-              APILayer{" "}
+              <img src="/octolab.svg" alt="" width="13" height="13" />
+              octolab{" "}
               <span className="muted">/ Intent & tool intelligence</span>
             </span>
             <span>Observed execution. Estimated cost. Evaluated outcomes.</span>

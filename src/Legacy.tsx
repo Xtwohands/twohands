@@ -8,7 +8,7 @@ export default function Legacy() {
         ← Observation dashboard
       </a>
       <div className="legacy-workflow-note">
-        Local research workflow · Provider choices here come from APILayer’s
+        Local research workflow · Provider choices here come from octolab’s
         deterministic router. External agent decisions appear in the observation
         dashboard.
       </div>

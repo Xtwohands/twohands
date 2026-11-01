@@ -4,7 +4,6 @@ import { ProviderLabView } from "./ProviderLabView";
 import "./provider.css";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  LayersTwo01,
   Grid01,
   BarChartSquare02,
   ShieldTick,
@@ -368,10 +367,8 @@ export function ObservationApp() {
   const sidebarContent = (
     <>
       <a href="#sessions" className="obs-brand">
-        <span>
-          <LayersTwo01 />
-        </span>
-        APILayer
+        <img src="/octolab.svg" alt="" width="32" height="32" />
+        octolab
       </a>
       <div className="workspace-mode-switch" aria-label="Dashboard view">
         <a
@@ -895,7 +892,7 @@ export function ObservationApp() {
                     <CheckCircle />
                     <strong>Observed behavior</strong>
                     <p>
-                      Tools offered through APILayer, actual calls, arguments,
+                      Tools offered through octolab, actual calls, arguments,
                       response status, timings, and usage.
                     </p>
                   </div>
@@ -973,8 +970,8 @@ export function ObservationApp() {
                 <div>
                   <h1>Connections & settings</h1>
                   <p>
-                    Your agent owns the conversation. APILayer observes the
-                    tools and outcomes.
+                    Your agent owns the conversation. octolab observes the tools
+                    and outcomes.
                   </p>
                 </div>
               </div>
@@ -1029,8 +1026,8 @@ export function ObservationApp() {
                     <div>
                       <span>3</span>
                       <p>
-                        Ask Claude or Codex to use APILayer. Sessions start
-                        automatically under the backend spending policy.
+                        Ask your agent to use the connected tools. Sessions
+                        start automatically under the backend spending policy.
                       </p>
                     </div>
                   </div>
@@ -1203,7 +1200,7 @@ function SessionView({
   const evaluation = s.evaluations
     .filter((e) => e.outcomeId === latest?.id)
     .at(-1);
-  const prompt = `Use the APILayer MCP tools for session ${s.id}. Read get_session first and follow its accepted intent and constraints. Discover tool options, choose providers yourself, and keep estimated tool spending within ${money(s.budgetMicros)}. Optional tool explanations should be concise decision summaries, not private reasoning. Submit your actual final answer with evidence call IDs using submit_outcome. Do not change consent or claim an independent evaluation.\n\nGoal: ${s.objective}`;
+  const prompt = `Use the connected apilayer MCP tools for session ${s.id}. Read get_session first and follow its accepted intent and constraints. Discover tool options, choose providers yourself, and keep estimated tool spending within ${money(s.budgetMicros)}. Optional tool explanations should be concise decision summaries, not private reasoning. Submit your actual final answer with evidence call IDs using submit_outcome. Do not change consent or claim an independent evaluation.\n\nGoal: ${s.objective}`;
   return (
     <>
       <div className="session-heading">
@@ -1701,7 +1698,7 @@ function SessionView({
                 title="Waiting for the delivered output"
                 action={<CopyButton text={prompt} label="Copy agent prompt" />}
               >
-                Your agent submits its final answer through APILayer. You can
+                Your agent submits its final answer through octolab. You can
                 then compare it with the original intent and record an
                 evaluation.
               </Empty>

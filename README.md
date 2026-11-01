@@ -1,6 +1,8 @@
-# APILayer
+# octolab
 
-A general-purpose tool router and observation layer for **Claude, Codex, and other MCP hosts**. People bring their own tasks and continue a free-flowing conversation with their AI. APILayer supplies provider tools and records intent, tool choices, evidence, and outcomes; it does not prescribe a task category or a fixed research workflow. Its dashboard is for inspection, evaluation, and review.
+A general-purpose tool router and observation layer for **Claude, Codex, and other MCP hosts**. People bring their own tasks and continue a free-flowing conversation with their AI. octolab supplies provider tools and records intent, tool choices, evidence, and outcomes; it does not prescribe a task category or a fixed research workflow. Its dashboard is for inspection, evaluation, and review.
+
+The vector brand mark lives in [`public/octolab.svg`](public/octolab.svg) and is shared by the app logo and favicon. Existing MCP registrations and technical identifiers remain `apilayer` for compatibility.
 
 The local MCP server works with Claude desktop and Codex CLI. Both have completed live research sessions through it. See [validation evidence](docs/OBSERVATION_VALIDATION.md) for the exact scope and limitations.
 

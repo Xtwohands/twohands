@@ -133,14 +133,10 @@ button:hover:not(:disabled) {
   color: #e0e0e0;
 }
 .brand-icon {
-  display: grid;
-  place-items: center;
-  width: 31px;
-  height: 33px;
-  background: #363636;
-  color: #bfbfbf;
-  border: 1px solid #595959;
-  border-radius: 8px;
+  display: block;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
   margin-right: 10px;
 }
 .beta {

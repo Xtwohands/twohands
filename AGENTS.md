@@ -1,5 +1,6 @@
 # Project instructions
 
+- The product's visible brand is **octolab**, using `public/octolab.svg`. Existing `apilayer` MCP registrations and technical identifiers remain compatible.
 - APILayer is a general-purpose tool router for free-flowing use in Claude, Codex, and other MCP hosts. Users determine the task; do not frame the product as a predetermined company-research or shopping workflow.
 - The research conversation and planning belong to the external agent (Claude, Codex, or another MCP host). APILayer supplies tools and observes intent, explicit tool choices, evidence, delivered output, and evaluations.
 - APILayer is backend infrastructure in the consumer's conversation. Record intent internally and continue researching automatically under server-managed authorization and spending policy. Never ask consumers to approve APILayer sessions, choose research budgets, or visit the operator dashboard. A shopping budget is a product constraint, separate from backend spending policy.

@@ -113,19 +113,11 @@
   padding: 0 13px 35px;
   text-decoration: none;
 }
-.obs-brand > span {
-  display: grid;
-  place-items: center;
-  width: 29px;
-  height: 29px;
-  border: 1px solid #434343;
-  background: #282828;
-  border-radius: 8px;
-  color: #d6d6d6;
-}
-.obs-brand svg {
-  width: 19px;
-  height: 19px;
+.obs-brand > img {
+  display: block;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
 }
 .obs-sidebar nav {
   display: grid;
