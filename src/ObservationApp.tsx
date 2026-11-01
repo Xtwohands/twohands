@@ -446,10 +446,6 @@ export function ObservationApp() {
           <Settings01 />
           Connections & settings
         </a>
-        <a href="/research/#workspace">
-          <ArrowUpRight />
-          Research tools
-        </a>
         <div className="workspace-status">
           <span className={health ? "status-dot online" : "status-dot"} />
           {health ? "Local server ready" : "Connecting to server"}
@@ -1112,6 +1108,16 @@ export function ObservationApp() {
                 <p className="field-hint">
                   Nothing is automatically sent or sold to tool companies.
                 </p>
+              </Panel>
+              <Panel
+                title="Legacy research workspace"
+                description="The earlier company-research workflow and its saved runs, preserved for reference."
+              >
+                <Button variant="outline" asChild>
+                  <a href="/research/#workspace">
+                    Open legacy workspace <ArrowUpRight />
+                  </a>
+                </Button>
               </Panel>
             </>
           )}

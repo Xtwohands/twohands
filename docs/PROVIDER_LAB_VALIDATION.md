@@ -50,6 +50,10 @@ Coverage includes forced selection, matching query inputs, backend run/day caps,
 
 The packaged container runs with network access disabled and no provider keys. Its checks cover authenticated lab endpoints, blocked unconfigured tests, demo isolation, and saved-plan persistence across container restart. Live requests above are reported separately from these fixtures.
 
+`npm run check` passed 164 tests across 22 files. The full desktop/mobile browser pass completed 93 checks with one intentional desktop skip of a mobile-only scenario; subsequent receipt-history and skipped-request checks passed on both viewports. Settings and mobile navigation checks also passed after moving the legacy workflow out of the main navigation. A fresh stdio MCP connection verified the eight-tool catalog, automatic session instructions, no consumer budget input, and provider-specific descriptions without invoking a provider.
+
+The isolated endurance run began at 23:03 UTC and was stopped early at the user's request to wrap up around 23:30 UTC. Its last recorded progress contained at least 107 completed cycles, 1,479 simulated provider executions, and 10 database reopens, with zero assertion failures and zero network requests. This was a partial run, not the planned full-hour completion. The process-kill recovery test and packaged restart checks passed separately. No production session or metric was created by these synthetic checks.
+
 ## Product limits
 
 The company experience is an operator-accessible local demo, not a deployed multi-tenant vendor portal. Demo data is labeled and stays separate from measured data. Organic company aggregates remain withheld unless enough sessions explicitly opt into commercial sharing; raw consumer tasks and outputs are not returned by the company-insights endpoint.
