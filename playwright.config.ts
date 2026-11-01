@@ -29,5 +29,11 @@ export default defineConfig({
       url: "http://127.0.0.1:3102",
       reuseExistingServer: false,
     },
+    {
+      command:
+        "API_TOKEN= FIXTURE_EXTRACTION_ONLY=true FIXTURE_PORT=3106 node --import tsx tests/fixtures/server.ts",
+      url: "http://127.0.0.1:3106",
+      reuseExistingServer: false,
+    },
   ],
 });

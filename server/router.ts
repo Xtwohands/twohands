@@ -68,15 +68,19 @@ export function candidates(
         a.provider.localeCompare(b.provider),
     );
 }
-export function coverage(sources: { snippet: string }[]) {
+export function coverage(sources: { snippet: string; url?: string }[]) {
   // This checks usable search evidence, never asserts activity, funding, or relevance.
-  const usable = sources.filter((s) => s.snippet.trim().length >= 80).length;
+  const usable = new Set(
+    sources
+      .filter((s) => s.snippet.trim().length >= 80)
+      .map((s, i) => s.url || `unlinked-${i}`),
+  ).size;
   return {
     pass: usable >= 3,
     usable,
     returned: sources.length,
-    criteria: "At least 3 results with 80+ characters of evidence",
+    criteria: "At least 3 unique source URLs with 80+ characters of evidence",
     taskCriteria: "unknown",
-    evaluator: "search-coverage-v1",
+    evaluator: "search-coverage-v2",
   };
 }

@@ -18,8 +18,16 @@ export interface Source {
   url: string;
   snippet: string;
   publishedAt?: string;
-  provider: ProviderId;
-  callId: string;
+  provider: ProviderId | "user";
+  callId: string | null;
+  contentVersion?: number;
+  extraction?: {
+    provider: "firecrawl";
+    callId: string;
+    at: string;
+    pageStatus?: number;
+    authMode: "api-key" | "keyless";
+  };
 }
 export interface Assessment {
   sourceId: string;
@@ -28,6 +36,8 @@ export interface Assessment {
   disposition: "accepted" | "rejected" | "pending";
   note: string;
   evidence?: Record<string, string[]>;
+  updatedAt?: string;
+  evidenceVersions?: Record<string, number>;
 }
 export interface Task {
   id: string;
@@ -77,6 +87,8 @@ export interface ServerHealth {
   rateCardVersion: string;
   policyVersion: string;
   minCohort: number;
+  providerIssues?: Partial<Record<ProviderId, string>>;
+  providerAuth?: Record<ProviderId, "api-key" | "keyless" | "unconfigured">;
 }
 export interface TaskSummary {
   id: string;

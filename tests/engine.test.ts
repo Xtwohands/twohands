@@ -276,3 +276,74 @@ describe("interruption and ledger invariants", () => {
     expect(store.get(t.id)?.status).toBe("partial");
   });
 });
+describe("reservation integrity and limits", () => {
+  it("rejects an orphan or mismatched settlement without changing the ledger balance", () => {
+    const t = createTask(store);
+    expect(() =>
+      engine.settle(t.id, "missing", "exa", 5000, { success: true }),
+    ).toThrow("reservation");
+    const estimate = engine.reserve(
+      t.id,
+      "exa",
+      "real-call",
+      "research.search",
+      {},
+    );
+    expect(() =>
+      engine.settle(t.id, "real-call", "tavily", estimate, { success: true }),
+    ).toThrow("reservation");
+    expect(store.get(t.id)).toMatchObject({
+      spentMicros: 0,
+      reservedMicros: estimate,
+    });
+  });
+  it("rolls back duplicate call reservations atomically", () => {
+    const t = createTask(store);
+    engine.reserve(t.id, "exa", "same-call", "research.search", {});
+    expect(() =>
+      engine.reserve(t.id, "exa", "same-call", "research.search", {}),
+    ).toThrow();
+    expect(store.get(t.id)?.reservedMicros).toBe(config.prices.exa);
+    expect(
+      store.events(t.id).filter((e) => e.type === "provider_request"),
+    ).toHaveLength(1);
+  });
+  it("enforces the provider attempt cap independently of remaining budget", () => {
+    const t = createTask(store, { budgetMicros: 1000000 });
+    for (let i = 0; i < 50; i++) {
+      engine.timestamps.clear();
+      const estimate = engine.reserve(
+        t.id,
+        "exa",
+        `call-${i}`,
+        "research.search",
+        {},
+      );
+      engine.settle(t.id, `call-${i}`, "exa", estimate, {
+        success: true,
+        httpStatus: 200,
+        latencyMs: 1,
+        resultCount: 0,
+      });
+    }
+    expect(() =>
+      engine.reserve(t.id, "exa", "call-51", "research.search", {}),
+    ).toThrow("50 provider attempts");
+    expect(store.get(t.id)?.spentMicros).toBe(config.prices.exa * 50);
+  });
+  it("enforces the rolling provider limit before creating a ledger entry", () => {
+    const t = createTask(store);
+    engine.timestamps.set(
+      "exa",
+      Array.from({ length: config.rpm }, () => Date.now()),
+    );
+    expect(() =>
+      engine.reserve(t.id, "exa", "limited", "research.search", {}),
+    ).toThrow("rate limit");
+    expect(store.get(t.id)).toMatchObject({
+      spentMicros: 0,
+      reservedMicros: 0,
+    });
+    expect(store.events(t.id)).toHaveLength(0);
+  });
+});

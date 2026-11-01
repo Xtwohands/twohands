@@ -11,12 +11,18 @@ import {
   RotateCcw,
   ShieldCheck,
 } from "lucide-react";
+import {
+  recordingIndex,
+  loadRecording,
+  type Recording,
+  type RecordingMetadata,
+} from "../recordings";
 import { money, type TaskDetail } from "../api";
 import type { TraceEvent, TaskSummary } from "../../server/types";
 import { ProviderMark } from "./shared";
 
 export function Inspector({
-  task,
+  task: activeTask,
   tasks,
   onSelect,
   onExport,
@@ -26,6 +32,46 @@ export function Inspector({
   onSelect: (id: string) => Promise<void>;
   onExport: () => Promise<void>;
 }) {
+  const [recordings, setRecordings] = useState<RecordingMetadata[]>([]);
+  const [recording, setRecording] = useState<Recording>();
+  const [recordingError, setRecordingError] = useState("");
+  const task = recording || activeTask;
+  useEffect(() => {
+    recordingIndex()
+      .then(setRecordings)
+      .catch((e) => setRecordingError(e.message));
+  }, []);
+  async function select(value: string) {
+    setRecordingError("");
+    if (value.startsWith("recording:")) {
+      const metadata = recordings.find((r) => `recording:${r.id}` === value);
+      if (!metadata) return;
+      try {
+        setRecording(await loadRecording(metadata));
+      } catch (e) {
+        setRecordingError((e as Error).message);
+      }
+    } else {
+      setRecording(undefined);
+      await onSelect(value);
+    }
+  }
+  async function download() {
+    if (!recording) {
+      await onExport();
+      return;
+    }
+    const url = URL.createObjectURL(
+      new Blob([JSON.stringify(recording.raw, null, 2)], {
+        type: "application/json",
+      }),
+    );
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${recording.metadata.id}-historical.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
   const [filter, setFilter] = useState("all");
   const [expanded, setExpanded] = useState<number | null>(null);
   const [replayCount, setReplayCount] = useState<number | null>(null);
@@ -73,9 +119,13 @@ export function Inspector({
               "budget_settled",
             ].includes(e.type)) ||
           (filter === "outcomes" &&
-            ["outcome_evaluated", "user_feedback", "run_finished"].includes(
-              e.type,
-            )),
+            [
+              "outcome_evaluated",
+              "extraction_received",
+              "assessment_invalidated",
+              "user_feedback",
+              "run_finished",
+            ].includes(e.type)),
       ) || [];
   return (
     <>
@@ -93,7 +143,7 @@ export function Inspector({
         <button
           className="button secondary"
           disabled={!task}
-          onClick={() => void onExport()}
+          onClick={() => void download()}
         >
           <Download size={15} />
           Sanitized export
@@ -103,11 +153,20 @@ export function Inspector({
         <select
           aria-label="Inspect research session"
           value={task?.id || ""}
-          onChange={(e) => void onSelect(e.target.value)}
+          onChange={(e) => void select(e.target.value)}
         >
           <option value="" disabled>
             Select a research session
           </option>
+          {recordings.length > 0 && (
+            <optgroup label="Historical live recordings — sanitized">
+              {recordings.map((r) => (
+                <option key={r.id} value={`recording:${r.id}`}>
+                  {r.title}
+                </option>
+              ))}
+            </optgroup>
+          )}
           {tasks.map((t) => (
             <option key={t.id} value={t.id}>
               {t.query} · {t.id.slice(0, 8)}
@@ -120,6 +179,26 @@ export function Inspector({
             : "NO SESSION SELECTED"}
         </span>
       </div>
+      {recordingError && (
+        <div className="info-strip">
+          {recordingError}. Current workspace traces remain available.
+        </div>
+      )}
+      {recording && (
+        <div className="historical-banner" role="status">
+          <LockKeyhole size={17} />
+          <div>
+            <strong>Historical live recording · read only</strong>
+            <p>
+              Captured{" "}
+              {new Date(recording.metadata.capturedAt).toLocaleString()}.
+              Sanitized real execution, not a new live call or current provider
+              benchmark. This recording does not populate workspace results or
+              provider analytics.
+            </p>
+          </div>
+        </div>
+      )}
       {task && (
         <div className="replay-controls">
           <button
@@ -301,8 +380,9 @@ export function Inspector({
           <div className="privacy-note">
             <LockKeyhole size={16} />
             <p>
-              This internal inspector contains task context. Share the sanitized
-              export when prompts and source content should stay private.
+              {recording
+                ? "This historical recording excludes prompts, source content, and evidence URLs. It cannot execute provider calls."
+                : "This internal inspector contains task context. Share the sanitized export when prompts and source content should stay private."}
             </p>
           </div>
         </div>
@@ -318,9 +398,11 @@ export function eventSummary(e: TraceEvent) {
   if (e.type === "provider_response")
     return `${d.provider} · ${d.httpStatus ? `HTTP ${d.httpStatus}` : "No HTTP response"} · ${d.latencyMs} ms · ${d.resultCount} sources`;
   if (e.type === "budget_settled" || e.type === "budget_reserved")
-    return `${money(d.estimateMicros)} estimated · ${d.provider}`;
+    return `${money(d.estimateMicros)} ${d.chargeType === "free-tier" ? "free tier" : "estimated"} · ${d.provider}`;
   if (e.type === "outcome_evaluated")
     return `${d.pass ? "Evidence coverage passed" : "Evidence coverage not met"} · task criteria ${d.taskCriteria}`;
+  if (e.type === "extraction_received")
+    return `Page ${d.pageStatus ? `HTTP ${d.pageStatus}` : "status unknown"} · ${d.evidenceUsable === false ? "unusable evidence" : "task criteria unknown"}`;
   if (e.type === "intent_created")
     return "Explicit rubric, spending cap, and consent scope recorded";
   return (

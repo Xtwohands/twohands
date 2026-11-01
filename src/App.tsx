@@ -22,12 +22,14 @@ import {
   Terminal,
   X,
 } from "lucide-react";
+import { chooseTaskSnapshot } from "./task-state";
 import type { ServerHealth, TaskSummary } from "../server/types";
 import { api, money, setToken, type TaskDetail } from "./api";
 import { Stat, ProviderMark } from "./components/shared";
 import { IntentForm } from "./components/IntentForm";
 import { CompanyResults, FollowUp, EvidenceList } from "./components/Evidence";
 import { Inspector } from "./components/Inspector";
+import { AddEvidence, TaskPrivacy } from "./components/TaskControls";
 import { Intelligence } from "./components/Intelligence";
 type Screen = "workspace" | "inspector" | "intelligence";
 export function App() {
@@ -83,17 +85,21 @@ export function App() {
       previous?.focus();
     };
   }, [showSettings]);
-  const refresh = useCallback(async () => {
+  const refreshGeneration = useRef(0);
+  const refresh = useCallback(async (clearError = false) => {
+    const generation = ++refreshGeneration.current;
     try {
       const [h, t] = await Promise.all([
         api<ServerHealth>("/health"),
         api<TaskSummary[]>("/tasks"),
       ]);
+      if (generation !== refreshGeneration.current) return;
       setHealth(h);
       setTasks(t);
-      setError("");
+      if (clearError) setError("");
     } catch (e) {
-      setError((e as Error).message);
+      if (generation === refreshGeneration.current)
+        setError((e as Error).message);
     }
   }, []);
   useEffect(() => {
@@ -103,9 +109,10 @@ export function App() {
     if (selection) selectedId.current = id;
     try {
       const data = await api<TaskDetail>(`/tasks/${id}`);
-      if (selectedId.current === id) setTask(data);
+      if (selectedId.current === id)
+        setTask((current) => chooseTaskSnapshot(current, data));
     } catch (e) {
-      setError((e as Error).message);
+      if (selectedId.current === id) setError((e as Error).message);
     }
   }, []);
   useEffect(() => {
@@ -356,6 +363,11 @@ export function App() {
                       New research
                     </button>
                   </div>
+                  {task.error && (
+                    <div className="error-banner" role="alert">
+                      {task.error}
+                    </div>
+                  )}
                   <div className="stats-grid">
                     <Stat
                       label="TASK BUDGET"
@@ -370,11 +382,11 @@ export function App() {
                       icon={<Activity size={17} />}
                     />
                     <Stat
-                      label="SOURCE EVIDENCE"
+                      label="SOURCE URLS"
                       value={String(
                         new Set(task.sources.map((s) => s.url)).size,
                       ).padStart(2, "0")}
-                      detail="Unique URLs returned by providers"
+                      detail="Unique supplied or returned URLs"
                       icon={<Globe2 size={17} />}
                     />
                     <Stat
@@ -436,6 +448,12 @@ export function App() {
                           </span>
                         </div>
                       </section>
+                      <AddEvidence
+                        key={`add-${task.id}`}
+                        task={task}
+                        onRefresh={() => loadTask(task.id)}
+                        onError={setError}
+                      />
                       <CompanyResults task={task} onError={setError} />
                       <section className="panel results-panel">
                         <div className="panel-heading">
@@ -467,7 +485,10 @@ export function App() {
                                 key={task.id}
                                 task={task}
                                 health={health}
-                                onRefresh={() => loadTask(task.id)}
+                                onRefresh={async () => {
+                                  await loadTask(task.id);
+                                  await refresh();
+                                }}
                                 onError={setError}
                               />
                             </div>
@@ -509,7 +530,9 @@ export function App() {
                       </section>
                       {task.sources.length > 0 && (
                         <FollowUp
-                          disabled={busy || task.status === "running"}
+                          disabled={
+                            busy || task.status === "running" || !searchReady
+                          }
                           onRun={run}
                         />
                       )}
@@ -528,7 +551,7 @@ export function App() {
                             <code>{health?.policyVersion}</code>
                           </div>
                           <div className="rail-row">
-                            <span>Paid attempts</span>
+                            <span>Provider attempts</span>
                             <b>
                               {
                                 task.events.filter(
@@ -559,8 +582,9 @@ export function App() {
                             />
                           </div>
                           <p className="tiny muted">
-                            Charges are configurable rate-card estimates. Vendor
-                            billing has not been reconciled.
+                            Keyless requests use the free tier. Other costs use
+                            the configured rate card and are estimates, not
+                            invoice charges.
                           </p>
                           <button
                             className="button secondary full"
@@ -619,16 +643,17 @@ export function App() {
                             ))}
                         </div>
                       </section>
-                      <div className="privacy-note">
-                        <LockKeyhole size={16} />
-                        <p>
-                          {task.intent.consent
-                            ? "This task contributes de-identified aggregates once cohort thresholds are met."
-                            : "This task is excluded from provider analytics."}{" "}
-                          Raw prompts and source content stay in the local
-                          workspace.
-                        </p>
-                      </div>
+                      <TaskPrivacy
+                        key={`privacy-${task.id}`}
+                        task={task}
+                        onRefresh={() => loadTask(task.id)}
+                        onError={setError}
+                        onDeleted={() => {
+                          selectedId.current = undefined;
+                          setTask(undefined);
+                          void refresh();
+                        }}
+                      />
                       <button
                         className="button secondary full"
                         onClick={() => void exportTask()}
@@ -696,11 +721,33 @@ export function App() {
                         : "Firecrawl"}
                   </strong>
                   <code>{p.toUpperCase()}_API_KEY</code>
+                  <a
+                    className="setup-link"
+                    href={
+                      p === "exa"
+                        ? "https://dashboard.exa.ai"
+                        : p === "tavily"
+                          ? "https://app.tavily.com"
+                          : "https://www.firecrawl.dev/app/api-keys"
+                    }
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    Open {p} key setup
+                    <ArrowUpRight size={10} />
+                  </a>
+                  {health?.providerIssues?.[p] && (
+                    <p className="tiny danger">{health.providerIssues[p]}</p>
+                  )}
                 </div>
                 <span
                   className={`badge ${health?.providers[p] ? "complete" : ""}`}
                 >
-                  {health?.providers[p] ? "Configured" : "Not configured"}
+                  {health?.providerAuth?.[p] === "keyless"
+                    ? "Keyless free tier"
+                    : health?.providers[p]
+                      ? "Key configured"
+                      : "Not configured"}
                 </span>
               </div>
             ))}
@@ -709,7 +756,9 @@ export function App() {
               <span>
                 Add keys to your server environment or .env file, then restart.
                 “Configured” means a key is present; the first call verifies
-                access.
+                access. Firecrawl can also use its documented keyless tier when
+                FIRECRAWL_ALLOW_KEYLESS=true is explicitly set on the server; it
+                stops if access is refused.
               </span>
             </div>
             <label>
@@ -729,7 +778,7 @@ export function App() {
               className="button primary full"
               onClick={() => {
                 setToken(tokenInput);
-                void refresh();
+                void refresh(true);
                 if (selectedId.current) void loadTask(selectedId.current);
                 setShowSettings(false);
               }}

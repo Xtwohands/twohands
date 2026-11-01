@@ -14,7 +14,7 @@ function price(name: string, fallback: number) {
   return Math.ceil(n * 1_000_000);
 }
 const prices: Record<ProviderId, number> = {
-  exa: price("EXA_SEARCH_USD", 0.015),
+  exa: price("EXA_SEARCH_USD", 0.017),
   tavily: price("TAVILY_SEARCH_USD", 0.008),
   firecrawl: price("FIRECRAWL_SCRAPE_USD", 0.001),
 };
@@ -23,6 +23,8 @@ export const config = {
   host: process.env.HOST || "127.0.0.1",
   token: process.env.API_TOKEN || "",
   dbPath: process.env.DB_PATH || "./data/apilayer.sqlite",
+  keylessMaxRequests: integer("FIRECRAWL_KEYLESS_MAX_REQUESTS", 10, 1, 50),
+  allowKeylessFirecrawl: process.env.FIRECRAWL_ALLOW_KEYLESS === "true",
   timeoutMs: integer("PROVIDER_TIMEOUT_MS", 20000, 100, 120000),
   rpm: integer("PROVIDER_RPM", 20, 1, 1000),
   minCohort: integer("ANALYTICS_MIN_TASKS", 5, 5, 10000),
@@ -35,3 +37,18 @@ export const config = {
   rateCardVersion: `configured-estimates-v1:${createHash("sha256").update(JSON.stringify(prices)).digest("hex").slice(0, 12)}`,
   policyVersion: "deterministic-v1",
 };
+
+export function providerEstimate(provider: ProviderId) {
+  return provider === "firecrawl" &&
+    !config.keys.firecrawl &&
+    config.allowKeylessFirecrawl
+    ? 0
+    : config.prices[provider];
+}
+export function providerAuthMode(provider: ProviderId) {
+  return provider === "firecrawl" &&
+    !config.keys.firecrawl &&
+    config.allowKeylessFirecrawl
+    ? "keyless"
+    : "api-key";
+}

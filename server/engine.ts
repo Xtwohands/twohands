@@ -1,12 +1,27 @@
 import { randomUUID } from "node:crypto";
-import { isIP } from "node:net";
-import { config } from "./config.js";
+import { publicEvidenceUrl } from "./url-policy.js";
+import { config, providerEstimate, providerAuthMode } from "./config.js";
 import { candidates, coverage } from "./router.js";
 import { ProviderError, search, scrape } from "./providers.js";
 import type { Store } from "./store.js";
 import type { ProviderId, Source, Task } from "./types.js";
 export class Engine {
   active = new Set<string>();
+  keylessBlocked = false;
+  keylessAttempts = 0;
+  providerIssues() {
+    return this.keylessBlocked
+      ? {
+          firecrawl:
+            "Keyless allowance refused; sign in and configure a key before continuing",
+        }
+      : this.keylessAttempts >= config.keylessMaxRequests
+        ? {
+            firecrawl:
+              "Keyless session safety cap reached; review the allowance or configure a key",
+          }
+        : {};
+  }
   cancelled = new Set<string>();
   cancel(taskId: string) {
     if (!this.active.has(taskId)) return false;
@@ -20,7 +35,14 @@ export class Engine {
   constructor(public store: Store) {}
   available() {
     return Object.fromEntries(
-      Object.entries(config.keys).map(([k, v]) => [k, Boolean(v)]),
+      Object.entries(config.keys).map(([k, v]) => [
+        k,
+        Boolean(v) ||
+          (k === "firecrawl" &&
+            config.allowKeylessFirecrawl &&
+            !this.keylessBlocked &&
+            this.keylessAttempts < config.keylessMaxRequests),
+      ]),
     ) as Record<ProviderId, boolean>;
   }
   limited() {
@@ -46,8 +68,16 @@ export class Engine {
         this.store.events(taskId).filter((e) => e.type === "provider_request")
           .length >= 50
       )
-        throw new Error("Task safety cap of 50 paid attempts reached");
-      const estimate = config.prices[provider];
+        throw new Error("Task safety cap of 50 provider attempts reached");
+      if (
+        providerAuthMode(provider) === "keyless" &&
+        (this.keylessBlocked ||
+          this.keylessAttempts >= config.keylessMaxRequests)
+      )
+        throw new Error(
+          "Keyless access needs manual review or a configured key",
+        );
+      const estimate = providerEstimate(provider);
       if (
         task.spentMicros + task.reservedMicros + estimate >
         task.intent.budgetMicros
@@ -63,7 +93,9 @@ export class Engine {
         {
           provider,
           estimateMicros: estimate,
-          chargeType: "estimate",
+          chargeType:
+            providerAuthMode(provider) === "keyless" ? "free-tier" : "estimate",
+          authMode: providerAuthMode(provider),
           rateCardVersion: config.rateCardVersion,
         },
         callId,
@@ -74,6 +106,7 @@ export class Engine {
         { provider, capability, arguments: args, credentialsRedacted: true },
         callId,
       );
+      if (providerAuthMode(provider) === "keyless") this.keylessAttempts++;
       this.timestamps.set(provider, [
         ...(this.timestamps.get(provider) || []),
         Date.now(),
@@ -96,7 +129,18 @@ export class Engine {
           .some((e) => e.type === "budget_settled" && e.callId === callId)
       )
         return;
+      const reservation = this.store
+        .events(taskId)
+        .find((e) => e.type === "budget_reserved" && e.callId === callId);
+      if (
+        !reservation ||
+        reservation.data.provider !== provider ||
+        reservation.data.estimateMicros !== estimate
+      )
+        throw new Error("Unknown or mismatched budget reservation");
       const task = this.store.get(taskId)!;
+      if (task.reservedMicros < estimate)
+        throw new Error("Budget reservation balance is inconsistent");
       if (sources) task.sources.push(...sources);
       task.reservedMicros -= estimate;
       task.spentMicros += estimate;
@@ -113,8 +157,13 @@ export class Engine {
         {
           provider,
           estimateMicros: estimate,
-          chargeType: "estimate",
-          billingStatus: "unverified",
+          chargeType:
+            providerAuthMode(provider) === "keyless" ? "free-tier" : "estimate",
+          authMode: providerAuthMode(provider),
+          billingStatus:
+            providerAuthMode(provider) === "keyless"
+              ? "keyless-free-tier"
+              : "unverified",
           rateCardVersion: config.rateCardVersion,
         },
         callId,
@@ -140,7 +189,7 @@ export class Engine {
             .length >= 50
         ) {
           this.store.event(taskId, "route_blocked", {
-            reason: "Task safety cap of 50 paid attempts reached",
+            reason: "Task safety cap of 50 provider attempts reached",
           });
           break;
         }
@@ -157,6 +206,16 @@ export class Engine {
         const attempted = new Set<ProviderId>();
         for (let i = 0; i < 2; i++) {
           if (this.cancelled.has(taskId)) break;
+          if (
+            this.store
+              .events(taskId)
+              .filter((e) => e.type === "provider_request").length >= 50
+          ) {
+            this.store.event(taskId, "route_blocked", {
+              reason: "Task safety cap of 50 provider attempts reached",
+            });
+            break;
+          }
           const task = this.store.get(taskId)!;
           const all = candidates(
             task.intent,
@@ -320,16 +379,11 @@ export class Engine {
   async fetchUrl(task: Task, sourceId: string) {
     const source = task.sources.find((s) => s.id === sourceId);
     if (!source) throw new Error("Unknown source");
-    const url = new URL(source.url);
-    // Only public hostnames are allowed; Firecrawl performs remote retrieval. No local server fetch.
-    if (
-      isIP(url.hostname.replace(/^\[|\]$/g, "")) ||
-      !url.hostname.includes(".") ||
-      /(^|\.)(localhost|local|internal|test|invalid)$/.test(url.hostname) ||
-      url.port ||
-      url.protocol !== "https:"
-    )
-      throw new Error("Extraction requires a public HTTPS hostname");
+    publicEvidenceUrl(source.url, task.intent.domains);
+    if (!this.available().firecrawl)
+      throw new Error(
+        "Configure Firecrawl or explicitly enable its documented keyless tier",
+      );
     const callId = randomUUID();
     this.store.event(
       task.id,
@@ -359,19 +413,71 @@ export class Engine {
         latencyMs: Date.now() - start,
         resultCount: 1,
         returnedRefs: [source.url],
+        authMode: providerAuthMode("firecrawl"),
+        pageStatus: result.pageStatus,
+        usage: {
+          credits: result.credits,
+          source: "provider response; credits are not USD charges",
+        },
       });
       const fresh = this.store.get(task.id)!;
       const s = fresh.sources.find((s) => s.id === sourceId)!;
+      const changed =
+        s.snippet !== result.text ||
+        s.extraction?.pageStatus !== result.pageStatus;
       s.snippet = result.text;
+      s.extraction = {
+        provider: "firecrawl",
+        callId,
+        at: new Date().toISOString(),
+        pageStatus: result.pageStatus,
+        authMode: providerAuthMode("firecrawl"),
+      };
+      if (s.provider === "user" && result.title) s.title = result.title;
+      if (changed) {
+        s.contentVersion = (s.contentVersion ?? 1) + 1;
+        for (const assessment of fresh.assessments) {
+          const affected = fresh.intent.criteria.filter((c) =>
+            (assessment.evidence?.[c] || [assessment.sourceId]).includes(
+              sourceId,
+            ),
+          );
+          if (!affected.length) continue;
+          for (const c of affected) assessment.criteria[c] = "unknown";
+          assessment.disposition = "pending";
+          assessment.updatedAt = new Date().toISOString();
+          this.store.event(
+            task.id,
+            "assessment_invalidated",
+            {
+              sourceId: assessment.sourceId,
+              changedSourceId: sourceId,
+              criteria: affected,
+              reason:
+                "Referenced evidence content changed; human re-review required",
+            },
+            callId,
+          );
+        }
+      }
       this.store.save(fresh);
       this.store.event(
         task.id,
         "extraction_received",
-        { sourceId, characters: result.text.length, taskCriteria: "unknown" },
+        {
+          sourceId,
+          characters: result.text.length,
+          taskCriteria: "unknown",
+          pageStatus: result.pageStatus,
+          evidenceUsable:
+            result.text.trim().length > 0 &&
+            !(result.pageStatus && result.pageStatus >= 400),
+        },
         callId,
       );
     } catch (e) {
       const err = e instanceof ProviderError ? e : new ProviderError("network");
+      if (err.kind === "human_required") this.keylessBlocked = true;
       this.settle(task.id, callId, "firecrawl", estimate, {
         success: false,
         httpStatus: err.httpStatus ?? null,

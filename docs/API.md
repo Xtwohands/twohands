@@ -38,6 +38,12 @@ Returns `202` once accepted. Poll `GET /api/tasks/:id` for task state and append
 
 `POST /api/tasks/:id/cancel` with `{}` requests stopping between calls. It does not refund or abort an in-flight vendor request. Returns whether a request to stop was registered.
 
+## Add a known evidence URL
+
+`POST /api/tasks/:id/sources` with `{ "url": "https://example.com/evidence" }` adds a user-supplied source without making a provider request. Only public-looking HTTPS hostnames without credentials or custom ports are accepted; the task's domain policy also applies. Repeated URLs are deduplicated. At most 20 user-supplied URLs may be added per task.
+
+The source keeps `provider: "user"` and `callId: null` to describe its original provenance. A separate `extraction` field records Firecrawl’s call ID, access mode, time, and page status. It is not represented as a provider search result. Extraction provenance is recorded separately.
+
 ## Execute research.fetch_url
 
 `POST /api/tasks/:id/fetch`
@@ -46,7 +52,19 @@ Returns `202` once accepted. Poll `GET /api/tasks/:id` for task state and append
 { "sourceId": "<UUID of a returned source>" }
 ```
 
-Requires configured Firecrawl credentials and enough remaining budget. The URL is resolved from the stored source, not accepted as arbitrary caller input. Extraction updates the stored excerpt and records a separate paid capability. It does not automatically verify funding or current activity.
+Requires configured Firecrawl credentials, or explicit `FIRECRAWL_ALLOW_KEYLESS=true` for its documented free tier. Keyless calls omit Authorization, settle zero USD as free-tier usage, stop on access/quota refusal, and have a default session safety cap of ten requests. Keyed calls require enough remaining estimated budget. The URL is resolved from the stored source, not accepted as arbitrary caller input. Extraction updates the stored excerpt and records a separate paid capability. It does not automatically verify funding or current activity. Provider API status and retrieved page status are recorded separately. A known page HTTP error cannot be used to accept a company. Changed content or page status increments the source version and invalidates dependent assessments.
+
+## Retry receipts for provider operations
+
+The `/run` and `/fetch` endpoints accept an optional `Idempotency-Key` header: an opaque 8–128 character identifier using letters, digits, dot, underscore, colon, or hyphen. The browser supplies a UUID for each deliberately initiated operation. API clients retrying after a lost response must reuse the **same key and arguments**.
+
+- Reusing a completed operation's key returns its original acceptance/result with `replayed: true` and makes no additional provider request.
+- Reusing a key while it is pending returns `202`, `pending: true`, and the task ID; poll the task instead of starting another job.
+- Reusing the key with different arguments returns `409`.
+- After a server interruption, a pending receipt returns `409` with a trace-review instruction. It never automatically repeats an uncertain vendor call.
+- Keys are scoped to the task and normalized operation. Receipts persist across normal restarts and are removed with task deletion or retention.
+
+Task state and initial receipt persistence are transactional. A write failure cannot leave a scheduled in-memory operation with only a half-written receipt. There are no automatic POST retries in the browser; a new deliberate click represents a new operation and uses a new key.
 
 ## Review evidence
 
@@ -71,7 +89,13 @@ Requires configured Firecrawl credentials and enough remaining budget. The URL i
 }
 ```
 
-The criteria must exactly match the saved rubric. Every evidence ID must belong to the task. If evidence mappings are omitted, the reviewed source is used by default. Allowed verdicts: pass/fail/unknown. Allowed dispositions: pending/accepted/rejected. Acceptance additionally requires an organization, every criterion passing, and a note. Updates replace the current source assessment and append a feedback event.
+The criteria must exactly match the saved rubric. Every evidence ID must belong to the task. If evidence mappings are omitted, the reviewed source is used by default. Allowed verdicts: pass/fail/unknown. Allowed dispositions: pending/accepted/rejected. Acceptance additionally requires an organization, every criterion passing, and a note. Accepted assessments must also supply `evidenceVersions`, a map of every referenced source ID to its current `contentVersion` (default 1). Stale versions return 409 rather than silently accepting an old review. Updates replace the current source assessment and append a feedback event.
+
+## Privacy controls
+
+`POST /api/tasks/:id/privacy` with `{ "consent": false }` withdraws the task from subsequent local aggregate reporting immediately. It remains stored locally for the workspace. Setting true opts it back in explicitly.
+
+`POST /api/tasks/:id/delete` requires `{ "confirmTaskId": "<exact task UUID>" }` and removes that task and all its events. Active or reserved operations block deletion until settled. The UI presents a separate explicit confirmation; this does not delete vendor logs, exported files, or external backups.
 
 ## Read and export
 

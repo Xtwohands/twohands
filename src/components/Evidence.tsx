@@ -205,6 +205,14 @@ export function SourceCard({
         disposition,
         note,
         evidence,
+        evidenceVersions: Object.fromEntries(
+          Object.values(evidence)
+            .flat()
+            .map((id) => [
+              id,
+              task.sources.find((s) => s.id === id)!.contentVersion ?? 1,
+            ]),
+        ),
       });
       await onRefresh();
       setOpen(false);
@@ -218,10 +226,10 @@ export function SourceCard({
     setBusy(true);
     try {
       await api(`/tasks/${task.id}/fetch`, { sourceId: source.id });
-      await onRefresh();
     } catch (e) {
       onError((e as Error).message);
     } finally {
+      await onRefresh();
       setBusy(false);
     }
   }
@@ -239,7 +247,11 @@ export function SourceCard({
           <div>
             <Globe2 size={11} />
             {new URL(source.url).hostname}
-            <span>via {source.provider}</span>
+            <span>
+              {source.provider === "user"
+                ? "Supplied by you"
+                : `via ${source.provider}`}
+            </span>
             {source.publishedAt && (
               <span>{source.publishedAt.slice(0, 10)}</span>
             )}
@@ -251,6 +263,24 @@ export function SourceCard({
           {existing?.disposition || "Unreviewed"}
         </span>
       </div>
+      {source.extraction && (
+        <div className="extraction-provenance">
+          <FileSearch size={11} />
+          Extracted via Firecrawl ·{" "}
+          {source.extraction.authMode === "keyless"
+            ? "keyless free tier"
+            : "API key"}
+          {source.extraction.pageStatus !== undefined &&
+            ` · page HTTP ${source.extraction.pageStatus}`}
+        </div>
+      )}
+      {(source.extraction?.pageStatus ?? 0) >= 400 && (
+        <div className="page-error" role="status">
+          Page returned HTTP {source.extraction!.pageStatus}. This evidence
+          cannot support an accepted company until the page is retrieved
+          successfully or replaced.
+        </div>
+      )}
       <p
         className={`source-snippet ${fullText ? "full-text" : ""}`}
         tabIndex={fullText ? 0 : undefined}
@@ -268,7 +298,11 @@ export function SourceCard({
             <ChevronDown size={12} />
           </button>
         )}
-        <button className="text-button" onClick={() => setOpen(!open)}>
+        <button
+          className="text-button"
+          disabled={busy}
+          onClick={() => setOpen(!open)}
+        >
           <ShieldCheck size={14} />
           {existing ? "Edit review" : "Review evidence"}
           <ChevronDown size={13} />
@@ -279,7 +313,11 @@ export function SourceCard({
             !health?.providers.firecrawl || busy || task.status === "running"
           }
           onClick={() => void extract()}
-          title="Paid Firecrawl extraction, within task budget"
+          title={
+            health?.providerAuth?.firecrawl === "keyless"
+              ? "Free keyless extraction, subject to allowance and session limits"
+              : "Firecrawl extraction, estimated against the task budget"
+          }
         >
           {busy ? (
             <LoaderCircle className="spin" size={13} />
@@ -372,7 +410,14 @@ export function SourceCard({
                 busy ||
                 !organization.trim() ||
                 !note.trim() ||
-                Object.values(checks).some((v) => v !== "pass")
+                Object.values(checks).some((v) => v !== "pass") ||
+                Object.values(evidence)
+                  .flat()
+                  .some(
+                    (id) =>
+                      (task.sources.find((s) => s.id === id)?.extraction
+                        ?.pageStatus ?? 0) >= 400,
+                  )
               }
               onClick={() => void save("accepted")}
             >
@@ -451,6 +496,7 @@ export function EvidenceList({
           <option value="all">All providers</option>
           <option value="exa">Exa</option>
           <option value="tavily">Tavily</option>
+          <option value="user">Supplied links</option>
         </select>
         <select
           aria-label="Filter evidence by review"
@@ -478,7 +524,7 @@ export function EvidenceList({
       {sources.length ? (
         sources.map((source) => (
           <SourceCard
-            key={source.id}
+            key={`${source.id}:${source.contentVersion ?? 1}:${assessments.get(source.id)?.updatedAt ?? "new"}`}
             source={source}
             index={task.sources.indexOf(source)}
             task={task}

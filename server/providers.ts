@@ -1,15 +1,18 @@
 import { randomUUID } from "node:crypto";
-import { config } from "./config.js";
+import { config, providerAuthMode } from "./config.js";
 import type { ProviderId, Source } from "./types.js";
 export class ProviderError extends Error {
   constructor(
-    public kind: "timeout" | "http" | "network" | "invalid_response",
+    public kind:
+      "timeout" | "http" | "network" | "invalid_response" | "human_required",
     public httpStatus?: number,
   ) {
     super(
-      kind === "http"
-        ? `Provider returned HTTP ${httpStatus}`
-        : `Provider ${kind.replace("_", " ")}`,
+      kind === "human_required"
+        ? "Keyless allowance unavailable. Sign in to Firecrawl and configure a server-side key to continue; no automatic retry was made."
+        : kind === "http"
+          ? `Provider returned HTTP ${httpStatus}`
+          : `Provider ${kind.replace("_", " ")}`,
     );
   }
 }
@@ -123,9 +126,13 @@ export async function search(
       ) || undefined,
   };
 }
-export async function scrape(
-  url: string,
-): Promise<{ text: string; httpStatus: number }> {
+export async function scrape(url: string): Promise<{
+  text: string;
+  httpStatus: number;
+  credits?: number;
+  pageStatus?: number;
+  title?: string;
+}> {
   const { response, json } = await request(
     "https://api.firecrawl.dev/v2/scrape",
     "firecrawl",
@@ -136,6 +143,19 @@ export async function scrape(
   return {
     text: json.data.markdown.slice(0, 20000),
     httpStatus: response.status,
+    pageStatus:
+      Number.isInteger(json.data?.metadata?.statusCode) &&
+      json.data.metadata.statusCode >= 100 &&
+      json.data.metadata.statusCode <= 599
+        ? json.data.metadata.statusCode
+        : undefined,
+    title: clean(json.data?.metadata?.title, 500) || undefined,
+    credits:
+      typeof json.data?.metadata?.creditsUsed === "number" &&
+      Number.isFinite(json.data.metadata.creditsUsed) &&
+      json.data.metadata.creditsUsed >= 0
+        ? json.data.metadata.creditsUsed
+        : undefined,
   };
 }
 async function request(endpoint: string, provider: ProviderId, body: unknown) {
@@ -147,7 +167,9 @@ async function request(endpoint: string, provider: ProviderId, body: unknown) {
         "Content-Type": "application/json",
         ...(provider === "exa"
           ? { "x-api-key": config.keys[provider] }
-          : { Authorization: `Bearer ${config.keys[provider]}` }),
+          : providerAuthMode(provider) === "keyless"
+            ? {}
+            : { Authorization: `Bearer ${config.keys[provider]}` }),
       },
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(config.timeoutMs),
@@ -163,6 +185,11 @@ async function request(endpoint: string, provider: ProviderId, body: unknown) {
   // Never reflect vendor error bodies: they may contain credentials or user input.
   if (!response.ok) {
     await response.body?.cancel();
+    if (
+      providerAuthMode(provider) === "keyless" &&
+      [401, 403, 429].includes(response.status)
+    )
+      throw new ProviderError("human_required", response.status);
     throw new ProviderError("http", response.status);
   }
   try {

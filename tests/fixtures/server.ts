@@ -5,6 +5,13 @@ import { createApp } from "../../server/app.js";
 config.keys.exa = "TEST_ONLY_EXA_KEY";
 config.keys.tavily = "TEST_ONLY_TAVILY_KEY";
 config.keys.firecrawl = "TEST_ONLY_FIRECRAWL_KEY";
+if (process.env.FIXTURE_EXTRACTION_ONLY === "true") {
+  config.keys.exa = "";
+  config.keys.tavily = "";
+  config.keys.firecrawl = "";
+  config.allowKeylessFirecrawl = true;
+}
+let extractionVersion = 0;
 const nativeFetch = globalThis.fetch;
 globalThis.fetch = async (input, init) => {
   const endpoint = String(input);
@@ -22,7 +29,17 @@ globalThis.fetch = async (input, init) => {
     return new Response(
       JSON.stringify({
         success: true,
-        data: { markdown: "TEST FIXTURE extraction evidence. ".repeat(40) },
+        data: {
+          markdown:
+            `TEST FIXTURE extraction evidence. Version ${++extractionVersion}. `.repeat(
+              40,
+            ),
+          metadata: {
+            statusCode: body.url.endsWith("/missing") ? 404 : 200,
+            creditsUsed: 1,
+            title: "TEST FIXTURE example page",
+          },
+        },
       }),
     );
   const exa = endpoint.includes("exa");
@@ -54,8 +71,13 @@ globalThis.fetch = async (input, init) => {
   );
 };
 const store = new Store(":memory:");
-const server = createApp(store).listen(3102, "127.0.0.1", () =>
-  console.log("TEST FIXTURE SERVER ONLY: provider network calls intercepted."),
+const server = createApp(store).listen(
+  Number(process.env.FIXTURE_PORT || 3102),
+  "127.0.0.1",
+  () =>
+    console.log(
+      "TEST FIXTURE SERVER ONLY: provider network calls intercepted.",
+    ),
 );
 process.on("SIGTERM", () =>
   server.close(() => {

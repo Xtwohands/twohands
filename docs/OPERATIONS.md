@@ -2,7 +2,7 @@
 
 ## Credentials and access
 
-Provider keys are read from the Node server environment or local `.env` file. They never enter browser bundles, source control, SQLite events, or API responses. The Connections screen displays only whether a key is configured, not whether it has been verified.
+Except for explicitly enabled Firecrawl keyless extraction, provider keys are read from the Node server environment or local `.env` file. They never enter browser bundles, source control, SQLite events, or API responses. The Connections screen displays only whether a key is configured, not whether it has been verified.
 
 By default the server binds to loopback. Non-loopback binding requires `API_TOKEN` with at least 24 characters. For remote use, place the service behind HTTPS and trusted access controls. The browser keeps the workspace token in memory only, clearing it on reload; provider credentials cannot be entered into the browser. Local API host validation and same-origin JSON writes reduce browser-based attacks against unauthenticated loopback deployments.
 
@@ -14,7 +14,7 @@ The default database is `data/apilayer.sqlite`; its directory is created with ow
 
 Internal storage includes prompts, criteria, normalized query arguments, source excerpts and URLs, evidence assessments, reviewer notes, routing/usage metadata, and estimates. Search providers receive the query and domain filters needed to perform the search; Firecrawl receives an explicitly selected source URL. Review the vendor's terms, data retention, and permitted use before processing sensitive requests.
 
-Analytics consent defaults **off**. Local task storage is necessary to use the workspace; the optional checkbox controls whether that task contributes to provider aggregates. The provider analytics API has an explicit field allowlist, excludes task content, and suppresses small cohorts. Cohort suppression is a basic safeguard, not a differential-privacy guarantee or proof of anonymity. Do not commercialize this feed without reviewing permissions, terms, licensing, and buyer requirements.
+Analytics consent defaults **off**. The task privacy control can withdraw it immediately or explicitly opt back in. The separate delete action removes a settled task and its event history from local storage; it is blocked while provider operations are active or reserved. Local task storage is necessary to use the workspace; the optional checkbox controls whether that task contributes to provider aggregates. The provider analytics API has an explicit field allowlist, excludes task content, and suppresses small cohorts. Cohort suppression is a basic safeguard, not a differential-privacy guarantee or proof of anonymity. Do not commercialize this feed without reviewing permissions, terms, licensing, and buyer requirements.
 
 Sanitized trace exports omit prompts, queries, source URLs/content, organization names, reviewer notes, and request arguments. They retain task/call identifiers, timing, policy decisions, observed response metadata, and cost estimates. Company CSV exports intentionally contain the reviewed result and evidence links.
 
@@ -32,7 +32,7 @@ The command deletes expired tasks and their event histories, skips tasks marked 
 
 | Variable               | Default                  | Meaning                                                        |
 | ---------------------- | ------------------------ | -------------------------------------------------------------- |
-| `EXA_SEARCH_USD`       | 0.015                    | Estimate for one search with text from up to 10 returned pages |
+| `EXA_SEARCH_USD`       | 0.017                    | Estimate for one search with text from up to 10 returned pages |
 | `TAVILY_SEARCH_USD`    | 0.008                    | Estimate for one basic search                                  |
 | `FIRECRAWL_SCRAPE_USD` | 0.001                    | Estimate for one extraction                                    |
 | `PROVIDER_TIMEOUT_MS`  | 20000                    | HTTP request deadline                                          |
@@ -49,7 +49,13 @@ Prices are **configurable planning assumptions**, not verified current plan pric
 
 The ledger enforces the task cap against those configured estimates. Actual vendor charges can differ. Provider response usage is displayed separately when available and is not an invoice reconciliation. Set vendor-side caps and validate estimates before larger runs. Errors/timeouts conservatively retain estimates because their billing status is uncertain.
 
-Each task has a maximum of 50 paid attempts across search and extraction; each run has at most five queries and two search attempts per query. At most three tasks can perform operations simultaneously. Run a single process per database; process-local limits are not distributed rate limiting.
+Each task has a maximum of 50 provider attempts across search and extraction; each run has at most five queries and two search attempts per query. At most three tasks can perform operations simultaneously. Run a single process per database; process-local limits are not distributed rate limiting. Database exclusive ownership prevents another server, retention command, or direct-database live runner from claiming that database while the server is running. Stop the server before maintenance.
+
+## Optional keyless extraction
+
+`FIRECRAWL_ALLOW_KEYLESS=true` explicitly opts into Firecrawl's documented free tier. The default remains false. Keyless requests send no Authorization header, use a zero-USD free-tier ledger entry, and preserve provider credit usage separately. They stop on HTTP 401/403/429 without automatic retry or paid upgrade. `FIRECRAWL_KEYLESS_MAX_REQUESTS` defaults to ten requests per server process (configurable 1–50), in addition to the task and rolling provider limits. This local cap does not reset the provider's daily per-IP quota; restarting is not a way to bypass provider refusal. Sign in and configure a legitimate key if the allowance is unavailable.
+
+The free tier can change. See [actual live validation](LIVE_VALIDATION.md) and the current [official keyless documentation](https://www.firecrawl.dev/blog/firecrawl-keyless-launch). Firecrawl remains a separate extraction capability; it is not silently substituted for the specified Exa/Tavily search comparison.
 
 ## HTTPS proxies
 
