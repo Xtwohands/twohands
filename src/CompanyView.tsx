@@ -40,6 +40,11 @@ import type { ProviderId } from "../server/types";
 import type { Experiment, LabRun } from "../server/provider-lab-types";
 
 const demoPlansKey = "apilayer-company-demo-plans-v1";
+const providerLogos: Record<ProviderId, string> = {
+  exa: "/providers/exa-icon.svg",
+  tavily: "/providers/tavily.svg",
+  firecrawl: "/providers/firecrawl.png",
+};
 function readDemoPlans(): Experiment[] {
   try {
     const data = JSON.parse(localStorage.getItem(demoPlansKey) || "[]");
@@ -202,7 +207,16 @@ export function CompanyView({
     <div className="provider-page company-page">
       <div className="page-heading company-heading">
         <div>
-          <h1>{providerNames[provider]} insights</h1>
+          <div className="company-title">
+            <img
+              className={`company-logo company-logo-${provider}`}
+              src={providerLogos[provider]}
+              alt=""
+              width={32}
+              height={32}
+            />
+            <h1>{providerNames[provider]} insights</h1>
+          </div>
           <p>See where agents choose your tool—and what to improve next.</p>
         </div>
         <div className="company-controls">

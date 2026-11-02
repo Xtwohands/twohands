@@ -65,6 +65,25 @@
   align-items: flex-end;
   gap: 24px;
 }
+.company-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.company-logo {
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  object-fit: contain;
+}
+.company-logo-tavily {
+  padding: 3px;
+  border-radius: 7px;
+  background: #fff;
+}
+.company-logo-exa {
+  border-radius: 5px;
+}
 .company-controls {
   display: flex;
   gap: 12px;
