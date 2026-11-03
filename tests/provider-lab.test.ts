@@ -499,7 +499,7 @@ it("retains active, reviewed-recently, and linked lab evidence during retention"
   for (const run of [template, active, recentReview, linked])
     expect(lab.get(run.id)).toBeDefined();
 });
-it("keeps demo metrics out of storage and hides unconsented company data", async () => {
+it("keeps demo metrics out of storage and suppresses company exports below the minimum cohort", async () => {
   const session = obs.createAgentSession({
     title: "PRIVATE title",
     objective: "PRIVATE objective",
@@ -528,7 +528,7 @@ it("keeps demo metrics out of storage and hides unconsented company data", async
     1,
   );
 });
-it("suppresses company aggregates immediately when consent falls below the provider cohort", async () => {
+it("keeps all-session sharing enabled and suppresses exports when deletion reduces the provider cohort", async () => {
   const ids: string[] = [];
   for (let i = 0; i < 5; i++) {
     const s = obs.createAgentSession({
@@ -558,7 +558,8 @@ it("suppresses company aggregates immediately when consent falls below the provi
   expect(
     JSON.stringify(companyReport("tavily", "local", obs, lab)),
   ).not.toContain("PRIVATE");
-  obs.consent(ids[0], false);
+  expect(() => obs.consent(ids[0], false)).toThrow(/workspace policy/);
+  obs.db.remove(ids[0]);
   expect(companyReport("tavily", "local", obs, lab).organic).toBeNull();
 });
 it("does not credit selections that happened before the tool was offered", async () => {
@@ -576,7 +577,7 @@ it("does not credit selections that happened before the tool was offered", async
       tool: "tavily_search" as const,
       query: "Fixture chronology",
       domains: [],
-      statedReason: "",
+      statedReason: "Find evidence for the current task.",
       requestKey: "before-offer",
     };
     await obs.execute(s.id, args);
@@ -624,4 +625,58 @@ it("protects lab and company endpoints with workspace authentication and validat
   expect(
     (await request(app).get("/api/provider-lab").set(auth)).body.runs,
   ).toHaveLength(1);
+});
+
+it("shows private workspace execution below the export threshold only when explicitly requested", async () => {
+  const s = obs.createAgentSession({
+    title: "PRIVATE title",
+    objective: "PRIVATE objective",
+    criteria: [{ text: "PRIVATE criterion", weight: 1 }],
+    model: "Fixture",
+    host: "Unit test",
+    constraints: "",
+  });
+  obs.discover(s.id, "Find public evidence");
+  await obs.execute(s.id, {
+    tool: "exa_search",
+    query: "PRIVATE query",
+    requestKey: "local-only",
+    domains: [],
+    statedReason: "PRIVATE explanation",
+  });
+  const aggregate = companyReport("exa", "local", obs, lab);
+  expect(aggregate.organic).toBeNull();
+  expect(aggregate.privateActivity).toBeNull();
+  const local = companyReport("exa", "local", obs, lab, true);
+  expect(local.privateActivity).toMatchObject({
+    calls: 1,
+    successfulCalls: 1,
+    selectedSessions: 1,
+    offeredSessions: 1,
+  });
+  expect(local.organic).toBeNull();
+  expect(JSON.stringify(local)).not.toContain("PRIVATE");
+});
+
+it("does not count incompatible tools as offered candidates in new discovery events", async () => {
+  const s = obs.createAgentSession({
+    title: "Candidate scope fixture",
+    objective: "Find pages",
+    criteria: [{ text: "Finds sources", weight: 1 }],
+    model: "Fixture",
+    host: "Unit test",
+    constraints: "",
+  });
+  obs.discover(s.id, {
+    need: "Search",
+    operations: [{ operation: "search", query: "fixture" }],
+  });
+  expect(
+    companyReport("exa", "local", obs, lab, true).privateActivity
+      ?.offeredSessions,
+  ).toBe(1);
+  expect(
+    companyReport("firecrawl", "local", obs, lab, true).privateActivity
+      ?.offeredSessions,
+  ).toBe(0);
 });

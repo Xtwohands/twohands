@@ -157,3 +157,26 @@ it("marks a short extraction as not locally truncated", async () => {
     returnedCharacters: 13,
   });
 });
+
+it("sends the result count and depth used by request pricing to the provider", async () => {
+  const mock = vi
+    .fn()
+    .mockImplementation(
+      async () => new Response(JSON.stringify({ results: [] })),
+    );
+  vi.stubGlobal("fetch", mock);
+  await search("tavily", "fixture", [], "id", {
+    maxResults: 5,
+    searchDepth: "advanced",
+  });
+  expect(JSON.parse(mock.mock.calls[0][1].body)).toMatchObject({
+    max_results: 5,
+    search_depth: "advanced",
+    include_usage: true,
+  });
+  await search("exa", "fixture", [], "id", { maxResults: 20 });
+  expect(JSON.parse(mock.mock.calls[1][1].body)).toMatchObject({
+    numResults: 20,
+    type: "auto",
+  });
+});

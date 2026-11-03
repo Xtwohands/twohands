@@ -218,10 +218,20 @@ export function verifyPrivateEvidence(value: unknown) {
         fail(`Case ${c.id} differs from its recorded resolution.`);
     }
     const consent =
-      s.events.filter((e) => e.type === "sharing_consent_changed").at(-1)?.data
-        .commercialConsent ?? false;
+      s.events
+        .filter((e) =>
+          ["sharing_consent_changed", "sharing_policy_applied"].includes(
+            e.type,
+          ),
+        )
+        .at(-1)?.data.commercialConsent ?? false;
     if (consent !== s.commercialConsent)
       fail("Sharing preference differs from its last recorded event.");
+    const policyEvent = s.events
+      .filter((e) => e.type === "sharing_policy_applied")
+      .at(-1);
+    if (policyEvent?.data.policy !== s.sharingPolicy)
+      fail("Sharing policy differs from its recorded policy event.");
   } catch {
     fail("The export is incomplete or contains malformed records.");
   }

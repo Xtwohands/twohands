@@ -46,7 +46,7 @@ export function money(micros: number) {
     style: "currency",
     currency: "USD",
     minimumFractionDigits: 3,
-    maximumFractionDigits: 3,
+    maximumFractionDigits: 6,
   }).format(micros / 1e6);
 }
 export function shortDate(value: string) {

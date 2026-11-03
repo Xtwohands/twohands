@@ -36,6 +36,7 @@ export async function search(
   query: string,
   domains: string[],
   callId: string,
+  options?: { maxResults?: number; searchDepth?: "basic" | "advanced" },
 ): Promise<{
   sources: Source[];
   httpStatus: number;
@@ -46,15 +47,15 @@ export async function search(
   const body = exa
     ? {
         query,
-        numResults: 10,
+        numResults: options?.maxResults ?? 10,
         type: "auto",
         contents: { text: { maxCharacters: 2500 } },
         ...(domains.length ? { includeDomains: domains } : {}),
       }
     : {
         query,
-        max_results: 10,
-        search_depth: "basic",
+        max_results: options?.maxResults ?? 10,
+        search_depth: options?.searchDepth ?? "basic",
         include_answer: false,
         include_raw_content: false,
         include_usage: true,
@@ -67,34 +68,36 @@ export async function search(
   );
   if (!Array.isArray(json.results))
     throw new ProviderError("invalid_response", response.status);
-  const sources: Source[] = json.results.slice(0, 10).flatMap((r: any) => {
-    if (!r || typeof r !== "object") return [];
-    const url = safeUrl(r.url);
-    if (!url) return [];
-    // Enforce normalized domain policy even if the vendor ignores its filter.
-    if (
-      domains.length &&
-      !domains.some(
-        (d) =>
-          new URL(url).hostname === d ||
-          new URL(url).hostname.endsWith(`.${d}`),
+  const sources: Source[] = json.results
+    .slice(0, options?.maxResults ?? 10)
+    .flatMap((r: any) => {
+      if (!r || typeof r !== "object") return [];
+      const url = safeUrl(r.url);
+      if (!url) return [];
+      // Enforce normalized domain policy even if the vendor ignores its filter.
+      if (
+        domains.length &&
+        !domains.some(
+          (d) =>
+            new URL(url).hostname === d ||
+            new URL(url).hostname.endsWith(`.${d}`),
+        )
       )
-    )
-      return [];
-    return [
-      {
-        id: randomUUID(),
-        title: clean(r.title, 500) || new URL(url).hostname,
-        url,
-        snippet: clean(exa ? r.text : r.content, 5000),
-        ...(typeof r.publishedDate === "string"
-          ? { publishedAt: r.publishedDate.slice(0, 40) }
-          : {}),
-        provider,
-        callId,
-      },
-    ];
-  });
+        return [];
+      return [
+        {
+          id: randomUUID(),
+          title: clean(r.title, 500) || new URL(url).hostname,
+          url,
+          snippet: clean(exa ? r.text : r.content, 5000),
+          ...(typeof r.publishedDate === "string"
+            ? { publishedAt: r.publishedDate.slice(0, 40) }
+            : {}),
+          provider,
+          callId,
+        },
+      ];
+    });
   const usage =
     exa &&
     typeof json.costDollars?.total === "number" &&

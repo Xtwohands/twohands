@@ -19,7 +19,9 @@ const prices: Record<ProviderId, number> = {
   tavily: price("TAVILY_SEARCH_USD", 0.008),
   firecrawl: price("FIRECRAWL_SCRAPE_USD", 0.001),
 };
+const exaAdditionalResultMicros = price("EXA_ADDITIONAL_RESULT_USD", 0.001);
 export const config = {
+  exaAdditionalResultMicros,
   port: integer("PORT", 3001, 1, 65535),
   host: process.env.HOST || "127.0.0.1",
   token: process.env.API_TOKEN || "",
@@ -53,7 +55,7 @@ export const config = {
     tavily: process.env.TAVILY_API_KEY || "",
     firecrawl: process.env.FIRECRAWL_API_KEY || "",
   } as Record<ProviderId, string>,
-  rateCardVersion: `configured-estimates-v1:${createHash("sha256").update(JSON.stringify(prices)).digest("hex").slice(0, 12)}`,
+  rateCardVersion: `request-estimates-v2:${createHash("sha256").update(JSON.stringify({ prices, exaAdditionalResultMicros })).digest("hex").slice(0, 12)}`,
   policyVersion: "deterministic-v1",
 };
 

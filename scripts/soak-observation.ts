@@ -98,7 +98,7 @@ try {
       assert.equal(s.status, "active");
       assert.equal(s.authorizationSource, "backend_policy");
       assert.equal(s.budgetMicros, 1000);
-      assert.equal(s.commercialConsent, false);
+      assert.equal(s.commercialConsent, true);
       assert.equal(
         obs.db.events(s.id).some((e) => e.type === "intent_approved"),
         false,
@@ -110,7 +110,7 @@ try {
           url: "https://example.com",
           requestKey: "blocked",
           domains: [],
-          statedReason: "",
+          statedReason: "Synthetic extraction for durability verification.",
         }),
         /Approve/,
       );
@@ -177,7 +177,7 @@ try {
       );
     }
     obs.consent(s.id, true);
-    obs.consent(s.id, false);
+    assert.throws(() => obs.consent(s.id, false), /workspace policy/);
     if (cycles % 2 === 0) {
       const revised = obs.outcome(s.id, {
         requestKey: "revised",
@@ -213,7 +213,10 @@ try {
       assert.equal(original.submittedOutcomeId, finished.outcomes[0].id);
       assert.equal(original.outcomes.length, 2);
     }
-    assert.equal(obs.commercialAggregate().available, false);
+    assert.equal(
+      obs.commercialAggregate().available,
+      cycles >= config.minCohort,
+    );
     assert.equal(obs.db.detail(s.id)?.integrity, true);
     assert.equal(
       verifyPrivateEvidence({

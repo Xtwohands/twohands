@@ -21,7 +21,7 @@ The bridge never opens the database. A single HTTP process owns SQLite and provi
 2. Creation atomically stores the session, an agent-reported `intent_recorded` event, and an observed `intent_authorized` event with the backend policy and cap. The session is immediately active, with `authorizationSource: backend_policy`; no consumer approval is required. Separately, operator-created sessions and legacy proposals retain manual acceptance of the exact hash. That acceptance is idempotent, rejects mismatches, and records `workspace_operator` as its source. Existing pending proposals are not silently authorized.
 3. Discovery records the options returned at that moment, including adapter capabilities, limitations, configured prices, organic execution history, and a separately labeled controlled test sample when available. It does not select a tool or establish which options the agent considered. Controlled calls never increase organic sample counts or populate an invented quality score.
 4. The agent explicitly invokes a named provider. A transaction checks authorization, configuration, rate/call limits, and remaining estimated budget; it records a request key and reserves the estimate before network I/O.
-5. The settled call records timing, API status, page status where available, returned evidence, and the configured estimate. An optional selection explanation is a separate agent-reported event.
+5. The settled call records timing, API status, page status where available, returned evidence, and the configured estimate. A required brief selection explanation is a separate agent-reported event.
 6. The agent submits its actual final output and supporting call IDs. Outputs are versioned and linked to the accepted intent. Submission does not verify success.
 7. An operator evaluates every criterion as pass, fail, or unknown, with a note and optional evidence references. Each evaluation binds an exact output ID and intent hash. A historical review requires explicit intent and never replaces the latest output's score.
 8. A review case can reference any recorded evaluation. Opening/resolving a case records evidence and a decision, without issuing a refund, payment, or insurance coverage.
@@ -54,7 +54,7 @@ All routes below live under `/api/observations`, inherit workspace token/origin/
 | `GET /`                                      | Session list with output/evaluation metadata, without full output text or review notes |
 | `POST /agent-sessions`                       | Agent-reported intent, automatically authorized under backend spending policy          |
 | `POST /` / `POST /proposals`                 | Manual operator intent / legacy agent proposal, awaiting operator acceptance           |
-| `GET /summary`, `/catalog`, `/aggregate`     | Local summaries, tools, and consented cohort statistics                                |
+| `GET /summary`, `/catalog`, `/aggregate`     | Local summaries, tools, and cohort-gated commercial statistics                         |
 | `GET/POST /connection`                       | Last-observed client name/version; not a live heartbeat                                |
 | `GET /:id`                                   | Private session, evidence, events, and chain consistency                               |
 | `POST /:id/approve`                          | Accept exact intent hash                                                               |
@@ -64,7 +64,7 @@ All routes below live under `/api/observations`, inherit workspace token/origin/
 | `POST /:id/outcome`                          | Versioned output submission                                                            |
 | `POST /:id/evaluate`                         | Criterion review; explicit `historical: true` for prior output                         |
 | `POST /:id/cases`, `POST /:id/cases/:caseId` | Open and resolve/dismiss a review case                                                 |
-| `POST /:id/consent`                          | Change optional commercial aggregate consent                                           |
+| `POST /:id/consent`                          | Compatibility route: true is a no-op; false returns 409 under all-session policy       |
 | `GET /:id/export`                            | Content-minimized summary export                                                       |
 | `POST /:id/delete`                           | Delete local records after confirming the session ID; blocked during active calls      |
 
@@ -72,14 +72,22 @@ Schemas and validation live in `server/observation.ts`; protocol tool definition
 
 ## Offline evidence verification
 
-`npm run verify:evidence -- /path/to/private-evidence.json` checks a private export without contacting the API or any provider. It recomputes the accepted-intent fingerprint and event chain, verifies the matching backend-policy authorization or operator-acceptance event, compares materialized source/output/review content against recorded events, checks evidence and case references, reconciles the estimated ledger, and compares the current consent flag with its last event. Backend budget data comes from the observed authorization event, not an invented agent report. A summary export intentionally omits the necessary private content and cannot pass this check.
+`npm run verify:evidence -- /path/to/private-evidence.json` checks a private export without contacting the API or any provider. It recomputes the accepted-intent fingerprint and event chain, verifies the matching backend-policy authorization or operator-acceptance event, compares materialized source/output/review content against recorded events, checks evidence and case references, reconciles the estimated ledger, and compares the sharing flag with its latest historical consent or workspace-policy event. Backend budget data comes from the observed authorization event, not an invented agent report. A summary export intentionally omits the necessary private content and cannot pass this check.
 
 Exit codes are 0 for consistent records, 1 for inconsistencies, and 2 for an unreadable/invalid JSON input. The report contains identifiers and error descriptions, not the research text. Informational timestamps and display labels are not externally authenticated. An export of unfinished work can be internally consistent; passing does not mean the task succeeded or the source claims are true.
 
 ## Boundaries and next steps
 
-The [provider lab and company preview](PROVIDER_LAB.md) add operator-run matched retrieval tests, attributed usefulness reviews, and actionable experiment plans in separate tables. They do not add a model planner or forced provider exploration to the consumer conversation. The company preview distinguishes simulated demo numbers from actual local test receipts and consented organic aggregates. Selection aggregates require the offer event to precede the observed call.
+The [provider lab and company preview](PROVIDER_LAB.md) add operator-run matched retrieval tests, attributed usefulness reviews, and actionable experiment plans in separate tables. They do not add a model planner or forced provider exploration to the consumer conversation. The company preview distinguishes simulated demo numbers from actual local test receipts and workspace-wide commercial aggregates. Selection aggregates require the offer event to precede the observed call.
 
 MCP does not expose private reasoning, the host's complete conversation, or outside tool calls. APILayer records only what reaches its own tools. The local event chain detects chain inconsistency but is not external custody or protection against a database owner rewriting the whole record. Provider content is untrusted, extraction text may be partial, and model/client/reviewer identities are reported.
 
 Before a commercial scoring or refund product: add authenticated principal identities, external evidence attestation, a reproducible evaluation protocol with independent review, verified price/usage reconciliation, and a separately defined claims/payment contract. Before vendor analytics: define consent and licensing for every exported field, cohort and privacy protections, and a buyer-facing export boundary. Those are future product capabilities, not claims made by this implementation.
+
+## Candidate discovery and sharing policy (November 3, 2026)
+
+`discover_tools` accepts provider-neutral operations and task context. The backend adds the recorded intent, matches the catalog, and returns per-operation compatibility, estimates, and separate execution/review evidence. The external agent chooses. See [the discovery contract](TOOL_DISCOVERY.md) for mappings, missing-input behavior, and limits.
+
+All observation sessions now contribute to commercial aggregates. Startup migrates existing records once under `all-session-aggregates-v1`, preserving research timestamps and earlier audit events and appending an observed policy event. This records an operator-directed policy, not individual historical opt-in. Existing field names such as `commercialConsent` remain for storage compatibility; the UI describes the policy explicitly. Raw content stays out of commercial aggregates, and minimum export cohorts remain.
+
+The company endpoint defaults to cohort-gated aggregate data. `GET /api/company-insights/:provider?source=local&scope=workspace` additionally returns private workspace counts so the operator can inspect small samples. It uses the same operator authentication as other workspace endpoints. This is a local operator preview, not a multi-tenant vendor API. Controlled execution, reference checks, and usefulness reviews remain distinct.

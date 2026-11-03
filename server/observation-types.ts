@@ -64,6 +64,7 @@ export interface ObservationSession {
   approvedAt: string | null;
   authorizationSource?: "backend_policy" | "workspace_operator";
   commercialConsent: boolean;
+  sharingPolicy?: string;
   outcomes: Outcome[];
   evaluations: Evaluation[];
   cases: ReviewCase[];
@@ -74,7 +75,14 @@ export interface ObservedCall {
   requestKey: string;
   tool: ToolName;
   provider: "exa" | "tavily" | "firecrawl";
-  arguments: { query?: string; url?: string; domains?: string[] };
+  arguments: {
+    query?: string;
+    url?: string;
+    domains?: string[];
+    maxResults?: number;
+    searchDepth?: "basic" | "advanced";
+  };
+  costEstimate?: import("./request-cost.js").RequestEstimate;
   statedReason: string;
   status: "running" | "succeeded" | "failed" | "interrupted";
   startedAt: string;

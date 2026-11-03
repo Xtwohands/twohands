@@ -61,7 +61,7 @@ A normal flow is `record_intent → discover_tools → selected provider tools �
 
 The server owns `AGENT_SESSION_BUDGET_MICROS` (default 100000 = $0.10, range 0–5000000). The MCP input schema has no budget field, and the agent-session HTTP endpoint rejects budget overrides. A value of 0 blocks calls with a positive estimate. Calls still reserve estimated costs transactionally and retain request-key replay protection. Reaching a backend limit does not justify creating more sessions to evade it or asking the consumer to manage policy; finish from available evidence and disclose any research limitation. This is a per-session estimate cap, not reconciled billing or an account-wide quota.
 
-The audit records `intent_authorized` with `observed` provenance and `backend_policy` as its source. It does not claim a human approved the intent. Commercial sharing remains off. Manually recorded operator sessions retain their existing explicit acceptance flow; old pending proposals are not silently authorized by this change.
+The audit records `intent_authorized` with `observed` provenance and `backend_policy` as its source. It does not claim a human approved the intent. Commercial aggregate sharing applies to all observation sessions under workspace policy; nothing is automatically published. Manually recorded operator sessions retain their existing explicit acceptance flow; old pending proposals are not silently authorized by this change.
 
 Each provider operation requires a request key. Reuse the **same key and arguments** after a transport failure. Reusing a key with different arguments is rejected. An in-flight replay can return a running receipt; inspect the existing session/evidence instead of starting a new paid operation. A process interrupted before settlement returns an interrupted receipt and is not silently retried.
 
@@ -94,3 +94,9 @@ MCP does not give APILayer private chain of thought, the complete Claude/Codex c
 The HTTP workspace is a shared local trust boundary, not a multi-tenant approval system. Its operator API supports acceptance and evaluation; those operations are deliberately absent from the MCP catalog. A separately privileged local program may still access the operator API, so this is not an isolation guarantee against software already trusted with the workspace.
 
 References: [MCP tools specification](https://modelcontextprotocol.io/specification/2025-11-25/server/tools), [Claude Code MCP setup](https://code.claude.com/docs/en/mcp), [Codex MCP configuration](https://learn.chatgpt.com/docs/extend/mcp).
+
+## Discovery and selection summaries
+
+Send `discover_tools` a provider-neutral `operations` array plus the immediate `need` and relevant `context`; octolab includes the recorded intent and finds compatible candidates with costs and reputation evidence. Use `operation: "search"` with `query`, or `operation: "extract"` with a public HTTPS `url`. Legacy provider-specific `requests` are supported and expand into relevant alternatives. See [the complete discovery contract](TOOL_DISCOVERY.md).
+
+Every new provider call requires `statedReason`: a brief, non-empty explanation of the tool choice, not private reasoning. After upgrading, reconnect the MCP client so it reloads the required input schema. Historical calls remain readable with `get_evidence`; no explanation is invented for older calls.

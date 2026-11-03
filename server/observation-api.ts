@@ -1,3 +1,4 @@
+import { discoveryInput } from "./tool-discovery.js";
 import { observationListItem } from "./observation-types.js";
 import {
   clientIdentity,
@@ -11,7 +12,6 @@ import {
   ObservationError,
   sessionInput,
   agentSessionInput,
-  callInput,
   outcomeInput,
   evaluationInput,
 } from "./observation.js";
@@ -147,19 +147,14 @@ export function observationRoutes(app: Express, obs: Observatory) {
   app.post(
     "/api/observations/:id/discover",
     route((req, res) => {
-      const input = z
-        .object({ need: z.string().trim().min(1).max(2000) })
-        .strict()
-        .parse(req.body);
-      res.json(obs.discover(String(req.params.id), input.need));
+      const input = discoveryInput.parse(req.body);
+      res.json(obs.discover(String(req.params.id), input));
     }),
   );
   app.post(
     "/api/observations/:id/call",
     route(async (req, res) =>
-      res.json(
-        await obs.execute(String(req.params.id), callInput.parse(req.body)),
-      ),
+      res.json(await obs.execute(String(req.params.id), req.body)),
     ),
   );
   app.post(

@@ -1,4 +1,12 @@
 import { z } from "zod";
+import { matchTools, type DiscoveryInput } from "./tool-discovery.js";
+import { SHARING_POLICY, sharingPolicyEvent } from "./sharing-policy.js";
+import {
+  searchOptions,
+  costRequest,
+  estimateRequest,
+  requestDomains,
+} from "./request-cost.js";
 import {
   toolCapabilities,
   providerSelectionGuidance,
@@ -41,25 +49,26 @@ export const sessionInput = z
   .strict();
 // Research spending is backend policy, never an agent/consumer input.
 export const agentSessionInput = sessionInput.omit({ budgetMicros: true });
-export const callInput = z
+export const selectionReason = z
+  .string()
+  .trim()
+  .min(1, "Explain briefly why this tool fits the current need.")
+  .max(2000);
+// Retained only to replay historical receipts without changing their signatures.
+const legacyCallInput = z
   .object({
     tool: z.enum(["exa_search", "tavily_search", "firecrawl_extract"]),
+    ...searchOptions,
     requestKey: text(120),
     query: text(500).optional(),
     url: text(2048).optional(),
-    domains: z
-      .array(
-        z
-          .string()
-          .trim()
-          .toLowerCase()
-          .regex(/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/),
-      )
-      .max(10)
-      .default([]),
+    domains: requestDomains,
     statedReason: z.string().max(2000).default(""),
   })
   .strict();
+export const callInput = legacyCallInput.extend({
+  statedReason: selectionReason,
+});
 export const outcomeInput = z
   .object({
     requestKey: text(120),
@@ -118,6 +127,7 @@ export class Observatory {
     public timestamps = new Map<ProviderId, number[]>(),
   ) {
     this.db = new ObservationStore(store);
+    this.db.applySharingPolicy();
   }
   require(id: string) {
     const s = this.db.get(id);
@@ -158,7 +168,8 @@ export class Observatory {
       reservedMicros: 0,
       createdAt: at,
       updatedAt: at,
-      commercialConsent: false,
+      commercialConsent: true,
+      sharingPolicy: SHARING_POLICY,
       outcomes: [],
       evaluations: [],
       cases: [],
@@ -179,6 +190,12 @@ export class Observatory {
           modelSource: source,
           host: s.host,
         },
+      );
+      this.db.event(
+        s.id,
+        "sharing_policy_applied",
+        "observed",
+        sharingPolicyEvent(false),
       );
       if (backendAuthorized)
         this.db.event(s.id, "intent_authorized", "observed", {
@@ -221,16 +238,86 @@ export class Observatory {
     });
   }
   catalog() {
-    const calls = this.db.list().flatMap((s) => this.db.calls(s.id));
+    const sessions = this.db.list();
+    const calls = sessions.flatMap((s) => this.db.calls(s.id));
     const controlled = this.controlledSamples?.() ?? {};
     return (Object.keys(names) as ToolName[]).map((tool) => {
       const provider = names[tool];
       const samples = calls.filter(
         (c) => c.tool === tool && ["succeeded", "failed"].includes(c.status),
       );
+      const callIds = new Set(samples.map((c) => c.id));
+      const linkedCriteria = { pass: 0, fail: 0, unknown: 0 };
+      let reviewedSessions = 0;
+      let multiToolCriteria = 0;
+      const reviewSources: Record<string, number> = {};
+      for (const session of sessions) {
+        const review = session.evaluations
+          .filter((e) => e.outcomeId === session.outcomes.at(-1)?.id)
+          .at(-1);
+        const linked =
+          review?.criteria.filter((c) =>
+            c.evidenceCallIds.some((id) => callIds.has(id)),
+          ) ?? [];
+        if (!linked.length) continue;
+        reviewedSessions++;
+        const source = review?.reviewer?.kind ?? "unspecified";
+        reviewSources[source] = (reviewSources[source] ?? 0) + 1;
+        for (const criterion of linked) {
+          linkedCriteria[criterion.verdict]++;
+          if (criterion.evidenceCallIds.some((id) => !callIds.has(id)))
+            multiToolCriteria++;
+        }
+      }
+      const latencySamples = samples
+        .flatMap((c) => (typeof c.latencyMs === "number" ? [c.latencyMs] : []))
+        .sort((a, b) => a - b);
+      const medianLatencyMs = latencySamples.length
+        ? latencySamples.length % 2
+          ? latencySamples[Math.floor(latencySamples.length / 2)]
+          : (latencySamples[latencySamples.length / 2 - 1] +
+              latencySamples[latencySamples.length / 2]) /
+            2
+        : null;
       return {
         tool,
         provider,
+        reputation: {
+          organic: {
+            source: "observed_workspace_calls",
+            sampleCount: samples.length,
+            succeeded: samples.filter((c) => c.status === "succeeded").length,
+            failed: samples.filter((c) => c.status === "failed").length,
+            interrupted: calls.filter(
+              (c) => c.tool === tool && c.status === "interrupted",
+            ).length,
+            latencySampleCount: latencySamples.length,
+            medianLatencyMs,
+            successRate:
+              samples.length >= 5
+                ? samples.filter((c) => c.status === "succeeded").length /
+                  samples.length
+                : null,
+            minimumRateSamples: 5,
+            lastObservedAt:
+              samples
+                .map((c) => c.finishedAt ?? c.startedAt)
+                .sort()
+                .at(-1) ?? null,
+            scope:
+              "Same tool across workspace tasks; not a task-specific prediction or answer-quality score. API success can include an unusable page.",
+          },
+          outcomeEvidence: {
+            source: "workspace_review",
+            reviewedSessions,
+            linkedCriteria,
+            multiToolCriteria,
+            reviewSources,
+            scope:
+              "Latest reviews of latest outputs with explicit evidence links to this tool. Criterion verdicts assess answers, not provider causation or task-specific accuracy.",
+          },
+          controlled: controlled[provider] ?? null,
+        },
         ...toolCapabilities[tool],
         available: Boolean(config.keys[provider]),
         estimatedMicros: providerEstimate(provider),
@@ -255,26 +342,77 @@ export class Observatory {
       };
     });
   }
-  discover(id: string, need: string) {
-    this.require(id);
-    const tools = this.catalog();
+  discover(
+    id: string,
+    needOrInput: string | DiscoveryInput,
+    requests?: z.input<typeof costRequest>[],
+  ) {
+    const session = this.require(id);
+    const remainingBudgetMicros = Math.max(
+      0,
+      session.budgetMicros - session.spentMicros - session.reservedMicros,
+    );
+    const catalog = this.catalog();
+    const input =
+      typeof needOrInput === "string"
+        ? { need: needOrInput, requests }
+        : needOrInput;
+    let discovery: ReturnType<typeof matchTools>;
+    try {
+      discovery = matchTools(
+        input,
+        Object.fromEntries(catalog.map((t) => [t.tool, t.available])) as Record<
+          ToolName,
+          boolean
+        >,
+        remainingBudgetMicros,
+      );
+    } catch (error) {
+      if (error instanceof z.ZodError) throw error;
+      throw new ObservationError(
+        400,
+        error instanceof Error ? error.message : "Invalid discovery request.",
+      );
+    }
+    const tools = catalog.map((t) => ({
+      ...t,
+      ...discovery.tools.find((m) => m.tool === t.tool)!,
+      estimateScope:
+        "Each quote is one candidate request, not a batch total. Default prices apply only when no request quote is available.",
+    }));
     const offerId = this.db.newId();
-    this.db.event(id, "tools_offered", "observed", {
+    const intentContext = {
+      objective: session.objective,
+      constraints: session.constraints,
+      criteria: session.criteria.map((c) => c.text),
+    };
+    const data = {
       offerId,
-      need,
+      need: discovery.input.need,
+      context: discovery.input.context ?? null,
+      intentContext,
+      operations: discovery.operations,
+      catalogVersion: discovery.catalogVersion,
+      matchingBasis:
+        "Structured operation, required content, and supported adapter parameters. Prose intent/context is supplied for the external agent to assess; it is not a claim that every constraint was enforced.",
+      missingInputs: discovery.missingInputs,
+      candidateTools: tools
+        .filter((t) => t.discoveryMatches.some((m) => m.status === "eligible"))
+        .map((t) => t.tool),
       tools,
+      remainingBudgetMicros,
       meaning:
-        "Returned to the client; does not prove the model considered every option.",
-    });
+        "Server-matched options returned to the client; does not prove the model considered every option. Candidate quotes are alternatives, not a batch authorization.",
+    };
+    this.db.event(id, "tools_offered", "observed", data);
     return {
-      offerId,
-      tools,
+      ...data,
       note: "Choose explicitly. No provider is selected automatically. Performance is local observed execution, not an accuracy benchmark.",
       selectionGuidance: providerSelectionGuidance,
     };
   }
-  async execute(id: string, raw: z.infer<typeof callInput>) {
-    const input = callInput.parse(raw);
+  async execute(id: string, raw: unknown) {
+    const input = legacyCallInput.parse(raw);
     const provider = names[input.tool];
     if (
       provider === "firecrawl"
@@ -295,16 +433,33 @@ export class Observatory {
         );
       }
     }
-    const signature = digest(input);
+    const estimate = estimateRequest({
+      tool: input.tool,
+      query: input.query,
+      url: input.url,
+      domains: input.domains,
+      maxResults: input.maxResults,
+      searchDepth: input.searchDepth,
+    });
+    const historicalSignature = digest(input);
+    const normalizedSignature = digest({
+      ...input,
+      statedReason: input.statedReason.trim(),
+    });
     const receipt = this.db.receipt(id, input.requestKey);
     if (receipt) {
-      if (receipt.signature !== signature)
+      if (
+        receipt.signature !== historicalSignature &&
+        receipt.signature !== normalizedSignature
+      )
         throw new ObservationError(
           409,
           "This request key was used with different arguments.",
         );
       return { ...receipt.call, replayed: true };
     }
+    input.statedReason = callInput.parse(input).statedReason;
+    const signature = digest(input);
     let call!: ObservedCall;
     this.db.transaction(() => {
       const s = this.require(id);
@@ -333,7 +488,7 @@ export class Observatory {
           429,
           "Provider request limit reached. Try later with the same request key.",
         );
-      const estimateMicros = providerEstimate(provider);
+      const estimateMicros = estimate.estimatedMicros;
       if (s.spentMicros + s.reservedMicros + estimateMicros > s.budgetMicros)
         throw new ObservationError(
           409,
@@ -348,7 +503,17 @@ export class Observatory {
         arguments:
           provider === "firecrawl"
             ? { url: input.url }
-            : { query: input.query, domains: input.domains },
+            : {
+                query: input.query,
+                domains: input.domains,
+                ...(input.maxResults !== undefined
+                  ? { maxResults: input.maxResults }
+                  : {}),
+                ...(input.searchDepth !== undefined
+                  ? { searchDepth: input.searchDepth }
+                  : {}),
+              },
+        costEstimate: estimate,
         statedReason: input.statedReason,
         status: "running",
         startedAt: new Date().toISOString(),
@@ -370,6 +535,7 @@ export class Observatory {
         tool: input.tool,
         arguments: call.arguments,
         estimateMicros,
+        costEstimate: estimate,
         rateCardVersion: config.rateCardVersion,
         selectedBy: "explicit_caller_choice",
       });
@@ -386,6 +552,15 @@ export class Observatory {
               input.query!,
               input.domains,
               call.id,
+              ...(input.maxResults !== undefined ||
+              input.searchDepth !== undefined
+                ? [
+                    {
+                      maxResults: input.maxResults,
+                      searchDepth: input.searchDepth,
+                    },
+                  ]
+                : []),
             );
       call.result = result as unknown as Record<string, unknown>;
       call.httpStatus = result.httpStatus;
@@ -545,17 +720,13 @@ export class Observatory {
     });
   }
   consent(id: string, consent: boolean) {
-    return this.db.transaction(() => {
-      const s = this.require(id);
-      s.commercialConsent = consent;
-      this.db.save(s);
-      this.db.event(id, "sharing_consent_changed", "workspace_review", {
-        commercialConsent: consent,
-        scope:
-          "Aggregate tool and outcome statistics only; excludes raw intent, outputs, URLs, and explanations.",
-      });
-      return s;
-    });
+    const s = this.require(id);
+    if (!consent)
+      throw new ObservationError(
+        409,
+        "Commercial aggregate sharing is enabled for all sessions by workspace policy; per-session opt-out is no longer supported.",
+      );
+    return s;
   }
   openCase(id: string, evaluationId: string, reason: string) {
     return this.db.transaction(() => {
@@ -667,7 +838,9 @@ export class Observatory {
       ),
       models,
       sharing: {
-        consentedSessions: sharing.length,
+        consentedSessions: sharing.length, // Legacy response field.
+        includedSessions: sharing.length,
+        policy: SHARING_POLICY,
         minimumCohort: config.minCohort,
         available: this.commercialAggregate().available,
         published: false,
@@ -681,6 +854,10 @@ export class Observatory {
         available: false,
         minimumCohort: config.minCohort,
         consentedSessions: sessions.length,
+        includedSessions: sessions.length,
+        policy: SHARING_POLICY,
+        includesRawContent: false,
+        automaticallyPublished: false,
         providers: [],
       };
     const providers = Object.values(names).flatMap((provider) => {
@@ -714,6 +891,8 @@ export class Observatory {
       available: providers.length > 0,
       minimumCohort: config.minCohort,
       consentedSessions: sessions.length,
+      includedSessions: sessions.length,
+      policy: SHARING_POLICY,
       providers,
       includesRawContent: false,
       automaticallyPublished: false,

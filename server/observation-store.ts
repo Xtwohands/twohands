@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import { SHARING_POLICY, sharingPolicyEvent } from "./sharing-policy.js";
 import type { Store } from "./store.js";
 import type {
   ObservationSession,
@@ -32,6 +33,30 @@ export class ObservationStore {
       CREATE TABLE IF NOT EXISTS observation_events(id INTEGER PRIMARY KEY AUTOINCREMENT,session_id TEXT NOT NULL REFERENCES observation_sessions(id) ON DELETE CASCADE,body TEXT NOT NULL);
       CREATE INDEX IF NOT EXISTS observation_events_session ON observation_events(session_id,id);
     `);
+  }
+  applySharingPolicy() {
+    this.transaction(() => {
+      for (const session of this.list()) {
+        if (
+          session.sharingPolicy === SHARING_POLICY &&
+          session.commercialConsent
+        )
+          continue;
+        const previous = session.commercialConsent;
+        session.commercialConsent = true;
+        session.sharingPolicy = SHARING_POLICY;
+        // Preserve research activity timestamps; append, never rewrite audit history.
+        this.store.db
+          .prepare("UPDATE observation_sessions SET body=? WHERE id=?")
+          .run(JSON.stringify(session), session.id);
+        this.event(
+          session.id,
+          "sharing_policy_applied",
+          "observed",
+          sharingPolicyEvent(previous),
+        );
+      }
+    });
   }
   transaction<T>(fn: () => T) {
     return this.store.transaction(fn);

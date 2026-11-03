@@ -8,7 +8,7 @@ The interface uses dark neutral surfaces with restrained `#FF6A00` selection ind
 
 The local MCP server works with Claude desktop and Codex CLI. Both have completed live research sessions through it. See [validation evidence](docs/OBSERVATION_VALIDATION.md) for the exact scope and limitations.
 
-The [product direction](docs/PRODUCT_DIRECTION.md) connects this evidence to future model evaluation, refund review, and consented tool-company feedback, and identifies what still needs to be established for each.
+The [product direction](docs/PRODUCT_DIRECTION.md) connects this evidence to future model evaluation, refund review, and aggregate tool-company feedback, and identifies what still needs to be established for each.
 
 The sidebar now includes a **Tool company** demo and **Provider lab**. Explore illustrative company insights, turn findings into test plans, and compare real controlled provider samples separately from organic agent choices. See the [provider lab guide](docs/PROVIDER_LAB.md).
 
@@ -42,7 +42,7 @@ You can target one client with `npm run mcp:install -- claude`, `-- codex`, or `
 
 1. Ask the external agent a normal question and tell it to use APILayer.
 2. The agent records intent internally. The backend starts the session automatically under its configured spending policy; the consumer does not approve sessions or choose a research budget.
-3. The agent discovers options, chooses providers explicitly, inspects evidence, and submits its final output.
+3. The agent sends the immediate need and provider-neutral request parameters. Octolab discovers relevant options with costs and evidence; the agent chooses explicitly, explains the choice, inspects results, and submits its final output.
 4. Review the output against each criterion. Pass, fail, and unknown are separate; link supporting calls and explain judgments.
 5. If needed, open a review case against a particular evaluation. Earlier outputs and retrospective reviews stay attached to their own versions.
 
@@ -55,7 +55,7 @@ Set `AGENT_SESSION_BUDGET_MICROS` on the backend to control the per-session rese
 | Accepted intent    | Fixed objective, weighted criteria, constraints, budget, and a fingerprint of that accepted version    |
 | Tool options       | The catalog returned to the agent; it does not prove every option was considered                       |
 | Tool selection     | The explicit provider the caller requested; no automatic provider routing or fallback in this workflow |
-| Stated explanation | An optional agent-supplied decision summary, separate from observed execution                          |
+| Stated explanation | A required brief agent-supplied decision summary, separate from observed execution                     |
 | Evidence           | Provider results, API/page status, timings, estimates, and extraction truncation metadata              |
 | Output             | The agent’s actual submitted answer, with immutable versions and supporting call IDs                   |
 | Evaluation         | Criterion judgments, evidence links, review source, score, coverage, and the exact output version      |
@@ -69,7 +69,7 @@ MCP exposes actions and supplied explanations, **not private internal reasoning 
 - Model summaries use one latest, fully reviewed output per session and withhold aggregate scores until five eligible sessions. Unknown model identities stay unscored. These are local review summaries across the recorded tasks, not controlled general-accuracy benchmarks.
 - Human-reported and assistant-reported reviews are labeled. Reviewer identity is not independently verified. An assistant’s evaluation is not converted into a human assessment.
 - Review cases do not issue money, promise insurance coverage, determine eligibility, or create a payment entitlement.
-- Commercial aggregate sharing starts off for each session. Consent can be withdrawn. Exports suppress small provider cohorts and omit raw intent, answers, queries, URLs, and explanations. Nothing is automatically sent or sold to vendors.
+- Commercial aggregate sharing is enabled for all existing and new observation sessions by workspace policy. Historical consent events are preserved; policy changes append audit events. Exports suppress small provider cohorts and omit raw intent, answers, queries, URLs, and explanations. Nothing is automatically sent or sold to vendors.
 - Summary export omits research text and free-form model labels. Private evidence export intentionally contains the complete local record. Local hash-chain consistency is not third-party attestation or protection against an operator rewriting the database.
 
 ## Reliability and operations
@@ -89,7 +89,7 @@ npm run test:e2e
 npm run format:check
 ```
 
-Tests use isolated fixtures and temporary databases. They cover protocol transport, authentication, approval boundaries, budgets, idempotency, real process interruption, retained evidence, output/review versions, cases, consent, exports, mobile navigation, accessibility, and safe Markdown rendering.
+Tests use isolated fixtures and temporary databases. They cover protocol transport, authentication, approval boundaries, budgets, idempotency, real process interruption, retained evidence, output/review versions, cases, sharing policy, exports, mobile navigation, accessibility, and safe Markdown rendering.
 
 A reproducible durability workload is available without any external provider calls:
 
@@ -110,3 +110,36 @@ npm run verify:evidence -- /path/to/private-evidence.json
 ```
 
 This offline check compares the intent fingerprint, audit chain, captured calls, output/review links, estimated ledger, case resolutions, and consent state. It makes no network requests and does not modify the file. A passing result establishes internal consistency, not source truth, independently verified identity, or external attestation. See [observation architecture](docs/OBSERVATION_ARCHITECTURE.md) for the trust boundaries.
+
+## Request costs and reported usage
+
+Before choosing a provider, call `discover_tools` with the immediate `need`, provider-neutral `operations`, and relevant `context`. The recorded intent and constraints are included automatically. Octolab discovers compatible alternatives; the caller does not need to name every provider. Discovery makes no provider calls and consumes no provider budget.
+
+```json
+{
+  "sessionId": "<active session ID>",
+  "need": "Find the official specification",
+  "context": {
+    "requirements": "Prefer primary sources",
+    "evidenceGaps": ["Need the original published specification"]
+  },
+  "operations": [
+    {
+      "operation": "search",
+      "query": "example product specification",
+      "maxResults": 10,
+      "content": "any"
+    }
+  ]
+}
+```
+
+This returns Exa and Tavily search alternatives, plus an explanation that Firecrawl requires a known URL. For extraction, use `operation: "extract"` with `url`. `content: "page_text"` excludes excerpt-only search adapters; `complete_page` currently produces no compatible candidate because the adapters cannot guarantee complete, untruncated content. Tavily `searchDepth` is not mapped to an invented Exa depth. Capabilities and output differences remain explicit.
+
+Every new provider call requires a non-empty `statedReason`. The external agent still makes the final choice; the server does not automatically execute discovery candidates or switch providers. Reputation separates organic execution, evidence-linked answer reviews, and controlled samples; it does not invent a composite quality score. See [discovery contract](docs/TOOL_DISCOVERY.md).
+
+Each tool's `requestEstimates` describes its proposed requests, cost breakdown, pricing source, rate-card version, and whether each request individually fits the remaining session budget. Candidates are alternatives, not a batch execution plan; their costs are not added together. Search result counts are 1–20 (default 10); Tavily depth is basic (default, 1 credit) or advanced (2 credits). Exa uses auto mode: its configured base covers up to 10 results, plus `EXA_ADDITIONAL_RESULT_USD` per requested result above 10. Execution recomputes and reserves the same request estimate under the current rates, preserving the options in the receipt. Re-estimate if the request changes. Calls without these options retain their previous defaults. Legacy `requests` remain accepted and now expand into compatible alternatives. Without concrete operations/requests, discovery returns labeled defaults and missing-input guidance; it cannot infer whole-task cost from prose.
+
+Provider rules were checked on 2026-11-02 against [Exa pricing](https://exa.ai/pricing), [Tavily credits](https://docs.tavily.com/documentation/api-credits), and [Firecrawl billing](https://docs.firecrawl.dev/billing). USD conversion rates remain server-configured because account plans, discounts, and free credits are unknown. Firecrawl quotes one base Markdown scrape credit; document parsing can add credits, so its base quote is not an upper bound. Budget accounting is an estimated ledger, not an enforced provider invoice limit.
+
+After execution, the trace, evidence view, and session provider-usage panel show Exa's reported USD cost and Tavily/Firecrawl's reported credits when present. Missing usage is labeled unreported, never zero. Provider subtotals show reporting coverage; credits are not silently converted to actual dollar charges. Historical events retain their original estimates and expose reported usage already present in saved results. No billing reconciliation or live provider calls are performed by this display.

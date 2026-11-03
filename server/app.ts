@@ -133,13 +133,24 @@ export function createApp(
     const source = z
       .enum(["demo", "local"])
       .safeParse(req.query.source ?? "demo");
-    if (!p.success || !source.success) {
+    const scope = z
+      .enum(["aggregate", "workspace"])
+      .safeParse(req.query.scope ?? "aggregate");
+    if (!p.success || !source.success || !scope.success) {
       res
         .status(400)
         .json({ error: "Choose a supported provider and data source." });
       return;
     }
-    res.json(companyReport(p.data, source.data, observatory, providerLab));
+    res.json(
+      companyReport(
+        p.data,
+        source.data,
+        observatory,
+        providerLab,
+        scope.data === "workspace",
+      ),
+    );
   });
   function idempotency(
     req: express.Request,

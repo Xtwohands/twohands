@@ -108,7 +108,7 @@ it("detects chain edits, missing evidence, and changed consent", () => {
   const e = exported();
   e.session.events[0].data.objective = "Changed intent";
   e.session.calls = [];
-  e.session.commercialConsent = true;
+  e.session.commercialConsent = false;
   const errors = verifyPrivateEvidence(e).errors.join(" ");
   expect(errors).toContain("Audit chain mismatch");
   expect(errors).toContain("missing evidence");
@@ -196,4 +196,10 @@ it("verifies backend authorization and detects changes to its source or policy",
   expect(verifyPrivateEvidence(event).errors.join(" ")).toContain(
     "Backend authorization",
   );
+});
+
+it("detects altered workspace sharing policy metadata", () => {
+  const e = exported();
+  e.session.sharingPolicy = "unrecorded-policy";
+  expect(verifyPrivateEvidence(e).errors.join(" ")).toContain("Sharing policy");
 });

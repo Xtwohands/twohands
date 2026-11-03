@@ -122,6 +122,7 @@ test("records and approves intent, receives an output, evaluates it, and opens a
     data: {
       tool: "exa_search",
       query: "should not run",
+      statedReason: "Check the accepted intent boundary.",
       requestKey: "blocked",
     },
   });
@@ -204,7 +205,7 @@ test("shows actual tool choices separately from stated explanations and keeps ra
   await page.getByRole("button", { name: /Tool options returned/ }).click();
   await expect(
     page.getByText(
-      /It does not measure answer quality or prove the model considered every option/,
+      /does not establish answer quality or prove the agent considered every option/,
     ),
   ).toBeVisible();
   await page.getByRole("button", { name: /Tool result received/ }).click();
@@ -288,7 +289,7 @@ test("new output versions require a fresh review and preserve the old evaluation
   expect(full.evaluations).toHaveLength(1);
 });
 
-test("sharing is off by default, summary export omits content, and deletion removes the record", async ({
+test("sharing is enabled by workspace policy, summary export omits content, and deletion removes the record", async ({
   page,
   request,
 }) => {
@@ -298,14 +299,16 @@ test("sharing is off by default, summary export omits content, and deletion remo
   await page
     .getByRole("tab", { name: "Record & controls", exact: true })
     .click();
-  const sharing = page.getByRole("switch", {
-    name: "Include in commercial aggregates",
-  });
-  await expect(sharing).not.toBeChecked();
-  await sharing.click();
-  await expect(sharing).toBeChecked();
-  await sharing.click();
-  await expect(sharing).not.toBeChecked();
+  await expect(
+    page.getByText("Included by workspace policy", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("switch", { name: "Include in commercial aggregates" }),
+  ).toHaveCount(0);
+  expect(
+    (await (await request.get(`/api/observations/${s.id}`)).json())
+      .commercialConsent,
+  ).toBe(true);
   const exported = await (
     await request.get(`/api/observations/${s.id}/export`)
   ).json();
@@ -679,6 +682,7 @@ test("makes partial extraction limits visible while retaining all captured text"
       tool: "firecrawl_extract",
       url: "https://example.com/long",
       requestKey: "long-page",
+      statedReason: "Inspect the long source page.",
     },
   });
   expect(response.status()).toBe(200);
@@ -799,4 +803,128 @@ test("an older response cannot erase a newer output after leaving and reopening 
   await expect(
     page.getByText("Waiting for the delivered output", { exact: true }),
   ).toHaveCount(0);
+});
+
+test("shows request-specific quotes and provider-reported cost in the trace", async ({
+  page,
+  request,
+}) => {
+  const s = await makeSession(request);
+  const offer = await request.post(`/api/observations/${s.id}/discover`, {
+    data: {
+      need: "Fixture cost comparison",
+      requests: [
+        {
+          tool: "tavily_search",
+          query: "fixture cost query",
+          maxResults: 5,
+          searchDepth: "advanced",
+        },
+      ],
+    },
+  });
+  expect(offer.status()).toBe(200);
+  const call = await request.post(`/api/observations/${s.id}/call`, {
+    data: {
+      tool: "exa_search",
+      query: "fixture reported cost",
+      statedReason: "Find the requested source text.",
+      requestKey: crypto.randomUUID(),
+    },
+  });
+  expect(call.status()).toBe(200);
+  await page.goto(`/#sessions/${s.id}/trace`);
+  await page.getByRole("button", { name: /Tool options returned/ }).click();
+  await expect(
+    page.getByText("$0.016 estimated for this request", { exact: true }),
+  ).not.toBeVisible();
+  await page.getByRole("button", { name: /^tavily search/ }).click();
+  await expect(
+    page.getByText("$0.016 estimated for this request", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText(/advanced search, up to 5 results; 2 credits/),
+  ).toBeVisible();
+  await expect(
+    page.getByText("Within remaining budget", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText(/succeeded.*\$0.015 provider-reported cost/),
+  ).toBeVisible();
+  await page.getByRole("button", { name: /Tool result received/ }).click();
+  await expect(
+    page.getByText(/\$0.015 provider-reported cost\. Provider-reported usage/),
+  ).toBeVisible();
+  await page.goto(`/#sessions/${s.id}`);
+  await expect(
+    page.getByText("exa: $0.015 · 1 of 1 completed calls reported usage", {
+      exact: true,
+    }),
+  ).toBeVisible();
+});
+
+test("provider options start collapsed, show logos and prices, and expand independently by keyboard", async ({
+  page,
+  request,
+}) => {
+  const s = await makeSession(request);
+  await request.post(`/api/observations/${s.id}/discover`, {
+    data: {
+      need: "Compare fixture searches",
+      operations: [
+        { operation: "search", query: "fixture one", maxResults: 5 },
+        { operation: "search", query: "fixture two", maxResults: 12 },
+        { operation: "search", query: "fixture three", maxResults: 8 },
+      ],
+    },
+  });
+  await page.goto(`/#sessions/${s.id}/trace`);
+  await page.getByRole("button", { name: /Tool options returned/ }).click();
+  const cards = page.locator(".provider-option");
+  await expect(cards).toHaveCount(3);
+  for (const name of ["exa search", "tavily search", "firecrawl extract"]) {
+    await expect(
+      page.getByRole("button", { name: new RegExp(`^${name}`) }),
+    ).toHaveAttribute("aria-expanded", "false");
+  }
+  expect(
+    await cards
+      .locator("img")
+      .evaluateAll((images) =>
+        images.every(
+          (img) =>
+            (img as HTMLImageElement).complete &&
+            (img as HTMLImageElement).naturalWidth > 0,
+        ),
+      ),
+  ).toBe(true);
+  await expect(cards.nth(0).locator(".provider-option-price")).toContainText(
+    "3 quotes",
+  );
+  await expect(cards.nth(2).locator(".provider-option-price")).toContainText(
+    "default",
+  );
+  await expect(
+    page.getByText("fixture one", { exact: true }),
+  ).not.toBeVisible();
+  const exa = page.getByRole("button", {
+    name: /^exa search/,
+  });
+  await exa.focus();
+  await page.keyboard.press("Enter");
+  await expect(exa).toHaveAttribute("aria-expanded", "true");
+  await expect(
+    cards.nth(0).getByText("fixture one", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: /^tavily search/ }),
+  ).toHaveAttribute("aria-expanded", "false");
+  await page.keyboard.press("Enter");
+  await expect(exa).toHaveAttribute("aria-expanded", "false");
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+  expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
 });

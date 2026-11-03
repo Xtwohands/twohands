@@ -63,9 +63,9 @@ afterEach(() => {
 });
 
 describe("accepted intent and explicit provider execution", () => {
-  it("records a proposal with sharing off and refuses spending before approval", async () => {
+  it("records a proposal with sharing enabled and refuses spending before approval", async () => {
     const s = create(false);
-    expect(s.commercialConsent).toBe(false);
+    expect(s.commercialConsent).toBe(true);
     expect(s.approvedAt).toBeNull();
     await expect(obs.execute(s.id, call())).rejects.toThrow(/Approve/);
     expect(search).not.toHaveBeenCalled();
@@ -183,7 +183,7 @@ describe("accepted intent and explicit provider execution", () => {
         url,
         requestKey: "extract",
         domains: [],
-        statedReason: "",
+        statedReason: "Retrieve the supplied source page.",
       }),
     ).rejects.toThrow(/public HTTPS/);
     expect(scrape).not.toHaveBeenCalled();
@@ -200,7 +200,7 @@ describe("accepted intent and explicit provider execution", () => {
       url: "https://example.com/missing",
       requestKey: "extract",
       domains: [],
-      statedReason: "",
+      statedReason: "Retrieve the supplied source page.",
     });
     expect(c.result?.pageStatus).toBe(404);
     expect(obs.require(s.id).evaluations).toEqual([]);
@@ -356,7 +356,7 @@ describe("outcome versions, review coverage, and case evidence", () => {
       tool: "exa_search" as const,
       provider: "exa" as const,
       arguments: { query: "fixture" },
-      statedReason: "",
+      statedReason: "Retrieve the supplied source page.",
       status: "running" as const,
       startedAt: new Date().toISOString(),
       estimateMicros: 17000,
@@ -386,8 +386,8 @@ describe("outcome versions, review coverage, and case evidence", () => {
       score: 67,
     });
   });
-  it("withdraws sharing immediately and never includes raw intent in the aggregate", async () => {
-    const ids = [];
+  it("includes all sessions in aggregates without per-session opt-in and excludes raw intent", async () => {
+    const ids: string[] = [];
     for (let i = 0; i < 5; i++) {
       const s = create();
       ids.push(s.id);
@@ -398,8 +398,8 @@ describe("outcome versions, review coverage, and case evidence", () => {
     expect(aggregate.available).toBe(true);
     expect(aggregate.providers).toHaveLength(1);
     expect(JSON.stringify(aggregate)).not.toContain("fixture research");
-    obs.consent(ids[0], false);
-    expect(obs.commercialAggregate().available).toBe(false);
+    expect(() => obs.consent(ids[0], false)).toThrow(/workspace policy/);
+    expect(obs.commercialAggregate().available).toBe(true);
   });
 });
 
@@ -500,4 +500,77 @@ it("withholds aggregate availability when consented sessions do not share a prov
     providers: [],
   });
   expect(obs.summary().sharing.available).toBe(false);
+});
+
+describe("request cost decisions and budget enforcement", () => {
+  it("quotes result counts and search depth without making provider calls", () => {
+    const s = create();
+    const d = obs.discover(s.id, "Compare a focused search", [
+      { tool: "exa_search", query: "fixture", maxResults: 20 },
+      {
+        tool: "tavily_search",
+        query: "fixture",
+        searchDepth: "advanced",
+        maxResults: 5,
+      },
+    ]);
+    expect(d.tools[0].requestEstimates[0].estimatedMicros).toBe(
+      17000 + 10 * config.exaAdditionalResultMicros,
+    );
+    expect(d.tools[0].requestEstimates[0].withinBudget).toBe(false);
+    expect(d.tools[1].requestEstimates[1].estimatedMicros).toBe(16000);
+    expect(d.tools[1].requestEstimates[1].withinBudget).toBe(true);
+    expect(search).not.toHaveBeenCalled();
+    expect(scrape).not.toHaveBeenCalled();
+    expect(obs.require(s.id).spentMicros).toBe(0);
+    expect(obs.db.events(s.id).at(-1)?.data.tools).toEqual(d.tools);
+  });
+  it("reserves the quoted cost, passes options, and rejects changes on retry", async () => {
+    const s = create();
+    const args = {
+      ...call("advanced", "tavily_search"),
+      maxResults: 5,
+      searchDepth: "advanced" as const,
+    };
+    const c = await obs.execute(s.id, args);
+    expect(c.estimateMicros).toBe(16000);
+    expect(search).toHaveBeenCalledWith("tavily", args.query, [], c.id, {
+      maxResults: 5,
+      searchDepth: "advanced",
+    });
+    expect(obs.require(s.id).spentMicros).toBe(16000);
+    await expect(
+      obs.execute(s.id, { ...args, maxResults: 10 }),
+    ).rejects.toThrow(/different arguments/);
+    await expect(
+      obs.execute(s.id, { ...args, requestKey: "another" }),
+    ).rejects.toThrow(/exceed/);
+    expect(search).toHaveBeenCalledTimes(1);
+  });
+  it("blocks larger Exa requests before execution and rejects incompatible options", async () => {
+    const s = create();
+    await expect(
+      obs.execute(s.id, { ...call(), maxResults: 20 }),
+    ).rejects.toThrow(/exceed/);
+    expect(() =>
+      obs.discover(s.id, "invalid", [
+        { tool: "exa_search", query: "fixture", searchDepth: "advanced" },
+      ]),
+    ).toThrow(/Tavily/);
+    expect(() =>
+      obs.discover(s.id, "invalid", [
+        {
+          tool: "firecrawl_extract",
+          url: "https://example.com",
+          maxResults: 5,
+        },
+      ]),
+    ).toThrow(/extraction/);
+    expect(() =>
+      obs.discover(s.id, "invalid", [
+        { tool: "firecrawl_extract", url: "https://127.0.0.1" },
+      ]),
+    ).toThrow(/public HTTPS/);
+    expect(search).not.toHaveBeenCalled();
+  });
 });

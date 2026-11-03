@@ -33,6 +33,13 @@ export interface CompanyReport {
     referencedCalls: number;
   };
   organicUnavailableReason: string | null;
+  privateActivity: null | {
+    offeredSessions: number;
+    selectedSessions: number;
+    calls: number;
+    successfulCalls: number;
+    referencedCalls: number;
+  };
   benchmarks: ProviderMeasurement[];
   benchmarkRunId: string | null;
   benchmarkLabel: string;
@@ -116,6 +123,7 @@ export function companyReport(
   source: "demo" | "local",
   obs: Observatory,
   lab: ProviderLab,
+  workspacePreview = false,
 ): CompanyReport {
   // Never return objectives, queries, notes, outputs, model names, or session IDs.
   const sessions =
@@ -127,8 +135,18 @@ export function companyReport(
       (e) =>
         e.type === "tools_offered" &&
         Array.isArray(e.data.tools) &&
-        (e.data.tools as { provider: string; available: boolean }[]).some(
-          (t) => t.provider === provider && t.available,
+        (
+          e.data.tools as {
+            provider: string;
+            available: boolean;
+            discoveryMatches?: { status: string }[];
+          }[]
+        ).some(
+          (t) =>
+            t.provider === provider &&
+            t.available &&
+            (!t.discoveryMatches?.length ||
+              t.discoveryMatches.some((m) => m.status === "eligible")),
         ),
     );
     if (!offered) return false;
@@ -175,6 +193,37 @@ export function companyReport(
             referencedCalls: calls.filter((c) => referenced.has(c.id)).length,
           }
         : null;
+  const workspaceCalls =
+    source === "local" && workspacePreview
+      ? obs.db
+          .list()
+          .flatMap((s) => obs.db.calls(s.id))
+          .filter(
+            (c) =>
+              c.provider === provider &&
+              ["succeeded", "failed"].includes(c.status),
+          )
+      : [];
+  const allReferenced = new Set(
+    source === "local" && workspacePreview
+      ? obs.db
+          .list()
+          .flatMap((s) => s.outcomes.flatMap((o) => o.evidenceCallIds))
+      : [],
+  );
+  const privateActivity =
+    source === "local" && workspacePreview
+      ? {
+          offeredSessions: eligible.length,
+          selectedSessions: selected.length,
+          calls: workspaceCalls.length,
+          successfulCalls: workspaceCalls.filter(
+            (c) => c.status === "succeeded",
+          ).length,
+          referencedCalls: workspaceCalls.filter((c) => allReferenced.has(c.id))
+            .length,
+        }
+      : null;
   const latestSummary = (source === "local" ? lab.summaries() : []).find(
     (r) =>
       r.status === "completed" &&
@@ -300,11 +349,12 @@ export function companyReport(
     period:
       source === "demo"
         ? "Illustrative 30-day window"
-        : "Consented workspace history + latest completed test",
+        : "Local workspace history + latest completed test",
     organic,
+    privateActivity,
     organicUnavailableReason: organic
       ? null
-      : `No eligible cohort yet. At least ${config.minCohort} opted-in sessions must both offer and use this provider before company aggregates appear.`,
+      : `No eligible cohort yet. At least ${config.minCohort} sessions must both offer and use this provider before company aggregates are eligible. Private workspace counts remain visible.`,
     benchmarks,
     benchmarkRunId: source === "demo" ? null : (latest?.id ?? null),
     usage,

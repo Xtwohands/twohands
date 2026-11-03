@@ -1,3 +1,4 @@
+import { ToolOptions } from "./components/ToolOptions";
 import { OutcomeContent } from "./components/DeferredOutcomeContent";
 import { CompanyView } from "./CompanyView";
 import { ProviderLabView } from "./ProviderLabView";
@@ -24,9 +25,7 @@ import { Button } from "./components/ui/button";
 import { Badge } from "./components/ui/badge";
 import { Input } from "./components/ui/input";
 import { Textarea } from "./components/ui/textarea";
-import { Label } from "./components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./components/ui/tabs";
-import { Switch } from "./components/ui/switch";
 import {
   Collapsible,
   CollapsibleContent,
@@ -113,6 +112,9 @@ type Catalog = {
   description: string;
   available: boolean;
   estimatedMicros: number;
+  requestEstimates?: (import("../server/request-cost").RequestEstimate & {
+    withinBudget: boolean;
+  })[];
   sampleCount: number;
   averageLatencyMs: number | null;
   successRate: number | null;
@@ -180,11 +182,71 @@ function eventLabel(e: ObservationEvent) {
         call_interrupted: "Call interrupted",
         outcome_submitted: "Output submitted",
         outcome_evaluated: "Outcome evaluated",
-        sharing_consent_changed: "Sharing preference updated",
+        sharing_consent_changed: "Historical sharing preference",
+        sharing_policy_applied: "Workspace sharing policy applied",
         review_case_opened: "Review case opened",
         review_case_closed: "Review case closed",
       } as Record<string, string>
     )[e.type] || e.type.replaceAll("_", " ")
+  );
+}
+function reportedUsage(data: Record<string, any> | null | undefined) {
+  const usd = data?.usage?.providerReportedUsd;
+  const credits = data?.usage?.credits ?? data?.credits;
+  const parts: string[] = [];
+  if (typeof usd === "number" && Number.isFinite(usd) && usd >= 0)
+    parts.push(
+      `$${usd.toFixed(6).replace(/0+$/, "").replace(/\.$/, ".00")} provider-reported cost`,
+    );
+  if (typeof credits === "number" && Number.isFinite(credits) && credits >= 0)
+    parts.push(
+      `${credits} provider-reported credit${credits === 1 ? "" : "s"}`,
+    );
+  return parts.join(" · ") || "Cost / usage not reported by provider";
+}
+function ProviderUsageSummary({ calls }: { calls: SessionDetail["calls"] }) {
+  return (
+    <div className="provider-usage-summary">
+      <strong>Provider-reported usage</strong>
+      {["exa", "tavily", "firecrawl"].map((provider) => {
+        const completed = calls.filter(
+          (c) => c.provider === provider && c.status !== "running",
+        );
+        if (!completed.length) return null;
+        const reported = completed.filter((c) => {
+          const r = c.result as Record<string, any> | undefined;
+          const v =
+            provider === "exa"
+              ? r?.usage?.providerReportedUsd
+              : (r?.usage?.credits ?? r?.credits);
+          return typeof v === "number" && Number.isFinite(v) && v >= 0;
+        });
+        const total = reported.reduce((sum, c) => {
+          const r = c.result as Record<string, any>;
+          return (
+            sum +
+            (provider === "exa"
+              ? r.usage.providerReportedUsd
+              : (r.usage?.credits ?? r.credits))
+          );
+        }, 0);
+        return (
+          <p className="field-hint" key={provider}>
+            {provider}:{" "}
+            {reported.length
+              ? provider === "exa"
+                ? `$${total.toFixed(6).replace(/0+$/, "").replace(/\.$/, ".00")}`
+                : `${total} credits`
+              : "Not reported"}
+            {` · ${reported.length} of ${completed.length} completed calls reported usage`}
+          </p>
+        );
+      })}
+      <p className="field-hint">
+        Partial reporting is not a session billing total. Credits remain in
+        provider units; invoices are not reconciled.
+      </p>
+    </div>
   );
 }
 function eventText(e: ObservationEvent) {
@@ -195,7 +257,7 @@ function eventText(e: ObservationEvent) {
   if (e.type === "tool_called")
     return `${String(d.tool).replaceAll("_", " ")} · ${money(Number(d.estimateMicros))} estimated`;
   if (e.type === "tool_result")
-    return `${String(d.status)} · ${d.httpStatus ? `HTTP ${d.httpStatus} · ` : ""}${d.latencyMs} ms`;
+    return `${String(d.status)} · ${d.httpStatus ? `HTTP ${d.httpStatus} · ` : ""}${d.latencyMs} ms · ${reportedUsage(d.result as Record<string, any> | null)}`;
   if (e.type === "tools_offered") return String(d.need);
   if (e.type === "intent_recorded") return String(d.objective);
   if (e.type === "outcome_submitted")
@@ -835,7 +897,7 @@ export function ObservationApp() {
                   >
                     <dl className="tool-metrics">
                       <div>
-                        <dt>Estimated cost / call</dt>
+                        <dt>Default call estimate</dt>
                         <dd>{money(t.estimatedMicros)}</dd>
                       </div>
                       <div>
@@ -1066,18 +1128,18 @@ export function ObservationApp() {
               </div>
               <Panel
                 title="Data controls"
-                description="Local recording and commercial sharing are separate choices."
+                description="All sessions contribute to commercial aggregates under workspace policy."
               >
                 <div className="data-control-row">
                   <div>
                     <strong>Commercial aggregate sharing</strong>
                     <p>
-                      Off for each new session. Opt in individually after
-                      reviewing its contents; withdraw at any time.
+                      Enabled for every session, including existing records.
+                      Only aggregate statistics are eligible for export.
                     </p>
                   </div>
                   <Badge variant="outline">
-                    {summary?.sharing.consentedSessions || 0} opted in
+                    {summary?.sharing.consentedSessions || 0} included
                   </Badge>
                 </div>
                 <div className="data-control-row">
@@ -1085,8 +1147,8 @@ export function ObservationApp() {
                     <strong>Aggregate export</strong>
                     <p>
                       Requires at least {summary?.sharing.minimumCohort || 5}{" "}
-                      opted-in sessions, including the same minimum for each
-                      provider. Excludes raw intent, output, queries, URLs, and
+                      sessions, including the same minimum for each provider.
+                      Excludes raw intent, output, queries, URLs, and
                       explanations.
                     </p>
                   </div>
@@ -1095,7 +1157,7 @@ export function ObservationApp() {
                     onClick={() =>
                       void safeAction(async () =>
                         download(
-                          "apilayer-consented-aggregate.json",
+                          "apilayer-commercial-aggregate.json",
                           await api("/observations/aggregate"),
                         ),
                       )
@@ -1200,7 +1262,7 @@ function SessionView({
   const evaluation = s.evaluations
     .filter((e) => e.outcomeId === latest?.id)
     .at(-1);
-  const prompt = `Use the connected apilayer MCP tools for session ${s.id}. Read get_session first and follow its accepted intent and constraints. Discover tool options, choose providers yourself, and keep estimated tool spending within ${money(s.budgetMicros)}. Optional tool explanations should be concise decision summaries, not private reasoning. Submit your actual final answer with evidence call IDs using submit_outcome. Do not change consent or claim an independent evaluation.\n\nGoal: ${s.objective}`;
+  const prompt = `Use the connected apilayer MCP tools for session ${s.id}. Read get_session first and follow its accepted intent and constraints. Discover tool options, choose providers yourself, and keep estimated tool spending within ${money(s.budgetMicros)}. Every tool call requires a brief statedReason explaining why it fits the current need, not private reasoning. Submit your actual final answer with evidence call IDs using submit_outcome. Do not claim an independent evaluation.\n\nGoal: ${s.objective}`;
   return (
     <>
       <div className="session-heading">
@@ -1349,8 +1411,12 @@ function SessionView({
                   </div>
                 </dl>
                 <p className="field-hint">
-                  Usage estimates are separate from provider billing.
+                  Budget accounting uses request estimates. Provider-reported
+                  usage is shown separately.
                 </p>
+              </Panel>
+              <Panel title="Provider usage">
+                <ProviderUsageSummary calls={s.calls} />
               </Panel>
               <Panel title="Outcome">
                 {evaluation ? (
@@ -1428,27 +1494,13 @@ function SessionView({
                   </AccordionTrigger>
                   <AccordionContent>
                     {e.type === "tools_offered" && (
-                      <div className="offered-tools">
-                        {(e.data.tools as Catalog).map((t) => (
-                          <div key={t.tool}>
-                            <strong>{t.tool.replaceAll("_", " ")}</strong>
-                            <StateBadge
-                              label={
-                                t.available ? "Available" : "Not configured"
-                              }
-                            />
-                            <span>{money(t.estimatedMicros)} estimated</span>
-                            <span>
-                              {t.sampleCount} recorded calls across all sessions
-                            </span>
-                          </div>
-                        ))}
-                        <p className="field-hint">
-                          Usage includes successful and failed completed calls,
-                          as of this event. It does not measure answer quality
-                          or prove the model considered every option.
-                        </p>
-                      </div>
+                      <ToolOptions
+                        tools={
+                          e.data.tools as Parameters<
+                            typeof ToolOptions
+                          >[0]["tools"]
+                        }
+                      />
                     )}
                     {e.type === "tool_result" && (
                       <ToolResult
@@ -1762,38 +1814,21 @@ function SessionView({
               />
             </div>
           </Panel>
-          <Panel title="Sharing preference">
+          <Panel title="Commercial aggregate sharing">
             <div className="data-control-row">
               <div>
-                <Label htmlFor="commercial-sharing">
-                  Include in commercial aggregates
-                </Label>
+                <strong>Included by workspace policy</strong>
                 <p>
-                  Allow aggregate tool usage and outcome statistics for product
-                  research. Raw intent, output, queries, URLs, and explanations
-                  are excluded.
+                  All sessions contribute aggregate tool usage and outcome
+                  statistics. Raw intent, outputs, queries, URLs, and
+                  explanations are excluded from commercial exports.
                 </p>
               </div>
-              <Switch
-                id="commercial-sharing"
-                checked={s.commercialConsent}
-                disabled={busy}
-                onCheckedChange={(consent) =>
-                  void onAction(() =>
-                    onMutate(
-                      `/observations/${s.id}/consent`,
-                      { consent },
-                      consent
-                        ? "Aggregate sharing enabled for this session."
-                        : "Aggregate sharing withdrawn for this session.",
-                    ),
-                  )
-                }
-              />
+              <Badge variant="outline">Enabled</Badge>
             </div>
             <p className="field-hint">
-              Off by default. Minimum cohort applies. Nothing is automatically
-              published.
+              Minimum export cohorts still apply. Nothing is automatically
+              published or sent to tool companies.
             </p>
           </Panel>
           <Panel
@@ -1840,7 +1875,7 @@ function SessionView({
                 />
                 <span>
                   {date(evidenceCall.startedAt)} ·{" "}
-                  {money(evidenceCall.estimateMicros)} estimated
+                  {money(evidenceCall.estimateMicros)} pre-call estimate
                 </span>
               </div>
               <p className="evidence-query">
@@ -2002,6 +2037,10 @@ function ToolResult({
   if (!data) return null;
   return (
     <div className="tool-result-preview">
+      <p className="field-hint">
+        {reportedUsage(data)}. Provider-reported usage is not a reconciled
+        invoice.
+      </p>
       {typeof data.text === "string" && (
         <>
           <div className="result-status">

@@ -166,7 +166,7 @@ it("uses server policy, enforces its cap, and records authorization without huma
   expect(obs.require(s.id)).toMatchObject({
     budgetMicros: 1000,
     authorizationSource: "backend_policy",
-    commercialConsent: false,
+    commercialConsent: true,
   });
   expect(
     obs.db.events(s.id).find((e) => e.type === "intent_authorized"),
@@ -175,6 +175,7 @@ it("uses server policy, enforces its cap, and records authorization without huma
     sessionId: s.id,
     url: "https://example.com",
     requestKey: "one",
+    statedReason: "Read the supplied source once.",
   };
   const first = parse(
     await client.callTool({ name: "firecrawl_extract", arguments: args }),
@@ -204,7 +205,12 @@ it("rejects client budget overrides and keeps a zero server budget effective", a
   );
   const blocked = await client.callTool({
     name: "exa_search",
-    arguments: { sessionId: s.id, query: "Fixture", requestKey: "blocked" },
+    arguments: {
+      sessionId: s.id,
+      query: "Fixture",
+      requestKey: "blocked",
+      statedReason: "Find supporting evidence.",
+    },
   });
   expect(blocked.isError).toBe(true);
   expect(obs.db.calls(s.id)).toHaveLength(0);
@@ -351,4 +357,98 @@ it("keeps full output text and evaluation notes out of list polling responses", 
   expect(list.body[0].outcomes[0].id).toBe(out.outcomes[0].id);
   expect(list.body[0].evaluations[0].outcomeId).toBe(out.outcomes[0].id);
   expect(obs.db.detail(s.id)?.outcomes[0].text).toBe("PRIVATE_LONG_OUTPUT");
+});
+
+it("quotes concrete candidate requests through MCP without spending and executes matching options", async () => {
+  const s = parse(
+    await client.callTool({ name: "record_intent", arguments: intent }),
+  );
+  const candidate = {
+    tool: "tavily_search",
+    query: "fixture pricing",
+    maxResults: 5,
+    searchDepth: "advanced",
+  };
+  const offer = parse(
+    await client.callTool({
+      name: "discover_tools",
+      arguments: {
+        sessionId: s.id,
+        need: "Compare costs before choosing",
+        requests: [candidate],
+      },
+    }),
+  );
+  const quoted = offer.tools.find((t: any) => t.tool === "tavily_search")
+    .requestEstimates[0];
+  expect(quoted.estimatedMicros).toBe(config.prices.tavily * 2);
+  expect(quoted.withinBudget).toBe(true);
+  expect(obs.db.calls(s.id)).toHaveLength(0);
+  const { tool: _tool, ...args } = candidate;
+  const receipt = parse(
+    await client.callTool({
+      name: "tavily_search",
+      arguments: {
+        sessionId: s.id,
+        requestKey: "quoted-call",
+        statedReason: "Advanced search fits the requested retrieval depth.",
+        ...args,
+      },
+    }),
+  );
+  expect(receipt.estimateMicros).toBe(quoted.estimatedMicros);
+  expect(receipt.arguments).toMatchObject(args);
+  expect(receipt.costEstimate.request).toMatchObject(candidate);
+});
+
+it("requires a selection explanation in every provider schema and rejects missing or blank values", async () => {
+  const listed = await client.listTools();
+  for (const name of ["exa_search", "tavily_search", "firecrawl_extract"]) {
+    expect(
+      listed.tools.find((t) => t.name === name)?.inputSchema.required,
+    ).toContain("statedReason");
+  }
+  const s = parse(
+    await client.callTool({ name: "record_intent", arguments: intent }),
+  );
+  for (const statedReason of [undefined, "", "  \n "]) {
+    const result = await client.callTool({
+      name: "exa_search",
+      arguments: {
+        sessionId: s.id,
+        query: "fixture",
+        requestKey: "no-reason",
+        ...(statedReason !== undefined ? { statedReason } : {}),
+      },
+    });
+    expect(result.isError).toBe(true);
+  }
+  expect(obs.db.calls(s.id)).toHaveLength(0);
+  expect(obs.require(s.id).spentMicros).toBe(0);
+});
+
+it("discovers alternatives from provider-neutral operations through MCP", async () => {
+  const s = parse(
+    await client.callTool({ name: "record_intent", arguments: intent }),
+  );
+  const result = parse(
+    await client.callTool({
+      name: "discover_tools",
+      arguments: {
+        sessionId: s.id,
+        need: "Find sources with supporting text",
+        operations: [
+          { operation: "search", query: "fixture source", maxResults: 5 },
+        ],
+        context: {
+          requirements: "Prefer primary sources",
+          evidenceGaps: ["Need the original announcement"],
+        },
+      },
+    }),
+  );
+  expect(result.candidateTools).toEqual(["exa_search", "tavily_search"]);
+  expect(result.intentContext.objective).toBe(intent.objective);
+  expect(result.tools[0].reputation.organic.sampleCount).toBe(0);
+  expect(result.tools[2].requestEstimates).toHaveLength(0);
 });

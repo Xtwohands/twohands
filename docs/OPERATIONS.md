@@ -20,13 +20,13 @@ Sanitized trace exports omit prompts, queries, source URLs/content, organization
 
 ## Observation records and sharing
 
-The MCP bridge exposes intent proposals, session reads, explicit provider tools, cached evidence, and output submission. Intent acceptance, evaluations, case handling, deletion, and sharing controls are operator HTTP operations, absent from the MCP tool catalog. This is a local shared trust boundary; it is not a defense against another privileged local process accessing the operator API.
+The MCP bridge exposes intent proposals, session reads, explicit provider tools, cached evidence, and output submission. Intent acceptance, evaluations, case handling, deletion, and the legacy sharing compatibility route are operator HTTP operations, absent from the MCP tool catalog. This is a local shared trust boundary; it is not a defense against another privileged local process accessing the operator API.
 
 Each delivered output remains available as a separate version. An evaluation references an exact output ID, accepted intent hash, criterion verdicts, supporting call IDs, and a reported review source. Reviewing a prior version requires an explicit retrospective flag. Cases reference one exact evaluation and record their resolution; no money moves and no coverage is issued.
 
 Observation summary exports omit the objective, constraints, criteria text, model label, output text, source content, URLs, queries, stated explanations, and reviewer/case notes. Private exports intentionally contain them. Identifiers and timestamps remain in summary exports; these are minimized records, not a promise of anonymity.
 
-Commercial consent defaults off per session and can be withdrawn. The aggregate endpoint suppresses both overall and per-provider cohorts below the configured minimum (at least five). It contains only fixed provider names and aggregate execution counts/latency. Nothing is automatically sent to vendors. Stated explanations are retained locally and are not part of this aggregate feed. A future licensed data product needs a separate, explicit export contract and permissions.
+Commercial aggregate sharing is enabled for all observation sessions under workspace policy. Existing sessions are migrated once with an appended policy event; new sessions record the policy at creation. Per-session opt-out is no longer supported. The aggregate endpoint suppresses both overall and per-provider cohorts below the configured minimum (at least five). It contains only fixed provider names and aggregate execution counts/latency. Nothing is automatically sent to vendors. Stated explanations are retained locally and are not part of this aggregate feed. A future licensed data product needs a separate, explicit export contract and permissions.
 
 ## Retention
 
@@ -50,7 +50,7 @@ The command deletes expired research tasks and observation sessions with their e
 | `AGENT_SESSION_BUDGET_MICROS`       | 100000                   | Backend cap per automatically authorized MCP session ($0.10); 0 blocks positive-estimate calls |
 | `PROVIDER_TEST_BUDGET_MICROS`       | 150000                   | Backend cap per controlled provider run ($0.15)                                                |
 | `PROVIDER_TEST_DAILY_BUDGET_MICROS` | 500000                   | Controlled-test allowance per UTC start day ($0.50), separate from organic research            |
-| `ANALYTICS_MIN_TASKS`               | 5                        | Minimum consented cohort, cannot be configured below 5                                         |
+| `ANALYTICS_MIN_TASKS`               | 5                        | Minimum commercial export cohort, cannot be configured below 5                                 |
 | `DB_PATH`                           | `./data/apilayer.sqlite` | Workspace database                                                                             |
 | `HOST` / `PORT`                     | `127.0.0.1` / `3001`     | HTTP listener                                                                                  |
 

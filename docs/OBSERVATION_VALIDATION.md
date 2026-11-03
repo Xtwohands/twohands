@@ -1,5 +1,7 @@
 # Observation validation — November 1, 2026
 
+Historical validation report. The November 3, 2026 workspace policy subsequently enabled aggregate sharing for all observation sessions while preserving these original records. See [current discovery and sharing behavior](TOOL_DISCOVERY.md).
+
 This records local implementation validation, not a model benchmark or a claim of insurance coverage. Provider results below came from real public-source calls; automated fixtures ran in separate databases and processes.
 
 ## Automatic backend authorization update

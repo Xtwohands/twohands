@@ -32,7 +32,7 @@ if (process.argv[2] === "persist") {
   assert.equal(session.evaluations[0].coverage, 0);
   assert.equal(session.cases[0].status, "resolved");
   assert.equal(session.spentMicros, 0);
-  assert.equal(session.commercialConsent, false);
+  assert.equal(session.commercialConsent, true);
   assert.equal(session.authorizationSource, "backend_policy");
   assert.ok(session.events.some((e) => e.type === "intent_authorized"));
   assert.ok(!session.events.some((e) => e.type === "intent_approved"));
@@ -79,7 +79,7 @@ if (process.argv[2] === "persist") {
     assert.equal(s.approvalRequired, undefined);
     assert.equal(s.dashboardPath, undefined);
     const session = await tool("get_session", { sessionId: s.id });
-    assert.equal(session.commercialConsent, false);
+    assert.equal(session.commercialConsent, true);
     assert.equal(session.authorizationSource, "backend_policy");
     const unavailable = await client.callTool({
       name: "firecrawl_extract",
@@ -87,6 +87,7 @@ if (process.argv[2] === "persist") {
         sessionId: s.id,
         url: "https://example.com",
         requestKey: "unconfigured",
+        statedReason: "Check the known fixture page.",
       },
     });
     assert.equal(unavailable.isError, true);

@@ -70,7 +70,7 @@ test("company demo switches providers and turns a finding into a persistent demo
     ),
   ).toBe(true);
 });
-test("local company data is clearly separated and remains withheld without consent", async ({
+test("local company activity is visible separately from controlled tests and export eligibility", async ({
   page,
 }) => {
   await page.goto("/#company/tavily");
@@ -82,14 +82,15 @@ test("local company data is clearly separated and remains withheld without conse
     page.getByText("Your local provider evidence", { exact: true }),
   ).toBeVisible();
   await expect(
-    page.getByRole("heading", {
-      name: "Organic data stays private by default",
-      exact: true,
-    }),
+    page.getByText("Organic requests succeeded", { exact: true }),
   ).toBeVisible();
+  await expect(page.getByText(/Controlled execution:/)).toBeVisible();
   await expect(
     page.getByText("54 of 240 eligible sessions", { exact: true }),
   ).toHaveCount(0);
+  await expect(page.getByRole("listbox", { includeHidden: true })).toHaveCount(
+    0,
+  );
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
 });
 test("a company finding opens only its matching receipts and preserves the filters on reload", async ({
@@ -331,11 +332,14 @@ test("company switching rejects stale responses from the previous provider", asy
 }) => {
   let release!: () => void;
   const gate = new Promise<void>((r) => (release = r));
-  await page.route("**/api/company-insights/exa?source=demo", async (route) => {
-    const response = await route.fetch();
-    await gate;
-    await route.fulfill({ response });
-  });
+  await page.route(
+    "**/api/company-insights/exa?source=demo&scope=workspace",
+    async (route) => {
+      const response = await route.fetch();
+      await gate;
+      await route.fulfill({ response });
+    },
+  );
   await page.goto("/#company/exa");
   await expect(page.getByRole("status")).toContainText(
     "Loading provider insights",
@@ -373,6 +377,7 @@ test("review evidence uses a searchable picker instead of repeated full call lis
         tool: "firecrawl_extract",
         url: "https://example.com",
         requestKey: "picker",
+        statedReason: "Read the source needed for review.",
       },
     })
   ).json();

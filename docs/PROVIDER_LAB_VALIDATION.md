@@ -1,5 +1,7 @@
 # Provider lab validation — November 1, 2026
 
+Historical validation report. The November 3, 2026 workspace policy subsequently enabled aggregate sharing for all observation sessions while preserving these original records. See [current discovery and sharing behavior](TOOL_DISCOVERY.md).
+
 This report distinguishes real provider requests, attributed evidence reviews, and synthetic application checks. It does not claim independent model evaluation, general provider superiority, reconciled billing, or a measured change in agent preference.
 
 ## Real controlled requests

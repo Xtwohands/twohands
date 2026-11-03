@@ -6,7 +6,7 @@ The sidebar switches between the operator workspace and a tool company preview. 
 
 **Demo data** is an illustrative scenario, labeled throughout the dashboard. Its numbers are constants, not observed paid-provider results. Demo test plans stay in browser storage and do not enter the backend, provider history, or model statistics.
 
-**Local lab** shows actual controlled test receipts and, only when eligible, consented organic workspace aggregates. Commercial sharing remains off by default. Company aggregate counts require the configured minimum cohort (at least five opted-in sessions offering and using the selected provider); they contain no objectives, queries, raw answers, notes, model names, or session IDs. The local preview does not publish anything to a vendor or create tenant isolation.
+**Local lab** shows actual controlled test receipts and private organic workspace counts, including small samples. Commercial sharing is enabled for all observation sessions. Company aggregate exports still require the configured minimum cohort (at least five sessions offering and using the selected provider); they contain no objectives, queries, raw answers, notes, model names, or session IDs. The local preview does not publish anything to a vendor or create tenant isolation.
 
 The source selector remembers its value within the browser tab, so inspecting a receipt and returning to the company view preserves context.
 
@@ -88,3 +88,5 @@ SOAK_SECONDS=60 npm run test:soak:providers
 The soak uses an isolated synthetic SQLite database and injected adapters. It forbids network requests and exercises replay, cancellation, failures, revised reviews, repeated reopen/recovery, company views, and separation from organic statistics. Its output is not provider performance data. A separate process-kill test verifies recovery after a durable reservation. The packaged container test verifies authenticated endpoints, missing-key rejection, demo isolation, and plan persistence across restart without any provider credentials.
 
 See [the validation report](PROVIDER_LAB_VALIDATION.md) for the real baseline, follow-up, pricing correction, attributed reviews, and limits of the measured results.
+
+The overview labels organic request success separately from controlled reference checks and usefulness reviews. Controlled execution counts appear alongside them. A missing review is not a failed test.

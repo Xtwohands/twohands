@@ -1018,22 +1018,6 @@
   overflow-wrap: anywhere;
   margin: 10px 0 5px;
 }
-.offered-tools > div {
-  display: flex;
-  gap: 13px;
-  align-items: center;
-  border: 1px solid #383838;
-  border-radius: 7px;
-  padding: 12px;
-  margin-bottom: 8px;
-  font-size: 11px;
-  color: #a8a8a8;
-  flex-wrap: wrap;
-}
-.offered-tools strong {
-  font-weight: 500;
-  color: #dcdcdc;
-}
 .source-links > div {
   padding: 12px 0;
   border-bottom: 1px solid #313131;
@@ -2252,4 +2236,97 @@
 .captured-evidence:focus-visible {
   outline: 2px solid var(--ring);
   outline-offset: 3px;
+}
+
+.request-estimate {
+  display: grid;
+  gap: 5px;
+  flex-basis: 100%;
+  overflow-wrap: anywhere;
+}
+
+/* Provider cards remain compact regardless of how many quotes were returned. */
+.provider-options {
+  display: grid;
+  gap: 8px;
+}
+.provider-option {
+  border: 1px solid #383838 !important;
+  border-radius: 8px;
+  overflow: hidden;
+}
+.event-list .provider-option-trigger {
+  align-items: center;
+  gap: 10px;
+  padding: 14px;
+  width: 100%;
+  min-width: 0;
+  font-size: 12px;
+}
+.provider-option-logo {
+  width: 24px;
+  height: 24px;
+  object-fit: contain;
+  border-radius: 5px;
+  flex: none;
+}
+.provider-option-logo-tavily {
+  background: #fff;
+  padding: 3px;
+}
+.provider-option-name {
+  color: #ddd;
+  white-space: nowrap;
+}
+.provider-option-price {
+  margin-left: auto;
+  color: #ddd;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.provider-option-details {
+  padding: 0 14px 14px;
+  font-size: 12px;
+  color: #aaa;
+}
+.provider-option-details p {
+  margin: 10px 0 0;
+}
+.provider-option-details strong {
+  color: #ddd;
+  font-weight: 500;
+}
+.provider-option-details .request-estimate {
+  padding: 12px 0;
+  border-top: 1px solid #333;
+}
+.provider-option-details .estimate-query {
+  color: #d0d0d0;
+}
+.provider-reputation {
+  border-top: 1px solid #333;
+  margin-top: 14px;
+  padding-top: 12px;
+}
+@media (max-width: 600px) {
+  .event-list .provider-option-trigger {
+    gap: 6px;
+    padding: 12px 8px;
+    font-size: 10px;
+  }
+  .provider-option-logo {
+    width: 18px;
+    height: 18px;
+  }
+  .provider-option-trigger [data-slot="badge"] {
+    font-size: 9px;
+    padding: 2px 4px;
+  }
+  .provider-option-price {
+    white-space: nowrap;
+    text-align: right;
+  }
+  .provider-quote-count {
+    display: none;
+  }
 }

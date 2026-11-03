@@ -1,3 +1,4 @@
+import { providerLogos } from "./components/ToolOptions";
 import { useEffect, useRef, useState } from "react";
 import {
   ArrowUpRight,
@@ -40,11 +41,6 @@ import type { ProviderId } from "../server/types";
 import type { Experiment, LabRun } from "../server/provider-lab-types";
 
 const demoPlansKey = "apilayer-company-demo-plans-v1";
-const providerLogos: Record<ProviderId, string> = {
-  exa: "/providers/exa-icon.svg",
-  tavily: "/providers/tavily.svg",
-  firecrawl: "/providers/firecrawl.png",
-};
 function readDemoPlans(): Experiment[] {
   try {
     const data = JSON.parse(localStorage.getItem(demoPlansKey) || "[]");
@@ -119,7 +115,9 @@ export function CompanyView({
     setPlan(null);
     const refresh = () =>
       Promise.all([
-        api<CompanyReport>(`/company-insights/${provider}?source=${source}`),
+        api<CompanyReport>(
+          `/company-insights/${provider}?source=${source}&scope=workspace`,
+        ),
         source === "local"
           ? api<LabOverview>("/provider-lab")
           : Promise.resolve(undefined),
@@ -148,7 +146,7 @@ export function CompanyView({
     };
   }, [provider, source, revision]);
   const metric = report?.benchmarks.find((m) => m.provider === provider);
-  const organic = report?.organic;
+  const organic = report?.privateActivity ?? report?.organic;
   const plans = (
     source === "demo" ? demoPlans : (lab?.experiments ?? [])
   ).filter((p) => p.provider === provider);
@@ -277,7 +275,7 @@ export function CompanyView({
           <p>
             {source === "demo"
               ? "All metrics below are simulated to demonstrate the workflow. No customer results or paid-provider outcomes are implied."
-              : "Controlled tests are shown separately from opted-in workspace aggregates. Nothing is published to a tool company."}
+              : "Your workspace activity is visible below, including small samples. Controlled tests are separate. All sessions contribute to commercial aggregates; export thresholds still apply. Nothing is published to a tool company."}
           </p>
         </div>
         <Badge variant="outline">
@@ -321,11 +319,11 @@ export function CompanyView({
                 detail={
                   organic
                     ? `${organic.selectedSessions} of ${organic.offeredSessions} eligible sessions`
-                    : "Waiting for an eligible opted-in cohort"
+                    : "No recorded offers yet"
                 }
               />
               <Metric
-                title="Successful requests"
+                title="Organic requests succeeded"
                 value={
                   organic
                     ? percent(organic.successfulCalls, organic.calls)
@@ -334,11 +332,11 @@ export function CompanyView({
                 detail={
                   organic
                     ? `${organic.successfulCalls} of ${organic.calls} organic calls`
-                    : "Organic execution data unavailable"
+                    : "No completed organic calls yet"
                 }
               />
               <Metric
-                title="Reference checks"
+                title="Controlled reference checks"
                 value={
                   metric?.referenceKnown
                     ? `${metric.referencePassed} / ${metric.referenceKnown}`
@@ -347,13 +345,22 @@ export function CompanyView({
                 detail="Controlled sample · not answer accuracy"
               />
               <Metric
-                title="Evidence reviewed"
+                title="Controlled evidence reviewed"
                 value={
                   metric ? `${metric.reviewed} / ${metric.attempted}` : "—"
                 }
                 detail="Known usefulness verdicts in the test sample"
               />
             </div>
+            {source === "local" && (
+              <p className="field-hint company-local-status">
+                Controlled execution: {metric?.succeeded ?? 0} /{" "}
+                {metric?.attempted ?? 0} calls succeeded in the latest sample.{" "}
+                {report.organic
+                  ? "Company aggregate minimum met."
+                  : report.organicUnavailableReason}
+              </p>
+            )}
             <div className="company-main-grid">
               <Panel
                 title="From discovery to use"
@@ -408,7 +415,7 @@ export function CompanyView({
                 ) : (
                   <div className="lab-empty">
                     <Link01 />
-                    <h3>Organic data stays private by default</h3>
+                    <h3>No recorded organic activity</h3>
                     <p>{report.organicUnavailableReason}</p>
                   </div>
                 )}
