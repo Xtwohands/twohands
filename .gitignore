@@ -9,6 +9,9 @@ test-results/
 *.log
 build/
 
+# macOS Finder metadata
+.DS_Store
+
 # Machine-local MCP connection
 .mcp.json
 .mcp.json.backup-*
