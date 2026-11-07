@@ -91,6 +91,16 @@ npm run format:check
 
 Tests use isolated fixtures and temporary databases. They cover protocol transport, authentication, approval boundaries, budgets, idempotency, real process interruption, retained evidence, output/review versions, cases, sharing policy, exports, mobile navigation, accessibility, and safe Markdown rendering.
 
+During development, pass a test file to run a focused check:
+
+```bash
+npm test -- tests/discovery-policy.test.ts
+npm run build
+npm run test:e2e -- tests/browser/observation.spec.ts --project=desktop
+```
+
+Browser tests start the built server with `npm start`, so rebuild after source changes. They also start isolated fixture servers on ports 3102 and 3106; leave those ports and the application test port 3101 free. Focused checks supplement the full verification commands above.
+
 A reproducible durability workload is available without any external provider calls:
 
 ```bash
