@@ -67,6 +67,8 @@ it("survives an actual process kill after reservation and never repeats uncertai
       },
     });
     expect(obs.require(sessionId).reservedMicros).toBe(1000);
+    const key = obs.db.apiKeys.list()[0];
+    expect(key).toMatchObject({ spentMicros: 0, reservedMicros: 1000 });
     obs.db.recover();
     obs.db.recover();
     const receipt = await obs.execute(sessionId, {
@@ -77,6 +79,10 @@ it("survives an actual process kill after reservation and never repeats uncertai
       statedReason: "Synthetic crash fixture",
     });
     expect(receipt.status).toBe("interrupted");
+    expect(obs.db.apiKeys.get(key.id)).toMatchObject({
+      spentMicros: 1000,
+      reservedMicros: 0,
+    });
     expect(executed).toBe(0);
     expect(obs.require(sessionId)).toMatchObject({
       spentMicros: 1000,

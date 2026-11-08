@@ -1,0 +1,40 @@
+export const API_KEY_SCOPES = [
+  "tools:discover",
+  "research:read",
+  "research:write",
+  "tools:execute",
+  "usage:read",
+] as const;
+export type ApiKeyScope = (typeof API_KEY_SCOPES)[number];
+export const API_KEY_TOOLS = [
+  "exa_search",
+  "tavily_search",
+  "firecrawl_extract",
+] as const;
+export interface WorkspaceApiKey {
+  id: string;
+  workspaceId: string;
+  name: string;
+  prefix: string;
+  scopes: ApiKeyScope[];
+  allowedTools: (typeof API_KEY_TOOLS)[number][];
+  limitMicros: number;
+  spentMicros: number;
+  reservedMicros: number;
+  remainingMicros: number;
+  revision: number;
+  createdAt: string;
+  expiresAt: string;
+  revokedAt: string | null;
+  lastUsedAt: string | null;
+  status: "active" | "expired" | "revoked" | "at_limit";
+}
+export interface ApiKeyEvent {
+  id: string;
+  keyId: string;
+  type: "created" | "updated" | "revoked";
+  at: string;
+  actor: "workspace_owner_credential";
+  previous: WorkspaceApiKey | null;
+  current: WorkspaceApiKey;
+}

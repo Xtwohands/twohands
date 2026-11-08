@@ -1723,3 +1723,56 @@
     font-size: 16px;
   }
 }
+
+.ws-key-options {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 14px;
+  border: 1px solid #3a3a3a;
+  border-radius: 7px;
+}
+.ws-key-options legend {
+  color: #bbb;
+  font-size: 12px;
+  padding: 0 5px;
+}
+.ws-key-options label {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+.ws-key-options input {
+  margin-top: 3px;
+  accent-color: #a8b4cf;
+  flex-shrink: 0;
+}
+.ws-key-options strong {
+  display: block;
+  font-size: 12px;
+  font-weight: 500;
+}
+.ws-key-options small {
+  display: block;
+  color: #aaa;
+  line-height: 1.6;
+  margin-top: 4px;
+}
+.ws-key-secret {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.ws-key-secret input {
+  min-width: 0;
+  font-family: var(--font-mono);
+}
+.ws-key-instructions {
+  padding: 20px;
+  font-size: 12px;
+  color: #aaa;
+  line-height: 1.8;
+}
+.ws-key-instructions .command-box {
+  margin: 14px 0;
+}

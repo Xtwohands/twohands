@@ -186,7 +186,10 @@ export function LandingView() {
 
         <section className="landing-cta">
           <h2>Start routing in minutes</h2>
-          <p>Keep the server running, install the MCP entry, and ask your agent to use it.</p>
+          <p>
+            Keep the server running, install the MCP entry, and ask your agent
+            to use it.
+          </p>
           <div className="landing-cta-row">
             <Button asChild>
               <a href="#settings">Connect agent</a>

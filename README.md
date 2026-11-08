@@ -30,11 +30,13 @@ For development, `npm run dev` runs the API on port 3001 and Vite on port 5173.
 
 ## Tool workspace
 
-The user sidebar groups **Tool catalog**, **Routing**, **Activity**, **Usage**, **Credits**, and **Connections** under `#dashboard`. Tool switches are persisted on the server, affect discovery eligibility, and block new calls to paused tools. Existing receipts can still be read and replayed. A free route preview shows compatible tools and request estimates without starting a session or calling providers.
+The user sidebar groups **Tool catalog**, **Routing**, **Activity**, **Usage**, **Credits**, **API keys**, and **Connections** under `#dashboard`. Tool switches are persisted on the server, affect discovery eligibility, and block new calls to paused tools. Existing receipts can still be read and replayed. A free route preview shows compatible tools and request estimates without starting a session or calling providers.
 
-Activity supports date, provider, status, and text filters, pagination, receipt inspection, and matching CSV exports. Usage separates configured estimates from provider-reported USD or credits. Connection status reports historical requests, not a live heartbeat. This remains a shared local workspace; account isolation and scoped API-key issuance are not implemented. See [interface decisions](research/2026-11-08-tool-routing-workspace.md).
+Activity supports date, provider, status, and text filters, pagination, receipt inspection, and matching CSV exports. Usage separates configured estimates from provider-reported USD or credits. Connection status reports historical requests, not a live heartbeat. This remains a shared local workspace; hosted accounts and per-customer isolation are not implemented. See [interface decisions](research/2026-11-08-tool-routing-workspace.md).
 
 **Stripe test payments and Base Sepolia test USDC deposits are disabled by default.** The Credits page offers both methods with one test-credit balance, separate receipts, and an append-only adjustment ledger. Stripe uses hosted Checkout, signed webhooks, server-retrieved payment proof, refund adjustments, and dispute holds. On-chain deposits require finalized matching USDC transfers. Test credits never fund paid provider calls. Live payments, mainnet, wallet custody, and withdrawals are unsupported. See [Stripe setup](docs/STRIPE_DEPOSITS.md) and [on-chain setup](docs/TESTNET_DEPOSITS.md).
+
+The **API keys** page creates one-time scoped credentials with tool restrictions, expiry, revocation, policy audit history, and cumulative estimated-spend limits reserved atomically with tool calls. A protected owner token is required before issuance; removing it afterward fails closed. Use `APILAYER_API_KEY` with the MCP bridge. This remains one shared workspace until the account migration. See [API key setup and boundaries](docs/API_KEYS.md).
 
 The operator sidebar also includes **Payment disputes** (`#disputes`): a separately authenticated queue with saved payment evidence, review notes, optimistic conflict checks, and audit history. Review decisions retain credit holds. Configure a distinct `ADMIN_API_TOKEN` to enable access; see [admin dispute review](docs/DISPUTE_REVIEW.md).
 
@@ -109,7 +111,7 @@ npm run build
 npm run test:e2e -- tests/browser/observation.spec.ts --project=desktop
 ```
 
-Browser tests start the built server with `npm start`, so rebuild after source changes. They also start isolated fixture servers on ports 3102 and 3106; leave those ports and the application test port 3101 free. Focused checks supplement the full verification commands above.
+Browser tests start the built server with `npm start`, so rebuild after source changes. They also start isolated fixture servers on ports 3102, 3106, and 3107; leave those ports and the application test port 3101 free. Focused checks supplement the full verification commands above.
 
 A reproducible durability workload is available without any external provider calls:
 

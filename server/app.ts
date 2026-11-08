@@ -1,4 +1,6 @@
 import express from "express";
+import { ApiKeyError, requiredApiKeyScope } from "./api-keys.js";
+import { apiKeyRoutes } from "./api-key-api.js";
 import { DisputeReviewService } from "./dispute-review.js";
 import { disputeReviewRoutes } from "./dispute-review-api.js";
 import { FundingService } from "./funding.js";
@@ -65,6 +67,7 @@ export function createApp(
   stripeFunding = new StripeFundingService(funding),
 ) {
   const app = express();
+  app.locals.apiKeys = observatory.db.apiKeys;
   app.locals.funding = funding;
   app.locals.stripeFunding = stripeFunding;
   app.locals.providerLab = providerLab;
@@ -97,20 +100,44 @@ export function createApp(
       });
       return;
     }
-    if (config.token) {
-      const actual = Buffer.from(
-        req.headers.authorization?.replace(/^Bearer /, "") || "",
-      );
-      const expected = Buffer.from(config.token);
-      if (
-        actual.length !== expected.length ||
-        !timingSafeEqual(actual, expected)
-      ) {
-        res
-          .status(401)
-          .json({ error: "Enter the server access token to connect." });
+    if (config.token.length < 24 && observatory.db.apiKeys.hasIssuedKeys()) {
+      res.status(503).json({
+        error:
+          "Scoped key access requires a workspace owner token of at least 24 characters. Restore owner access before using this workspace.",
+      });
+      return;
+    }
+    const credential = req.headers.authorization?.replace(/^Bearer /, "") || "";
+    const actual = Buffer.from(credential);
+    const expected = Buffer.from(config.token);
+    const owner =
+      config.token &&
+      actual.length === expected.length &&
+      timingSafeEqual(actual, expected);
+    if (!owner && credential.startsWith("oct_key_")) {
+      try {
+        const key = observatory.db.apiKeys.authenticate(credential);
+        const scope = requiredApiKeyScope(
+          req.method,
+          `/api${req.path.replace(/\/+$/, "")}`,
+        );
+        if (!scope || !key.scopes.includes(scope))
+          throw new ApiKeyError(
+            403,
+            "This API key does not permit this operation.",
+          );
+        res.locals.apiKeyId = key.id;
+      } catch (e) {
+        res.status(e instanceof ApiKeyError ? e.status : 401).json({
+          error: e instanceof ApiKeyError ? e.message : "Invalid API key.",
+        });
         return;
       }
+    } else if (!owner && config.token) {
+      res
+        .status(401)
+        .json({ error: "Enter the server access token to connect." });
+      return;
     }
     if (!["GET", "HEAD", "OPTIONS"].includes(req.method)) {
       const origin = req.headers.origin;
@@ -136,6 +163,7 @@ export function createApp(
   });
   app.use("/api/observations", express.json({ limit: "160kb" }));
   app.use(express.json({ limit: "24kb" }));
+  apiKeyRoutes(app, observatory.db.apiKeys);
   observationRoutes(app, observatory);
   workspaceRoutes(app, observatory);
   fundingRoutes(app, funding, stripeFunding);

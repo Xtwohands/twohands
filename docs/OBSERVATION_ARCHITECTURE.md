@@ -47,7 +47,7 @@ On an unclean process termination, startup marks outstanding calls interrupted a
 
 ## API surface
 
-All routes below live under `/api/observations`, inherit workspace token/origin/host checks, and use a 160 KB JSON request limit.
+All routes below live under `/api/observations`, inherit workspace credential/origin/host checks, and use a 160 KB JSON request limit. [Scoped API keys](API_KEYS.md) can access only explicitly allowed routes with the required scope; operator approval, evaluation, cases, deletion, and aggregate endpoints remain unavailable to them. Scoped provider calls atomically reserve and settle both the session allowance and the key's cumulative configured-estimate limit, including interrupted-call recovery.
 
 | Route                                        | Behavior                                                                               |
 | -------------------------------------------- | -------------------------------------------------------------------------------------- |

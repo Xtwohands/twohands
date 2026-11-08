@@ -42,6 +42,7 @@ import type {
 } from "../server/workspace-types";
 import type { Observatory } from "../server/observation";
 import "./workspace.css";
+import { ApiKeysView } from "./ApiKeysView";
 import { FundingView } from "./FundingView";
 
 type Catalog = ReturnType<Observatory["catalog"]>;
@@ -59,7 +60,8 @@ export type DashboardSection =
   | "usage"
   | "routing"
   | "connections"
-  | "credits";
+  | "credits"
+  | "keys";
 export const dashboardSections = [
   "overview",
   "tools",
@@ -68,6 +70,7 @@ export const dashboardSections = [
   "routing",
   "connections",
   "credits",
+  "keys",
 ] as const;
 const labels: Record<DashboardSection, [string, string]> = {
   overview: [
@@ -89,6 +92,10 @@ const labels: Record<DashboardSection, [string, string]> = {
   routing: [
     "Routing",
     "Control which tools are available to agents in this workspace.",
+  ],
+  keys: [
+    "API keys",
+    "Create credentials for your agents and control access and estimated spending.",
   ],
   credits: [
     "Credits",
@@ -823,6 +830,7 @@ export function UserDashboardView({
               </Section>
             </>
           )}
+          {section === "keys" && <ApiKeysView key={connectionRevision} />}
           {section === "credits" && <FundingView key={connectionRevision} />}
           {section === "connections" && (
             <ConnectionView connection={connection} catalog={catalog} />
@@ -1634,6 +1642,13 @@ function ConnectionView({
               </button>
             ))}
           </div>
+          <p className="ws-panel-note">
+            Use a separate scoped credential for each agent.{" "}
+            <a href="#dashboard/keys" className="ws-text-link">
+              Manage API keys
+            </a>{" "}
+            and set APILAYER_API_KEY before starting the bridge.
+          </p>
           <ol className="ws-setup-steps">
             <li>
               <span>1</span>
