@@ -3,7 +3,11 @@ import { OutcomeContent } from "./components/DeferredOutcomeContent";
 import { CompanyView } from "./CompanyView";
 import { ProviderLabView } from "./ProviderLabView";
 import { LandingView } from "./LandingView";
-import { UserDashboardView } from "./UserDashboardView";
+import {
+  UserDashboardView,
+  dashboardSections,
+  type DashboardSection,
+} from "./UserDashboardView";
 import "./provider.css";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -22,6 +26,9 @@ import {
   XClose,
   FileCheck02,
   TerminalSquare,
+  Activity,
+  GitBranch01,
+  CreditCard01,
 } from "@untitledui/icons";
 import { Button } from "./components/ui/button";
 import { Badge } from "./components/ui/badge";
@@ -116,22 +123,10 @@ type Summary = {
     published: boolean;
   };
 };
-type Catalog = {
-  tool: string;
-  provider: string;
-  description: string;
-  available: boolean;
-  estimatedMicros: number;
-  requestEstimates?: (import("../server/request-cost").RequestEstimate & {
-    withinBudget: boolean;
-  })[];
-  sampleCount: number;
-  averageLatencyMs: number | null;
-  successRate: number | null;
-  quality: null;
-  controlledTestSample?:
-    import("../server/provider-lab-types").ControlledSample | null;
-}[];
+type Catalog = ReturnType<
+  import("../server/observation").Observatory["catalog"]
+>;
+
 const pages = [
   { id: "sessions", label: "Sessions", icon: Grid01 },
   { id: "models", label: "Model evaluations", icon: BarChartSquare02 },
@@ -444,7 +439,16 @@ export function ObservationApp() {
     route.page === "home"
       ? "Home"
       : route.page === "dashboard"
-        ? "My dashboard"
+        ? (
+            {
+              tools: "Tool catalog",
+              activity: "Activity",
+              usage: "Usage",
+              routing: "Routing",
+              connections: "Connections",
+              credits: "Credits",
+            } as Record<string, string>
+          )[route.id ?? ""] || "My dashboard"
         : route.page === "company"
           ? "Tool company"
           : route.page === "settings"
@@ -476,15 +480,77 @@ export function ObservationApp() {
           <>
             <a
               href="#dashboard"
-              className={route.page === "dashboard" ? "selected" : ""}
+              className={!route.id || route.id === "overview" ? "selected" : ""}
+              aria-current={
+                !route.id || route.id === "overview" ? "page" : undefined
+              }
             >
               <Grid01 />
               My dashboard
             </a>
-            <a href="#home">
-              <ArrowUpRight />
-              Public site
-            </a>
+            <div className="ws-nav-group">
+              <span>Tool routing</span>
+              <a
+                href="#dashboard/tools"
+                className={route.id === "tools" ? "selected" : ""}
+                aria-current={route.id === "tools" ? "page" : undefined}
+              >
+                <Link01 />
+                Tool catalog
+              </a>
+              <a
+                href="#dashboard/routing"
+                className={route.id === "routing" ? "selected" : ""}
+                aria-current={route.id === "routing" ? "page" : undefined}
+              >
+                <GitBranch01 />
+                Routing
+              </a>
+            </div>
+            <div className="ws-nav-group">
+              <span>Workspace</span>
+              <a
+                href="#dashboard/activity"
+                className={route.id === "activity" ? "selected" : ""}
+                aria-current={route.id === "activity" ? "page" : undefined}
+              >
+                <Activity />
+                Activity
+              </a>
+              <a
+                href="#dashboard/usage"
+                className={route.id === "usage" ? "selected" : ""}
+                aria-current={route.id === "usage" ? "page" : undefined}
+              >
+                <BarChartSquare02 />
+                Usage
+              </a>
+            </div>
+            <div className="ws-nav-group">
+              <span>Funding</span>
+              <a
+                href="#dashboard/credits"
+                className={route.id === "credits" ? "selected" : ""}
+                aria-current={route.id === "credits" ? "page" : undefined}
+              >
+                <CreditCard01 />
+                Credits
+                <Badge variant="outline" className="ws-testnet-nav">
+                  Testnet
+                </Badge>
+              </a>
+            </div>
+            <div className="ws-nav-group">
+              <span>Integration</span>
+              <a
+                href="#dashboard/connections"
+                className={route.id === "connections" ? "selected" : ""}
+                aria-current={route.id === "connections" ? "page" : undefined}
+              >
+                <TerminalSquare />
+                Connections
+              </a>
+            </div>
           </>
         ) : surface === "business" ? (
           [
@@ -615,7 +681,11 @@ export function ObservationApp() {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => navigate("settings")}
+              onClick={() =>
+                surface === "user"
+                  ? navigate("dashboard", "connections")
+                  : navigate("settings")
+              }
             >
               <TerminalSquare />
               {route.page === "company"
@@ -664,11 +734,15 @@ export function ObservationApp() {
           )}
           {route.page === "dashboard" && (
             <UserDashboardView
-              sessions={sessions}
+              key={connectionRevision}
+              section={
+                dashboardSections.includes(route.id as DashboardSection)
+                  ? (route.id as DashboardSection)
+                  : "overview"
+              }
               catalog={catalog}
-              estimatedMicros={summary?.estimatedMicros ?? 0}
-              connectionName={connection.clientName}
-              onRecord={() => setNewOpen(true)}
+              refreshCatalog={refresh}
+              connectionRevision={connectionRevision}
             />
           )}
           {route.page === "sessions" && !route.id && (

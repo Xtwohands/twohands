@@ -20,18 +20,24 @@ test("public site, user dashboard, and operator console are separate surfaces", 
   await expect(
     page.getByRole("heading", { name: "My dashboard", exact: true }),
   ).toBeVisible();
+  if (test.info().project.name === "mobile")
+    await page.getByRole("button", { name: "Open navigation" }).click();
   await expect(
     page.getByRole("navigation", { name: "User navigation" }),
   ).toBeVisible();
   await expect(
     page.getByRole("link", { name: "Model evaluations" }),
   ).toHaveCount(0);
+  if (test.info().project.name === "mobile")
+    await expect(page.getByRole("dialog")).toHaveCSS("opacity", "1");
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
 
   await page.goto("/#sessions");
   await expect(
     page.getByRole("heading", { name: "Sessions", exact: true }),
   ).toBeVisible();
+  if (test.info().project.name === "mobile")
+    await page.getByRole("button", { name: "Open navigation" }).click();
   await expect(
     page.getByRole("navigation", { name: "Operator navigation" }),
   ).toBeVisible();
@@ -54,8 +60,9 @@ test("dashboard switching lives in settings", async ({ page }) => {
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
 });
 
-test("user dashboard tool toggles persist locally", async ({ page }) => {
+test("routing tool toggles persist on the server", async ({ page }) => {
   await page.goto("/#dashboard");
+  await page.goto("/#dashboard/routing");
   const toggle = page.getByRole("switch", { name: /exa_search/ });
   await expect(toggle).toBeVisible({ timeout: 10000 });
   const before = await toggle.getAttribute("aria-checked");
@@ -68,4 +75,8 @@ test("user dashboard tool toggles persist locally", async ({ page }) => {
   await expect(
     page.getByRole("switch", { name: /exa_search/ }),
   ).toHaveAttribute("aria-checked", before === "true" ? "false" : "true");
+  await page.getByRole("switch", { name: /exa_search/ }).click();
+  await expect(
+    page.getByRole("switch", { name: /exa_search/ }),
+  ).toHaveAttribute("aria-checked", before!);
 });

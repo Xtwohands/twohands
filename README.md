@@ -1,6 +1,6 @@
 # octolab
 
-A general-purpose tool router and observation layer for **Claude, Codex, and other MCP hosts**. People bring their own tasks and continue a free-flowing conversation with their AI. octolab supplies provider tools and records intent, tool choices, evidence, and outcomes; it does not prescribe a task category or a fixed research workflow. Its dashboard is for inspection, evaluation, and review.
+A general-purpose tool router and observation layer for **Claude, Codex, and other MCP hosts**. People bring their own tasks and continue a free-flowing conversation with their AI. octolab supplies provider tools and records intent, tool choices, evidence, and outcomes; it does not prescribe a task category or a fixed research workflow. Its user workspace provides tool discovery, routing controls, request activity, and usage. Operator evaluation and review remain separate.
 
 The vector brand mark lives in [`public/octolab.svg`](public/octolab.svg) and is shared by the app logo and favicon. Existing MCP registrations and technical identifiers remain `apilayer` for compatibility.
 
@@ -24,9 +24,17 @@ npm run build
 npm start
 ```
 
-Open [the dashboard](http://127.0.0.1:3001/#sessions). Exa and Tavily provide search; Firecrawl extracts a known public HTTPS page. Missing providers stay unavailable. Intent recording, review, and history work without provider keys.
+Open [the user dashboard](http://127.0.0.1:3001/#dashboard), or [the operator console](http://127.0.0.1:3001/#sessions). Exa and Tavily provide search; Firecrawl extracts a known public HTTPS page. Missing providers stay unavailable. Intent recording, review, and history work without provider keys.
 
 For development, `npm run dev` runs the API on port 3001 and Vite on port 5173.
+
+## Tool workspace
+
+The user sidebar groups **Tool catalog**, **Routing**, **Activity**, **Usage**, **Credits**, and **Connections** under `#dashboard`. Tool switches are persisted on the server, affect discovery eligibility, and block new calls to paused tools. Existing receipts can still be read and replayed. A free route preview shows compatible tools and request estimates without starting a session or calling providers.
+
+Activity supports date, provider, status, and text filters, pagination, receipt inspection, and matching CSV exports. Usage separates configured estimates from provider-reported USD or credits. Connection status reports historical requests, not a live heartbeat. This remains a shared local workspace; account isolation and scoped API-key issuance are not implemented. See [interface decisions](research/2026-11-08-tool-routing-workspace.md).
+
+**Base Sepolia test USDC deposits are disabled by default.** The Credits page includes an opt-in deposit flow, finalized on-chain receipt verification, and a separate test-credit ledger. Test credits never fund paid provider calls. No mainnet, signing, wallet custody, withdrawals, or Stripe integration is enabled. See [test deposit setup and validation](docs/TESTNET_DEPOSITS.md).
 
 ## Connect an agent
 
@@ -46,7 +54,7 @@ You can target one client with `npm run mcp:install -- claude`, `-- codex`, or `
 4. Review the output against each criterion. Pass, fail, and unknown are separate; link supporting calls and explain judgments.
 5. If needed, open a review case against a particular evaluation. Earlier outputs and retrospective reviews stay attached to their own versions.
 
-Set `AGENT_SESSION_BUDGET_MICROS` on the backend to control the per-session research cap (default 100000 = $0.10; 0 blocks positive-estimate calls). This is separate from any shopping budget in a user's request. `record_intent` exposes no budget input or approval link. Backend authorization is recorded as an observed policy event, not human approval. The dashboard remains an operator inspection and review surface. Its manual intent flow remains available for operator-created sessions. APILayer’s MCP tool catalog contains no approval, evaluation, consent, payment, or refund tool.
+Set `AGENT_SESSION_BUDGET_MICROS` on the backend to control the per-session research cap (default 100000 = $0.10; 0 blocks positive-estimate calls). This is separate from any shopping budget in a user's request. `record_intent` exposes no budget input or approval link. Backend authorization is recorded as an observed policy event, not human approval. The operator console remains the inspection and review surface. Its manual intent flow remains available for operator-created sessions. APILayer’s MCP tool catalog contains no approval, evaluation, consent, payment, or refund tool.
 
 ## What gets recorded
 

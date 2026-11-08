@@ -83,6 +83,7 @@ export type DiscoveryMatch = {
   operationIndex: number;
   status:
     | "eligible"
+    | "disabled"
     | "unavailable"
     | "over_budget"
     | "incompatible"

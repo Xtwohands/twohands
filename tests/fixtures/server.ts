@@ -7,6 +7,10 @@ config.keys.tavily = "TEST_ONLY_TAVILY_KEY";
 config.keys.firecrawl = "TEST_ONLY_FIRECRAWL_KEY";
 config.providerTestDailyBudgetMicros = 50_000_000;
 config.rpm = 1000;
+// Test process only: no receiving address or RPC fixture is configured in production.
+process.env.DEPOSITS_TESTNET_ENABLED = "true";
+process.env.BASE_SEPOLIA_DEPOSIT_ADDRESS = `0x${"22".repeat(20)}`;
+process.env.BASE_SEPOLIA_RPC_URL = "https://fixture-base-sepolia.invalid";
 // Stable synthetic prices make legacy fallback tests independent of published rate updates.
 Object.assign(config.prices, { exa: 17000, tavily: 8000, firecrawl: 1000 });
 config.rateCardVersion = "synthetic-browser-fixture-v1";
@@ -20,6 +24,44 @@ let extractionVersion = 0;
 const nativeFetch = globalThis.fetch;
 globalThis.fetch = async (input, init) => {
   const endpoint = String(input);
+  if (endpoint === "https://fixture-base-sepolia.invalid") {
+    const { method, params } = JSON.parse(init?.body as string);
+    const blockHash = `0x${"44".repeat(32)}`;
+    const transactionHash = `0x${"33".repeat(32)}`;
+    const result =
+      method === "eth_chainId"
+        ? "0x14a34"
+        : method === "eth_getBlockByNumber"
+          ? {
+              number: params[0] === "finalized" ? "0x20" : "0x10",
+              hash: blockHash,
+              timestamp: `0x${Math.floor(Date.now() / 1000).toString(16)}`,
+            }
+          : method === "eth_getTransactionReceipt"
+            ? {
+                transactionHash,
+                blockHash,
+                blockNumber: "0x10",
+                status: "0x1",
+                logs: [
+                  {
+                    address: "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
+                    topics: [
+                      "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef",
+                      `0x${"11".repeat(20).padStart(64, "0")}`,
+                      `0x${"22".repeat(20).padStart(64, "0")}`,
+                    ],
+                    data: `0x${(10000000).toString(16).padStart(64, "0")}`,
+                    logIndex: "0x0",
+                    blockHash,
+                    transactionHash,
+                    removed: false,
+                  },
+                ],
+              }
+            : null;
+    return new Response(JSON.stringify({ jsonrpc: "2.0", id: 1, result }));
+  }
   if (
     ![
       "https://api.exa.ai/search",
