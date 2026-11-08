@@ -15,7 +15,7 @@ STRIPE_WEBHOOK_SECRET=<whsec_ signing secret for this endpoint>
 PUBLIC_APP_URL=http://127.0.0.1:5173
 ```
 
-Use test/sandbox credentials. Live keys and live-mode payment objects are refused. `PUBLIC_APP_URL` must be an HTTPS origin or an HTTP loopback origin, without credentials, paths, query parameters, or fragments. It controls return URLs; API callers cannot supply redirect URLs or arbitrary amounts/currencies to Stripe. A restricted key needs permission to create/retrieve Checkout Sessions and expand their PaymentIntent/latest Charge.
+Use test/sandbox credentials. Live keys and live-mode payment objects are refused. `PUBLIC_APP_URL` must be an HTTPS origin or an HTTP loopback origin, without credentials, paths, query parameters, or fragments. It controls return URLs; API callers cannot supply redirect URLs or arbitrary amounts/currencies to Stripe. A restricted key needs permission to create/retrieve Checkout Sessions, expand their PaymentIntent/latest Charge, and retrieve PaymentIntents directly for unmatched charge-event recovery.
 
 For local testing, forward snapshot events to the backend using [Stripe CLI](https://docs.stripe.com/stripe-cli):
 
@@ -52,7 +52,7 @@ The server pins USD, one card payment, and the original amount. Before crediting
 
 Webhook verification uses the official SDK and original raw request bytes. Only the exact `/api/webhooks/stripe` POST route is exempt from workspace-token checks; it requires a valid Stripe signature. Creation and receipt/check routes retain existing bearer-token and origin protections. Failed retrieval or validation is not marked processed; Stripe can retry. Event IDs deduplicate delivery, unique payment IDs prevent cross-intent reuse, and concurrent reconciliation shares one in-process request. Webhooks always read current Stripe state, avoiding stale event snapshots overwriting newer receipts.
 
-`funding_ledger` is append-only. Payment state, its audit event, and the credit delta commit atomically. Refund totals never decrease when older data appears. Dispute holds are sticky: closing a dispute does not automatically restore credits, even if the Charge later reports no dispute. Restoration requires a future explicit operator resolution workflow; there is no public restore or refund-issuance endpoint. The implementation only observes refunds issued in Stripe.
+`funding_ledger` is append-only. Payment state, its audit event, and the credit delta commit atomically. Refund totals never decrease when older data appears. Dispute holds are sticky: closing a dispute does not automatically restore credits, even if the Charge later reports no dispute. The [admin dispute review queue](DISPUTE_REVIEW.md) supports triage, notes, and audited review decisions while retaining holds. Restoration requires a future explicit credit-resolution workflow; there is no public restore or refund-issuance endpoint. The implementation only observes refunds issued in Stripe.
 
 Existing `funding_credits` on-chain receipts are imported once into the unified ledger with stable source IDs and revision zero. Historical proof remains intact. Refunding a card payment affects only that payment's net credits. Funding tables remain outside provider/model statistics and commercial exports.
 

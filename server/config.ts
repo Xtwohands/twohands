@@ -25,6 +25,7 @@ export const config = {
   port: integer("PORT", 3001, 1, 65535),
   host: process.env.HOST || "127.0.0.1",
   token: process.env.API_TOKEN || "",
+  adminToken: process.env.ADMIN_API_TOKEN || "",
   dbPath: process.env.DB_PATH || "./data/apilayer.sqlite",
   keylessMaxRequests: integer("FIRECRAWL_KEYLESS_MAX_REQUESTS", 10, 1, 50),
   allowKeylessFirecrawl: process.env.FIRECRAWL_ALLOW_KEYLESS === "true",

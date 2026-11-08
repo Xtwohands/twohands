@@ -36,6 +36,8 @@ Activity supports date, provider, status, and text filters, pagination, receipt 
 
 **Stripe test payments and Base Sepolia test USDC deposits are disabled by default.** The Credits page offers both methods with one test-credit balance, separate receipts, and an append-only adjustment ledger. Stripe uses hosted Checkout, signed webhooks, server-retrieved payment proof, refund adjustments, and dispute holds. On-chain deposits require finalized matching USDC transfers. Test credits never fund paid provider calls. Live payments, mainnet, wallet custody, and withdrawals are unsupported. See [Stripe setup](docs/STRIPE_DEPOSITS.md) and [on-chain setup](docs/TESTNET_DEPOSITS.md).
 
+The operator sidebar also includes **Payment disputes** (`#disputes`): a separately authenticated queue with saved payment evidence, review notes, optimistic conflict checks, and audit history. Review decisions retain credit holds. Configure a distinct `ADMIN_API_TOKEN` to enable access; see [admin dispute review](docs/DISPUTE_REVIEW.md).
+
 ## Connect an agent
 
 Keep the local server running. In another terminal:

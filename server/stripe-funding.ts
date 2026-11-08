@@ -45,6 +45,7 @@ export interface StripeGateway {
     key: string,
   ): Promise<unknown>;
   retrieve(id: string): Promise<unknown>;
+  payment(id: string): Promise<unknown>;
   event(payload: Buffer, signature: string, secret: string): Stripe.Event;
 }
 export function stripeGateway(settings: StripeSettings): StripeGateway {
@@ -59,6 +60,7 @@ export function stripeGateway(settings: StripeSettings): StripeGateway {
       client.checkout.sessions.retrieve(id, {
         expand: ["payment_intent.latest_charge"],
       }),
+    payment: (id) => client.paymentIntents.retrieve(id),
     event: (payload, signature, secret) =>
       client.webhooks.constructEvent(payload, signature, secret),
   };
@@ -543,6 +545,28 @@ export class StripeFundingService {
           "SELECT id FROM stripe_deposits WHERE session_id=? OR payment_intent_id=? OR charge_id=?",
         )
         .get(sessionId, paymentId, chargeId);
+      // Charge/refund/dispute events can arrive before checkout completion.
+      // Resolve our own PaymentIntent metadata, then still verify the saved
+      // Checkout Session before changing any credits or acknowledging the event.
+      if (!row && event.type.startsWith("charge.") && /^pi_/.test(paymentId)) {
+        const payment = z
+          .object({
+            id: z.string(),
+            livemode: z.literal(false),
+            metadata,
+          })
+          .parse(await this.gateway.payment(paymentId));
+        if (payment.id !== paymentId)
+          throw new FundingError(
+            502,
+            "Stripe returned a different payment identity.",
+          );
+        const depositId = payment.metadata?.octolab_deposit_id;
+        if (depositId)
+          row = this.funding.store.db
+            .prepare("SELECT id FROM stripe_deposits WHERE id=?")
+            .get(depositId);
+      }
     }
     if (!row) return { received: true, ignored: true };
     id = String(row.id);

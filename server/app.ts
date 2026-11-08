@@ -1,4 +1,6 @@
 import express from "express";
+import { DisputeReviewService } from "./dispute-review.js";
+import { disputeReviewRoutes } from "./dispute-review-api.js";
 import { FundingService } from "./funding.js";
 import { fundingRoutes, stripeWebhookRoute } from "./funding-api.js";
 import { StripeFundingService } from "./stripe-funding.js";
@@ -83,6 +85,7 @@ export function createApp(
     res.json({ ok: true });
   });
   stripeWebhookRoute(app, stripeFunding);
+  disputeReviewRoutes(app, new DisputeReviewService(stripeFunding));
   app.use("/api", (req, res, next) => {
     if (
       !config.token &&

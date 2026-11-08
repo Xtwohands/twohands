@@ -322,6 +322,22 @@ describe("Stripe sandbox funding integrity", () => {
     });
     expect(ledgerCount()).toBe(2);
   });
+  it("finds a disputed payment by verified PaymentIntent metadata before checkout completion arrives", async () => {
+    const intent = await stripe.create(input());
+    const paid = gateway.pay(intent.checkoutSessionId!, 0, true);
+    const event = gateway.signed("charge.dispute.created", {
+      id: "dp_fixture_early",
+      charge: paid.payment_intent.latest_charge.id,
+      payment_intent: paid.payment_intent.id,
+    });
+    expect(await stripe.webhook(event.payload, event.signature)).toMatchObject({
+      received: true,
+      replayed: false,
+    });
+    expect(stripe.get(intent.id).disputed).toBe(true);
+    expect(stripe.get(intent.id).netCreditUnits).toBe(0);
+    expect(eventCount()).toBe(1);
+  });
   it("records full refunds and processes charge events using the saved payment identity", async () => {
     const intent = await stripe.create(input());
     const paid = gateway.pay(intent.checkoutSessionId!);
