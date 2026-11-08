@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { Store } from "../../server/store.js";
 import { Observatory, sessionInput } from "../../server/observation.js";
 import { config } from "../../server/config.js";
@@ -23,11 +24,22 @@ const s = obs.create(
   "operator_entered",
 );
 obs.approve(s.id, s.intentHash);
-await obs.execute(s.id, {
-  tool: "firecrawl_extract",
-  url: "https://example.com",
-  requestKey: "crash-once",
-  domains: [],
-  statedReason: "Synthetic crash fixture",
+const key = obs.db.apiKeys.create({
+  name: "Crash scoped key",
+  requestKey: randomUUID(),
+  scopes: ["tools:execute"],
+  allowedTools: ["firecrawl_extract"],
+  limitUsd: "0.001",
 });
+await obs.execute(
+  s.id,
+  {
+    tool: "firecrawl_extract",
+    url: "https://example.com",
+    requestKey: "crash-once",
+    domains: [],
+    statedReason: "Synthetic crash fixture",
+  },
+  key.key.id,
+);
 store.close();

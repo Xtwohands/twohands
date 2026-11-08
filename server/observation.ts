@@ -183,9 +183,14 @@ export class Observatory {
       return policy;
     });
   }
-  preview(input: DiscoveryInput) {
-    const catalog = this.catalog();
+  preview(input: DiscoveryInput, apiKeyId?: string) {
+    const catalog = this.catalog(apiKeyId);
     const policy = this.routingPolicy();
+    const key = apiKeyId ? this.db.apiKeys.active(apiKeyId) : undefined;
+    const previewBudgetMicros = Math.min(
+      config.agentSessionBudgetMicros,
+      key?.remainingMicros ?? Infinity,
+    );
     let discovery: ReturnType<typeof matchTools>;
     try {
       discovery = matchTools(
@@ -194,7 +199,7 @@ export class Observatory {
           ToolName,
           boolean
         >,
-        config.agentSessionBudgetMicros,
+        previewBudgetMicros,
       );
     } catch (error) {
       if (error instanceof z.ZodError) throw error;
@@ -205,13 +210,20 @@ export class Observatory {
     }
     const tools = discovery.tools.map((tool) => ({
       ...tool,
-      enabled: !policy.disabledTools.includes(tool.tool),
+      enabled:
+        !policy.disabledTools.includes(tool.tool) &&
+        (!key || key.allowedTools.includes(tool.tool)),
       discoveryMatches: tool.discoveryMatches.map((match) =>
-        policy.disabledTools.includes(tool.tool) && match.status === "eligible"
+        (policy.disabledTools.includes(tool.tool) ||
+          (key && !key.allowedTools.includes(tool.tool))) &&
+        match.status === "eligible"
           ? {
               ...match,
               status: "disabled" as const,
-              reason: "Paused by workspace routing settings.",
+              reason:
+                key && !key.allowedTools.includes(tool.tool)
+                  ? "Not allowed by this API key."
+                  : "Paused by workspace routing settings.",
             }
           : match,
       ),
@@ -223,7 +235,7 @@ export class Observatory {
         .filter((t) => t.discoveryMatches.some((m) => m.status === "eligible"))
         .map((t) => t.tool),
       preview: true,
-      budgetMicros: config.agentSessionBudgetMicros,
+      budgetMicros: previewBudgetMicros,
       policyRevision: policy.revision,
     };
   }
@@ -231,6 +243,7 @@ export class Observatory {
     input: z.infer<typeof sessionInput>,
     source: ObservationSession["modelSource"],
     backendAuthorized = false,
+    apiKeyId?: string,
   ) {
     const data = sessionInput.parse(input);
     if (
@@ -248,6 +261,7 @@ export class Observatory {
     });
     const s: ObservationSession = {
       ...data,
+      ...(apiKeyId ? { apiKeyId } : {}),
       criteria,
       id: this.db.newId(),
       intentHash,
@@ -275,6 +289,7 @@ export class Observatory {
         source === "agent_reported" ? "agent_reported" : "workspace_review",
         {
           intentHash,
+          ...(apiKeyId ? { apiKeyId } : {}),
           objective: s.objective,
           criteria,
           constraints: s.constraints,
@@ -300,12 +315,16 @@ export class Observatory {
     });
     return s;
   }
-  createAgentSession(input: z.infer<typeof agentSessionInput>) {
+  createAgentSession(
+    input: z.infer<typeof agentSessionInput>,
+    apiKeyId?: string,
+  ) {
     const data = agentSessionInput.parse(input);
     return this.create(
       { ...data, budgetMicros: config.agentSessionBudgetMicros },
       "agent_reported",
       true,
+      apiKeyId,
     );
   }
   approve(id: string, intentHash: string) {
@@ -330,7 +349,7 @@ export class Observatory {
       return s;
     });
   }
-  catalog() {
+  catalog(apiKeyId?: string) {
     const sessions = this.db.list();
     const calls = sessions.flatMap((s) => this.db.calls(s.id));
     const controlled = this.controlledSamples?.() ?? {};
@@ -375,7 +394,10 @@ export class Observatory {
       return {
         tool,
         provider,
-        enabled: !this.routingPolicy().disabledTools.includes(tool),
+        enabled:
+          !this.routingPolicy().disabledTools.includes(tool) &&
+          (!apiKeyId ||
+            this.db.apiKeys.active(apiKeyId).allowedTools.includes(tool)),
         reputation: {
           organic: {
             source: "observed_workspace_calls",
@@ -440,13 +462,18 @@ export class Observatory {
     id: string,
     needOrInput: string | DiscoveryInput,
     requests?: z.input<typeof costRequest>[],
+    apiKeyId?: string,
   ) {
     const session = this.require(id);
+    const key = apiKeyId ? this.db.apiKeys.active(apiKeyId) : undefined;
     const remainingBudgetMicros = Math.max(
       0,
-      session.budgetMicros - session.spentMicros - session.reservedMicros,
+      Math.min(
+        session.budgetMicros - session.spentMicros - session.reservedMicros,
+        key?.remainingMicros ?? Infinity,
+      ),
     );
-    const catalog = this.catalog();
+    const catalog = this.catalog(apiKeyId);
     const input =
       typeof needOrInput === "string"
         ? { need: needOrInput, requests }
@@ -481,7 +508,10 @@ export class Observatory {
             ? {
                 ...match,
                 status: "disabled",
-                reason: "Paused by workspace routing settings.",
+                reason:
+                  key && !key.allowedTools.includes(tool.tool)
+                    ? "Not allowed by this API key."
+                    : "Paused by workspace routing settings.",
               }
             : match,
         );
@@ -517,8 +547,9 @@ export class Observatory {
       selectionGuidance: providerSelectionGuidance,
     };
   }
-  async execute(id: string, raw: unknown) {
+  async execute(id: string, raw: unknown, apiKeyId?: string) {
     const input = legacyCallInput.parse(raw);
+    if (apiKeyId) this.db.apiKeys.toolAccess(apiKeyId, input.tool);
     const provider = names[input.tool];
     if (
       provider === "firecrawl"
@@ -608,6 +639,7 @@ export class Observatory {
       call = {
         id: this.db.newId(),
         sessionId: id,
+        ...(apiKeyId ? { apiKeyId } : {}),
         requestKey: input.requestKey,
         tool: input.tool,
         provider,
@@ -630,6 +662,8 @@ export class Observatory {
         startedAt: new Date().toISOString(),
         estimateMicros,
       };
+      if (apiKeyId)
+        this.db.apiKeys.reserve(apiKeyId, call.id, input.tool, estimateMicros);
       s.reservedMicros += estimateMicros;
       s.status = "active";
       this.db.save(s);
@@ -649,6 +683,7 @@ export class Observatory {
         costEstimate: estimate,
         rateCardVersion: config.rateCardVersion,
         selectedBy: "explicit_caller_choice",
+        ...(apiKeyId ? { apiKeyId } : {}),
       });
       this.timestamps.get(provider)!.push(now);
     });
@@ -689,6 +724,7 @@ export class Observatory {
       try {
         this.db.transaction(() => {
           const s = this.require(id);
+          this.db.apiKeys.settle(call.id);
           s.reservedMicros -= call.estimateMicros;
           s.spentMicros += call.estimateMicros;
           this.db.save(s);

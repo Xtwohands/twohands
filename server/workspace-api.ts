@@ -1,3 +1,4 @@
+import { ApiKeyError } from "./api-keys.js";
 import type { Express } from "express";
 import { z } from "zod";
 import { config } from "./config.js";
@@ -119,7 +120,10 @@ export function workspaceRoutes(app: Express, obs: Observatory) {
           res
             .status(400)
             .json({ error: error.issues.map((i) => i.message).join("; ") });
-        else if (error instanceof ObservationError)
+        else if (
+          error instanceof ObservationError ||
+          error instanceof ApiKeyError
+        )
           res.status(error.status).json({ error: error.message });
         else res.status(500).json({ error: "Workspace operation failed." });
       }
@@ -140,7 +144,11 @@ export function workspaceRoutes(app: Express, obs: Observatory) {
   );
   app.post(
     "/api/workspace/preview",
-    route((req, res) => res.json(obs.preview(discoveryInput.parse(req.body)))),
+    route((req, res) =>
+      res.json(
+        obs.preview(discoveryInput.parse(req.body), res.locals.apiKeyId),
+      ),
+    ),
   );
   app.get(
     "/api/workspace/usage",

@@ -66,12 +66,12 @@ afterEach(async () => {
   config.token = original.token;
   Object.assign(config.keys, original.keys);
 });
-async function connect(base = url, token = "stdio-test-token") {
+async function connect(base = url, token = "stdio-test-token", scopedKey = "") {
   transport = new StdioClientTransport({
     command: process.execPath,
     args: ["--import", "tsx", resolve("server/mcp-stdio.ts")],
     cwd: process.cwd(),
-    env: { APILAYER_URL: base, API_TOKEN: token },
+    env: { APILAYER_URL: base, API_TOKEN: token, APILAYER_API_KEY: scopedKey },
     stderr: "pipe",
   });
   client = new Client({ name: "Codex intégration fixture", version: "test-1" });
@@ -302,4 +302,71 @@ it("deduplicates concurrent operations from two independent MCP hosts", async ()
     await peer.close();
     await peerTransport.close();
   }
+});
+
+it("uses a scoped bridge key ahead of the owner token and enforces its lifetime cap and revocation", async () => {
+  config.token = "owner-stdio-fixture-token-00000001";
+  const issued = obs.db.apiKeys.create({
+    name: "Scoped stdio fixture",
+    requestKey: crypto.randomUUID(),
+    scopes: [
+      "tools:discover",
+      "research:read",
+      "research:write",
+      "tools:execute",
+    ],
+    allowedTools: ["firecrawl_extract"],
+    limitUsd: "0.001",
+  });
+  let invoked = 0;
+  scrapeImpl = async () => {
+    invoked++;
+    return {
+      httpStatus: 200,
+      pageStatus: 200,
+      text: "Scoped fixture evidence",
+    };
+  };
+  await connect(url, "incorrect-owner-token", issued.secret!);
+  const session = payload(
+    await client.callTool({
+      name: "record_intent",
+      arguments: {
+        title: "Scoped bridge",
+        objective: "Read a synthetic fixture page",
+        criteria: [{ text: "Supported evidence", weight: 1 }],
+      },
+    }),
+  );
+  expect(session.status).toBe("active");
+  const args = {
+    sessionId: session.id,
+    url: "https://example.com",
+    requestKey: "scoped-first",
+    statedReason: "Read fixture page",
+  };
+  const first = payload(
+    await client.callTool({ name: "firecrawl_extract", arguments: args }),
+  );
+  expect(first.status).toBe("succeeded");
+  expect(first.apiKeyId).toBe(issued.key.id);
+  const blocked = await client.callTool({
+    name: "firecrawl_extract",
+    arguments: { ...args, requestKey: "scoped-second" },
+  });
+  expect(blocked.isError).toBe(true);
+  expect(invoked).toBe(1);
+  obs.db.apiKeys.revoke(issued.key.id, { revision: 0 });
+  expect(
+    (
+      await client.callTool({
+        name: "get_session",
+        arguments: { sessionId: session.id },
+      })
+    ).isError,
+  ).toBe(true);
+  expect(obs.db.apiKeys.get(issued.key.id)).toMatchObject({
+    spentMicros: 1000,
+    reservedMicros: 0,
+  });
 });

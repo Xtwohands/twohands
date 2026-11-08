@@ -30,6 +30,7 @@ import {
   Activity,
   GitBranch01,
   CreditCard01,
+  Key01,
 } from "@untitledui/icons";
 import { Button } from "./components/ui/button";
 import { Badge } from "./components/ui/badge";
@@ -451,6 +452,7 @@ export function ObservationApp() {
               routing: "Routing",
               connections: "Connections",
               credits: "Credits",
+              keys: "API keys",
             } as Record<string, string>
           )[route.id ?? ""] || "My dashboard"
         : route.page === "company"
@@ -546,6 +548,14 @@ export function ObservationApp() {
             </div>
             <div className="ws-nav-group">
               <span>Integration</span>
+              <a
+                href="#dashboard/keys"
+                className={route.id === "keys" ? "selected" : ""}
+                aria-current={route.id === "keys" ? "page" : undefined}
+              >
+                <Key01 />
+                API keys
+              </a>
               <a
                 href="#dashboard/connections"
                 className={route.id === "connections" ? "selected" : ""}

@@ -47,6 +47,7 @@ export interface ReviewCase {
 }
 export interface ObservationSession {
   id: string;
+  apiKeyId?: string;
   title: string;
   objective: string;
   criteria: Criterion[];
@@ -71,6 +72,7 @@ export interface ObservationSession {
 }
 export interface ObservedCall {
   id: string;
+  apiKeyId?: string;
   sessionId: string;
   requestKey: string;
   tool: ToolName;

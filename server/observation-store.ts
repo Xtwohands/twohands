@@ -1,3 +1,4 @@
+import { ApiKeyService } from "./api-keys.js";
 import { createHash, randomUUID } from "node:crypto";
 import { SHARING_POLICY, sharingPolicyEvent } from "./sharing-policy.js";
 import type { Store } from "./store.js";
@@ -25,6 +26,7 @@ export function digest(value: unknown): string {
     .digest("hex");
 }
 export class ObservationStore {
+  readonly apiKeys: ApiKeyService;
   constructor(public store: Store) {
     store.db.exec(`
       CREATE TABLE IF NOT EXISTS observation_clients(id TEXT PRIMARY KEY,body TEXT NOT NULL);
@@ -35,6 +37,7 @@ export class ObservationStore {
       CREATE TABLE IF NOT EXISTS observation_events(id INTEGER PRIMARY KEY AUTOINCREMENT,session_id TEXT NOT NULL REFERENCES observation_sessions(id) ON DELETE CASCADE,body TEXT NOT NULL);
       CREATE INDEX IF NOT EXISTS observation_events_session ON observation_events(session_id,id);
     `);
+    this.apiKeys = new ApiKeyService(store);
   }
   applySharingPolicy() {
     this.transaction(() => {
@@ -172,6 +175,7 @@ export class ObservationStore {
             "Server restarted before the result was recorded. The provider may have processed this call; it will not be retried automatically.";
           const receipt = this.receipt(s.id, c.requestKey)!;
           this.saveCall(c, receipt.signature);
+          this.apiKeys.settle(c.id);
           s.reservedMicros = Math.max(0, s.reservedMicros - c.estimateMicros);
           s.spentMicros += c.estimateMicros;
           this.event(s.id, "call_interrupted", "observed", {

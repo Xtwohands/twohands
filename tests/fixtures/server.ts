@@ -10,6 +10,8 @@ config.keys.tavily = "TEST_ONLY_TAVILY_KEY";
 config.keys.firecrawl = "TEST_ONLY_FIRECRAWL_KEY";
 config.providerTestDailyBudgetMicros = 50_000_000;
 config.rpm = 1000;
+if (process.env.FIXTURE_API_KEYS === "true")
+  config.token = "fixture-owner-token-0000000000001";
 config.adminToken = "fixture-admin-token";
 // Test process only: no receiving address or RPC fixture is configured in production.
 process.env.DEPOSITS_TESTNET_ENABLED = "true";

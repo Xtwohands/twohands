@@ -1,3 +1,4 @@
+import { ApiKeyError } from "./api-keys.js";
 import { discoveryInput } from "./tool-discovery.js";
 import { observationListItem } from "./observation-types.js";
 import {
@@ -47,7 +48,7 @@ export function observationRoutes(app: Express, obs: Observatory) {
               .map((i) => `${i.path.join(".")}: ${i.message}`)
               .join("; "),
           });
-        else if (e instanceof ObservationError)
+        else if (e instanceof ObservationError || e instanceof ApiKeyError)
           res.status(e.status).json({ error: e.message });
         else
           res.status(500).json({
@@ -84,7 +85,7 @@ export function observationRoutes(app: Express, obs: Observatory) {
   );
   app.get(
     "/api/observations/catalog",
-    route((_req, res) => res.json(obs.catalog())),
+    route((_req, res) => res.json(obs.catalog(res.locals.apiKeyId))),
   );
   app.get(
     "/api/observations/aggregate",
@@ -103,7 +104,12 @@ export function observationRoutes(app: Express, obs: Observatory) {
     route((req, res) =>
       res
         .status(201)
-        .json(obs.createAgentSession(agentSessionInput.parse(req.body))),
+        .json(
+          obs.createAgentSession(
+            agentSessionInput.parse(req.body),
+            res.locals.apiKeyId,
+          ),
+        ),
     ),
   );
   app.post(
@@ -148,13 +154,22 @@ export function observationRoutes(app: Express, obs: Observatory) {
     "/api/observations/:id/discover",
     route((req, res) => {
       const input = discoveryInput.parse(req.body);
-      res.json(obs.discover(String(req.params.id), input));
+      res.json(
+        obs.discover(
+          String(req.params.id),
+          input,
+          undefined,
+          res.locals.apiKeyId,
+        ),
+      );
     }),
   );
   app.post(
     "/api/observations/:id/call",
     route(async (req, res) =>
-      res.json(await obs.execute(String(req.params.id), req.body)),
+      res.json(
+        await obs.execute(String(req.params.id), req.body, res.locals.apiKeyId),
+      ),
     ),
   );
   app.post(

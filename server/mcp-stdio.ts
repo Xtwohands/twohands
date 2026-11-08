@@ -12,6 +12,7 @@ if (
   throw new Error(
     "The local MCP bridge requires a loopback HTTP APILayer URL.",
   );
+const credential = process.env.APILAYER_API_KEY || process.env.API_TOKEN;
 let client: { clientName: string; clientVersion: string } | undefined;
 const request = async (path: string, body?: unknown) => {
   const response = await fetch(`${base.href.replace(/\/$/, "")}${path}`, {
@@ -24,9 +25,7 @@ const request = async (path: string, body?: unknown) => {
             ).toString("base64url"),
           }
         : {}),
-      ...(process.env.API_TOKEN
-        ? { Authorization: `Bearer ${process.env.API_TOKEN}` }
-        : {}),
+      ...(credential ? { Authorization: `Bearer ${credential}` } : {}),
       ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
     },
     body: body === undefined ? undefined : JSON.stringify(body),
