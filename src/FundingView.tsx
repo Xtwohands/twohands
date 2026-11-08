@@ -7,6 +7,7 @@ import {
   Plus,
   RefreshCw01,
 } from "@untitledui/icons";
+import { StripeFundingPanel } from "./StripeFundingPanel";
 import { Button } from "./components/ui/button";
 import { Badge } from "./components/ui/badge";
 import { Input } from "./components/ui/input";
@@ -84,10 +85,11 @@ export function FundingView() {
     <div className="ws-funding">
       <InlineError message={error} />
       <div className="ws-funding-notice">
-        <Badge variant="outline">Testnet only</Badge>
+        <Badge variant="outline">Sandbox only</Badge>
         <p>
-          Base Sepolia USDC has no financial value. Test credits do not pay for
-          live tool calls. Mainnet deposits are not supported.
+          Stripe test payments and Base Sepolia USDC add test credits only. Test
+          credits do not pay for live tool calls. No real-money deposits are
+          accepted.
         </p>
       </div>
       {loading ? (
@@ -101,24 +103,12 @@ export function FundingView() {
               <span>Workspace test balance</span>
               <strong>
                 {summary ? testUsdc(summary.balanceUnits) : "—"}
-                <small>test USDC</small>
+                <small>test credits</small>
               </strong>
               <p>
                 {summary?.totalDeposits ?? 0} verified deposits · Separate from
                 estimated tool usage
               </p>
-              <Button
-                disabled={!summary?.enabled}
-                onClick={() => {
-                  key.current = crypto.randomUUID();
-                  setSelectedId(undefined);
-                  setFormError("");
-                  setOpen(true);
-                }}
-              >
-                <Plus />
-                Add test credits
-              </Button>
             </section>
             <section className="ws-panel ws-funding-method">
               <header>
@@ -138,21 +128,26 @@ export function FundingView() {
                 </p>
                 {!summary?.enabled && (
                   <div className="ws-funding-setup">
-                    <strong>
-                      {summary?.unavailableReason ||
-                        "Deposit service unavailable"}
-                    </strong>
+                    <strong>On-chain deposits are unavailable</strong>
                     <p>
-                      Configure a receiving address you control and enable
-                      testnet deposits on the server.
+                      The workspace owner can enable Base Sepolia deposits after
+                      choosing a receiving wallet.
                     </p>
-                    <code>
-                      DEPOSITS_TESTNET_ENABLED=true
-                      <br />
-                      BASE_SEPOLIA_DEPOSIT_ADDRESS=&lt;public address&gt;
-                    </code>
                   </div>
                 )}
+                <Button
+                  disabled={!summary?.enabled}
+                  onClick={() => {
+                    key.current = crypto.randomUUID();
+                    setSelectedId(undefined);
+                    setFormError("");
+                    setOpen(true);
+                  }}
+                >
+                  <Plus />
+                  Add test credits
+                </Button>
+                <br />
                 <a
                   href="https://faucet.circle.com/"
                   target="_blank"
@@ -163,11 +158,12 @@ export function FundingView() {
                 </a>
               </div>
             </section>
+            <StripeFundingPanel summary={summary} refresh={refresh} />
           </div>
           <section className="ws-panel">
             <header>
               <div>
-                <h2>Deposit history</h2>
+                <h2>On-chain deposit history</h2>
                 <p>
                   Saved requests and verified test credits in this workspace.
                 </p>
@@ -258,6 +254,64 @@ export function FundingView() {
             <div className="ws-panel-note">
               Each on-chain transaction can be credited once. Request retries
               reuse the original receipt.
+            </div>
+          </section>
+          <section className="ws-panel">
+            <header>
+              <div>
+                <h2>Credit ledger</h2>
+                <p>
+                  Verified deposits, refunds, and dispute holds across both
+                  methods.
+                </p>
+              </div>
+            </header>
+            {summary?.entries?.length ? (
+              <div
+                className="ws-table-scroll"
+                tabIndex={0}
+                role="region"
+                aria-label="Credit ledger"
+              >
+                <table className="ws-table">
+                  <thead>
+                    <tr>
+                      <th>Change</th>
+                      <th>Method</th>
+                      <th>Reason</th>
+                      <th>Recorded</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {summary.entries.map((entry) => (
+                      <tr key={entry.id}>
+                        <td>
+                          <strong>
+                            {entry.deltaUnits > 0 ? "+" : "−"}
+                            {testUsdc(Math.abs(entry.deltaUnits))}
+                          </strong>{" "}
+                          test credits
+                        </td>
+                        <td>
+                          {entry.source === "stripe"
+                            ? "Stripe"
+                            : "USDC on Base Sepolia"}
+                        </td>
+                        <td>{entry.kind.replaceAll("_", " ")}</td>
+                        <td>{date(entry.createdAt)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <Empty title="No credit entries yet">
+                A verified deposit will create its first credit receipt here.
+              </Empty>
+            )}
+            <div className="ws-panel-note">
+              One test USD or one test USDC equals one test credit. This ledger
+              is separate from provider spending authorization.
             </div>
           </section>
           <section className="ws-panel">

@@ -1423,8 +1423,14 @@
 }
 .ws-funding-grid {
   display: grid;
-  grid-template-columns: 1fr 1.3fr;
+  grid-template-columns: 1fr 1fr;
   gap: 22px;
+}
+.ws-funding-grid > .ws-panel:not(.ws-funding-method) {
+  grid-column: 1 / -1;
+}
+.ws-funding-method a:not([data-slot="button"]) {
+  margin-top: 16px;
 }
 .ws-balance-card {
   padding: 24px;

@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
+import { FundingLedger } from "./funding-ledger.js";
 import type { Store } from "./store.js";
 import {
   BASE_SEPOLIA,
@@ -128,7 +129,8 @@ const receiptSchema = z.object({
 });
 
 export class FundingService {
-  private active = new Set<string>();
+  readonly active = new Set<string>();
+  readonly ledger: FundingLedger;
   constructor(
     public store: Store,
     public settings = fundingConfig(),
@@ -139,6 +141,7 @@ export class FundingService {
       .exec(`CREATE TABLE IF NOT EXISTS funding_intents(id TEXT PRIMARY KEY,request_key TEXT NOT NULL UNIQUE,body TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS funding_credits(id TEXT PRIMARY KEY,intent_id TEXT NOT NULL UNIQUE REFERENCES funding_intents(id),chain_id INTEGER NOT NULL,transaction_hash TEXT NOT NULL,log_index TEXT NOT NULL,amount_units INTEGER NOT NULL CHECK(amount_units>0),created_at TEXT NOT NULL,UNIQUE(chain_id,transaction_hash));
       CREATE TABLE IF NOT EXISTS funding_events(id INTEGER PRIMARY KEY AUTOINCREMENT,intent_id TEXT NOT NULL REFERENCES funding_intents(id),body TEXT NOT NULL);`);
+    this.ledger = new FundingLedger(store);
   }
   summary(): FundingSummary {
     const recipient = address.safeParse(this.settings.recipient);
@@ -157,7 +160,9 @@ export class FundingService {
           : null,
       network: BASE_SEPOLIA,
       recipient: recipient.success ? recipient.data : null,
-      balanceUnits: Number(balance.balance),
+      balanceUnits: this.ledger.balance(),
+      onchainBalanceUnits: Number(balance.balance),
+      onchainDeposits: Number(balance.count),
       totalDeposits: Number(balance.count),
       intents: this.store.db
         .prepare(
@@ -427,6 +432,14 @@ export class FundingService {
             original.amountUnits,
             original.creditedAt,
           );
+        this.ledger.settle(
+          "onchain",
+          id,
+          original.amountUnits,
+          transactionHash,
+          "deposit",
+          original.creditedAt,
+        );
         return this.save(original, "deposit_credited");
       });
     } catch (error) {

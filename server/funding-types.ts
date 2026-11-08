@@ -45,4 +45,52 @@ export interface FundingSummary {
   intents: DepositIntent[];
   testnet: true;
   spendableForProviders: false;
+  onchainBalanceUnits?: number;
+  onchainDeposits?: number;
+  stripeDeposits?: number;
+  stripe?: StripeFundingStatus;
+  stripeIntents?: StripeDeposit[];
+  entries?: FundingEntry[];
+}
+export interface FundingEntry {
+  id: number;
+  source: "onchain" | "stripe";
+  sourceId: string;
+  deltaUnits: number;
+  kind: string;
+  reference: string;
+  createdAt: string;
+}
+export interface StripeFundingStatus {
+  enabled: boolean;
+  unavailableReason: string | null;
+  mode: "test";
+  minimumCents: number;
+  maximumCents: number;
+}
+export interface StripeDeposit {
+  id: string;
+  requestKey: string;
+  amountCents: number;
+  status:
+    | "creating"
+    | "checkout_ready"
+    | "processing"
+    | "credited"
+    | "partially_refunded"
+    | "refunded"
+    | "disputed"
+    | "expired"
+    | "failed";
+  checkoutSessionId: string | null;
+  checkoutUrl: string | null;
+  paymentIntentId: string | null;
+  chargeId: string | null;
+  refundedCents: number;
+  disputed: boolean;
+  netCreditUnits: number;
+  createdAt: string;
+  updatedAt: string;
+  lastCheckedAt: string | null;
+  message: string;
 }

@@ -1,6 +1,7 @@
 import express from "express";
 import { FundingService } from "./funding.js";
-import { fundingRoutes } from "./funding-api.js";
+import { fundingRoutes, stripeWebhookRoute } from "./funding-api.js";
+import { StripeFundingService } from "./stripe-funding.js";
 import { workspaceRoutes } from "./workspace-api.js";
 import { sanitizedEventData } from "./sanitized.js";
 import { analytics } from "./analytics.js";
@@ -59,9 +60,11 @@ export function createApp(
   observatory = new Observatory(store, undefined, engine.timestamps),
   providerLab = new ProviderLab(store, undefined, engine.timestamps),
   funding = new FundingService(store),
+  stripeFunding = new StripeFundingService(funding),
 ) {
   const app = express();
   app.locals.funding = funding;
+  app.locals.stripeFunding = stripeFunding;
   app.locals.providerLab = providerLab;
   observatory.controlledSamples = () => providerLab.controlledSamples();
   app.disable("x-powered-by");
@@ -79,6 +82,7 @@ export function createApp(
     store.db.prepare("SELECT 1").get();
     res.json({ ok: true });
   });
+  stripeWebhookRoute(app, stripeFunding);
   app.use("/api", (req, res, next) => {
     if (
       !config.token &&
@@ -131,7 +135,7 @@ export function createApp(
   app.use(express.json({ limit: "24kb" }));
   observationRoutes(app, observatory);
   workspaceRoutes(app, observatory);
-  fundingRoutes(app, funding);
+  fundingRoutes(app, funding, stripeFunding);
   providerLabRoutes(app, providerLab);
   app.get("/api/company-insights/:provider", (req, res) => {
     const p = z
