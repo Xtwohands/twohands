@@ -1,3 +1,4 @@
+import { DisputeReviewView } from "./DisputeReviewView";
 import { ToolOptions } from "./components/ToolOptions";
 import { OutcomeContent } from "./components/DeferredOutcomeContent";
 import { CompanyView } from "./CompanyView";
@@ -96,7 +97,8 @@ type Page =
   | "cases"
   | "settings"
   | "company"
-  | "lab";
+  | "lab"
+  | "disputes";
 type Summary = {
   sessions: number;
   pendingApproval: number;
@@ -133,6 +135,7 @@ const pages = [
   { id: "tools", label: "Tool activity", icon: Link01 },
   { id: "cases", label: "Review cases", icon: ShieldTick },
   { id: "lab", label: "Provider lab", icon: TerminalSquare },
+  { id: "disputes", label: "Payment disputes", icon: CreditCard01 },
 ] as const;
 function readRoute() {
   const [page, id, section, finding] = location.hash.slice(1).split("/");
@@ -155,6 +158,7 @@ function readRoute() {
       "settings",
       "company",
       "lab",
+      "disputes",
     ].includes(page)
       ? page
       : "sessions") as Page,
@@ -724,6 +728,7 @@ export function ObservationApp() {
               section={route.section}
             />
           )}
+          {route.page === "disputes" && <DisputeReviewView />}
           {route.page === "lab" && (
             <ProviderLabView
               key={connectionRevision}

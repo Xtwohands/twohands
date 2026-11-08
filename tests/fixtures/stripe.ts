@@ -51,6 +51,13 @@ export class FixtureStripeGateway implements StripeGateway {
   event(payload: Buffer, signature: string, secret: string) {
     return this.sdk.webhooks.constructEvent(payload, signature, secret);
   }
+  async payment(id: string) {
+    for (const session of this.sessions.values()) {
+      if (session.payment_intent?.id === id)
+        return structuredClone(session.payment_intent);
+    }
+    throw new Error("Unknown fixture payment");
+  }
   pay(id: string, refundedCents = 0, disputed = false) {
     const value = this.sessions.get(id);
     if (!value) throw new Error("Unknown fixture checkout");
@@ -60,6 +67,7 @@ export class FixtureStripeGateway implements StripeGateway {
       payment_status: "paid",
       url: null,
       payment_intent: {
+        metadata: structuredClone(value.metadata),
         id: `pi_${suffix}`,
         livemode: false,
         status: "succeeded",

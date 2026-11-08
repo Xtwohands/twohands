@@ -10,6 +10,7 @@ config.keys.tavily = "TEST_ONLY_TAVILY_KEY";
 config.keys.firecrawl = "TEST_ONLY_FIRECRAWL_KEY";
 config.providerTestDailyBudgetMicros = 50_000_000;
 config.rpm = 1000;
+config.adminToken = "fixture-admin-token";
 // Test process only: no receiving address or RPC fixture is configured in production.
 process.env.DEPOSITS_TESTNET_ENABLED = "true";
 process.env.BASE_SEPOLIA_DEPOSIT_ADDRESS = `0x${"22".repeat(20)}`;
@@ -154,7 +155,21 @@ app.post("/__fixture/stripe/:id", async (req, res) => {
         : req.body.refundedCents
           ? "charge.refunded"
           : "checkout.session.completed",
-      payment,
+      req.body.disputed
+        ? {
+            id: `dp_fixture_${intent.id}`,
+            object: "dispute",
+            charge: payment.payment_intent.latest_charge.id,
+            payment_intent: payment.payment_intent.id,
+            status: "needs_response",
+            livemode: false,
+          }
+        : req.body.refundedCents
+          ? {
+              ...payment.payment_intent.latest_charge,
+              payment_intent: payment.payment_intent.id,
+            }
+          : payment,
     );
     const response = await nativeFetch(
       `http://127.0.0.1:${process.env.FIXTURE_PORT || 3102}/api/webhooks/stripe`,

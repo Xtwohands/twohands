@@ -1646,3 +1646,80 @@
 .mobile-sidebar-content:has(.ws-nav-group) .ws-nav-group > span {
   padding-bottom: 7px;
 }
+
+.ws-dispute-controls {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  align-items: end;
+  margin: 20px 0;
+}
+.ws-dispute-controls label {
+  display: grid;
+  gap: 7px;
+  font-size: 12px;
+  color: #aaa;
+}
+.ws-dispute-controls input {
+  flex: 1;
+  min-width: 180px;
+}
+.ws-dispute-controls select,
+.ws-deposit-form select {
+  background: #202020;
+  border: 1px solid #3b3b3b;
+  color: #eee;
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 12px;
+  min-height: 36px;
+  max-width: 100%;
+}
+.ws-dispute-subline {
+  display: block;
+  margin-top: 5px;
+  color: #aaa;
+  font-size: 11px;
+}
+.ws-dispute-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 14px;
+  padding: 16px;
+  color: #aaa;
+  font-size: 12px;
+}
+.ws-dispute-history {
+  display: grid;
+  gap: 15px;
+  padding: 0;
+  list-style: none;
+}
+.ws-dispute-history li {
+  padding: 14px;
+  border: 1px solid #333;
+  border-radius: 6px;
+}
+.ws-dispute-history p {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  margin: 8px 0;
+}
+.ws-dispute-history small {
+  color: #aaa;
+}
+
+.ws-dispute-subline {
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+@media (max-width: 600px) {
+  .ws-dispute-controls input {
+    flex-basis: 100%;
+    width: 100%;
+    min-width: 0;
+    font-size: 16px;
+  }
+}
