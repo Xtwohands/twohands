@@ -51,7 +51,7 @@ async function nav(page: any, name: string) {
   });
   if (await toggle.isVisible()) await toggle.click();
   await page
-    .getByRole("navigation", { name: "Main navigation" })
+    .getByRole("navigation", { name: /navigation/ })
     .getByRole("link", { name: new RegExp(`^${name}(?: \\d+)?$`) })
     .click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
@@ -92,7 +92,7 @@ test("records and approves intent, receives an output, evaluates it, and opens a
   page,
   request,
 }) => {
-  await page.goto("/");
+  await page.goto("/#sessions");
   await page
     .getByRole("button", { name: "Record intent", exact: true })
     .first()
@@ -227,7 +227,7 @@ test("model comparison withholds unsupported scores and navigation works on mobi
   request,
 }) => {
   await makeSession(request);
-  await page.goto("/");
+  await page.goto("/#sessions");
   await nav(page, "Model evaluations");
   await expect(
     page.getByRole("heading", { name: "Model evaluations", exact: true }),
@@ -436,7 +436,7 @@ test("mobile navigation supports Escape and restores focus", async ({
   isMobile,
 }) => {
   test.skip(!isMobile, "Mobile drawer only");
-  await page.goto("/");
+  await page.goto("/#sessions");
   const toggle = page.getByRole("button", {
     name: "Open navigation",
     exact: true,

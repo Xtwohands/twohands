@@ -1,26 +1,7 @@
-.workspace-mode-switch {
+.obs-sidebar nav {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 3px;
-  padding: 4px;
-  background: #1b1b1b;
-  border: 1px solid #303030;
-  border-radius: 8px;
-  margin: 0 0 24px;
-}
-.workspace-mode-switch a {
-  padding: 7px 2px;
-  text-align: center;
-  text-decoration: none;
-  color: #aaa;
-  font-size: 12px;
-  border-radius: 5px;
-  white-space: nowrap;
-}
-.workspace-mode-switch a[aria-current="page"] {
-  background: #343434;
-  color: var(--brand-lavender);
-  box-shadow: 0 1px 2px #0004;
+  gap: 5px;
+  margin-bottom: 24px;
 }
 .provider-page {
   display: grid;
@@ -839,9 +820,6 @@
   .lab-receipt-row:not(:disabled):hover,
   .lab-run-list > a:hover {
     background: #232323;
-  }
-  .workspace-mode-switch a:hover {
-    color: #f0f0f0;
   }
 }
 @media (max-width: 1200px) {

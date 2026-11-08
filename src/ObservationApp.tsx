@@ -2,6 +2,8 @@ import { ToolOptions } from "./components/ToolOptions";
 import { OutcomeContent } from "./components/DeferredOutcomeContent";
 import { CompanyView } from "./CompanyView";
 import { ProviderLabView } from "./ProviderLabView";
+import { LandingView } from "./LandingView";
+import { UserDashboardView } from "./UserDashboardView";
 import "./provider.css";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -79,7 +81,15 @@ import {
 } from "./observation-ui";
 
 type Page =
-  "sessions" | "models" | "tools" | "cases" | "settings" | "company" | "lab";
+  | "home"
+  | "dashboard"
+  | "sessions"
+  | "models"
+  | "tools"
+  | "cases"
+  | "settings"
+  | "company"
+  | "lab";
 type Summary = {
   sessions: number;
   pendingApproval: number;
@@ -131,8 +141,18 @@ const pages = [
 ] as const;
 function readRoute() {
   const [page, id, section, finding] = location.hash.slice(1).split("/");
+  if (!page)
+    return {
+      page: "home" as Page,
+      id,
+      labProvider: "all",
+      labFinding: "all",
+      section: "overview",
+    };
   return {
     page: ([
+      "home",
+      "dashboard",
       "sessions",
       "models",
       "tools",
@@ -421,64 +441,85 @@ export function ObservationApp() {
         (filter === "reviewed" && statusLabel(s) === "Reviewed")),
   );
   const currentTitle =
-    route.page === "company"
-      ? "Tool company"
-      : route.page === "settings"
-        ? "Connections & settings"
-        : pages.find((p) => p.id === route.page)?.label || "Sessions";
+    route.page === "home"
+      ? "Home"
+      : route.page === "dashboard"
+        ? "My dashboard"
+        : route.page === "company"
+          ? "Tool company"
+          : route.page === "settings"
+            ? "Connections & settings"
+            : pages.find((p) => p.id === route.page)?.label || "Sessions";
+  if (route.page === "home") return <LandingView />;
+  const surface =
+    route.page === "dashboard"
+      ? "user"
+      : route.page === "company"
+        ? "business"
+        : "operator";
   const sidebarContent = (
     <>
-      <a href="#sessions" className="obs-brand">
+      <a href="#home" className="obs-brand">
         <img src="/octolab.svg" alt="" width="32" height="32" />
         octolab
       </a>
-      <div className="workspace-mode-switch" aria-label="Dashboard view">
-        <a
-          href="#sessions"
-          aria-current={route.page !== "company" ? "page" : undefined}
-        >
-          Workspace
-        </a>
-        <a
-          href="#company/exa"
-          aria-current={route.page === "company" ? "page" : undefined}
-        >
-          Tool company
-        </a>
-      </div>
-      <nav aria-label="Main navigation">
-        {route.page === "company"
-          ? [
-              { id: "overview", label: "Overview", icon: Grid01 },
-              {
-                id: "benchmarks",
-                label: "Controlled tests",
-                icon: BarChartSquare02,
-              },
-              { id: "plans", label: "Test plans", icon: FileCheck02 },
-            ].map((p) => (
-              <a
-                href={`#company/${route.id || "exa"}/${p.id}`}
-                key={p.id}
-                className={route.section === p.id ? "selected" : ""}
-              >
-                <p.icon />
-                {p.label}
-              </a>
-            ))
-          : pages.map((p) => (
-              <a
-                href={`#${p.id}`}
-                key={p.id}
-                className={route.page === p.id ? "selected" : ""}
-              >
-                <p.icon />
-                {p.label}
-                {p.id === "cases" && !!summary?.openCases && (
-                  <span className="nav-count">{summary.openCases}</span>
-                )}
-              </a>
-            ))}
+      <nav
+        aria-label={
+          surface === "user"
+            ? "User navigation"
+            : surface === "business"
+              ? "Tool company navigation"
+              : "Operator navigation"
+        }
+      >
+        {surface === "user" ? (
+          <>
+            <a
+              href="#dashboard"
+              className={route.page === "dashboard" ? "selected" : ""}
+            >
+              <Grid01 />
+              My dashboard
+            </a>
+            <a href="#home">
+              <ArrowUpRight />
+              Public site
+            </a>
+          </>
+        ) : surface === "business" ? (
+          [
+            { id: "overview", label: "Overview", icon: Grid01 },
+            {
+              id: "benchmarks",
+              label: "Controlled tests",
+              icon: BarChartSquare02,
+            },
+            { id: "plans", label: "Test plans", icon: FileCheck02 },
+          ].map((p) => (
+            <a
+              href={`#company/${route.id || "exa"}/${p.id}`}
+              key={p.id}
+              className={route.section === p.id ? "selected" : ""}
+            >
+              <p.icon />
+              {p.label}
+            </a>
+          ))
+        ) : (
+          pages.map((p) => (
+            <a
+              href={`#${p.id}`}
+              key={p.id}
+              className={route.page === p.id ? "selected" : ""}
+            >
+              <p.icon />
+              {p.label}
+              {p.id === "cases" && !!summary?.openCases && (
+                <span className="nav-count">{summary.openCases}</span>
+              )}
+            </a>
+          ))
+        )}
       </nav>
       <div className="sidebar-bottom">
         <div className="host-card">
@@ -487,14 +528,18 @@ export function ObservationApp() {
           </span>
           <div>
             <strong>
-              {route.page === "company"
-                ? "Tool company preview"
-                : "Agent workspace"}
+              {surface === "user"
+                ? "My workspace"
+                : surface === "business"
+                  ? "Tool company preview"
+                  : "Agent workspace"}
             </strong>
             <span>
-              {route.page === "company"
-                ? "Demo & local lab"
-                : "Local observation"}
+              {surface === "user"
+                ? "Your tools and sessions"
+                : surface === "business"
+                  ? "Demo & local lab"
+                  : "Local observation"}
             </span>
           </div>
         </div>
@@ -615,6 +660,15 @@ export function ObservationApp() {
               runId={route.id}
               providerFilter={route.labProvider}
               evidenceFilter={route.labFinding}
+            />
+          )}
+          {route.page === "dashboard" && (
+            <UserDashboardView
+              sessions={sessions}
+              catalog={catalog}
+              estimatedMicros={summary?.estimatedMicros ?? 0}
+              connectionName={connection.clientName}
+              onRecord={() => setNewOpen(true)}
             />
           )}
           {route.page === "sessions" && !route.id && (
@@ -1037,6 +1091,49 @@ export function ObservationApp() {
                   </p>
                 </div>
               </div>
+              <Panel
+                title="Dashboards"
+                description="Switch surfaces here until dashboard access moves behind sign-in."
+              >
+                <div className="session-list">
+                  <a className="session-row" href="#dashboard">
+                    <div className="session-name">
+                      <span className="session-symbol">
+                        <Grid01 />
+                      </span>
+                      <div>
+                        <strong>My dashboard</strong>
+                        <span>Your tools and usage</span>
+                      </div>
+                    </div>
+                    <ArrowUpRight />
+                  </a>
+                  <a className="session-row" href="#sessions">
+                    <div className="session-name">
+                      <span className="session-symbol">
+                        <TerminalSquare />
+                      </span>
+                      <div>
+                        <strong>Operator console</strong>
+                        <span>Sessions, reviews, and workspace settings</span>
+                      </div>
+                    </div>
+                    <Badge variant="outline">Current area</Badge>
+                  </a>
+                  <a className="session-row" href="#company/exa">
+                    <div className="session-name">
+                      <span className="session-symbol">
+                        <BarChartSquare02 />
+                      </span>
+                      <div>
+                        <strong>Tool company</strong>
+                        <span>Provider insights and controlled tests</span>
+                      </div>
+                    </div>
+                    <ArrowUpRight />
+                  </a>
+                </div>
+              </Panel>
               <div className="settings-grid">
                 <Panel
                   title="Agent connection"
