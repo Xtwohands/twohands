@@ -15,7 +15,7 @@ STRIPE_WEBHOOK_SECRET=<whsec_ signing secret for this endpoint>
 PUBLIC_APP_URL=http://127.0.0.1:5173
 ```
 
-Use test/sandbox credentials. Live keys and live-mode payment objects are refused. `PUBLIC_APP_URL` must be an HTTPS origin or an HTTP loopback origin, without credentials, paths, query parameters, or fragments. It controls return URLs; API callers cannot supply redirect URLs or arbitrary amounts/currencies to Stripe. A restricted key needs permission to create/retrieve Checkout Sessions and expand their PaymentIntent/latest Charge.
+Use test/sandbox credentials. Live keys and live-mode payment objects are refused. `PUBLIC_APP_URL` must be an HTTPS origin or an HTTP loopback origin, without credentials, paths, query parameters, or fragments. It controls return URLs; API callers cannot supply redirect URLs or arbitrary amounts/currencies to Stripe. A restricted key needs permission to create/retrieve Checkout Sessions, expand their PaymentIntent/latest Charge, and retrieve PaymentIntents directly for unmatched charge-event recovery.
 
 For local testing, forward snapshot events to the backend using [Stripe CLI](https://docs.stripe.com/stripe-cli):
 

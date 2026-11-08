@@ -30,7 +30,7 @@ Credential identifiers identify the credential used; they are not verified human
 
 Every save includes the current revision and a fingerprint of material payment evidence. If another admin saves first or the amount/payment identity/refund/dispute/credit state changes, a stale save returns `409`. Refresh the case before saving; the UI preserves the draft note. A later material evidence change reopens a reviewed case as Needs review. Merely refreshing a verification timestamp does not reopen it. Previous decisions remain in history.
 
-Requests use UUID idempotency keys. Retrying unchanged details after a lost response adds no duplicate decision. Reusing a key with different content or a different server-derived actor returns `409`. The review and its immutable audit evidence commit in one database transaction. No review action changes the financial ledger or underlying Stripe receipt.
+Review saves use UUID idempotency keys. Retrying unchanged details after a lost response adds no duplicate decision. Reusing a key with different content or a different server-derived actor returns `409`. The review and its immutable audit evidence commit in one database transaction. Saving a local review does not change the financial ledger or underlying Stripe receipt. **Verify Stripe status** can update the saved receipt and ledger under the existing refund and dispute rules; it never releases a dispute hold.
 
 ## API
 
