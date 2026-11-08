@@ -6,7 +6,7 @@ Except for explicitly enabled Firecrawl keyless extraction, provider keys are re
 
 By default the server binds to loopback. Non-loopback binding requires `API_TOKEN` with at least 24 characters. For remote use, place the service behind HTTPS and trusted access controls. The browser keeps the workspace token in memory only, clearing it on reload; provider credentials cannot be entered into the browser. Local API host validation and same-origin JSON writes reduce browser-based attacks against unauthenticated loopback deployments.
 
-This is a single shared workspace. The token grants access to all local sessions and research tasks. It does not supply tenant isolation, roles, user identity, audit attribution, or buyer access control. Do not use this version for untrusted public users or confidential multi-tenant workloads.
+This is a single shared workspace. The owner token grants access to all local sessions and research tasks. It does not supply tenant isolation, per-user roles, verified human identity, or buyer access control. [Scoped API keys](API_KEYS.md) restrict machine permissions, tools, expiry, and cumulative configured estimates; policy audit events identify the owner credential, not a verified person. Issuance requires an owner `API_TOKEN` of at least 24 characters. After any key is issued, removing or shortening that token makes general `/api` requests return `503`, including requests without credentials; revoking all keys does not restore anonymous access. Do not use this version for untrusted public users or confidential multi-tenant workloads.
 
 ## Local data
 
