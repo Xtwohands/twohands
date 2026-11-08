@@ -28,6 +28,8 @@ export class ObservationStore {
   constructor(public store: Store) {
     store.db.exec(`
       CREATE TABLE IF NOT EXISTS observation_clients(id TEXT PRIMARY KEY,body TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS workspace_settings(key TEXT PRIMARY KEY,body TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS workspace_policy_events(id INTEGER PRIMARY KEY AUTOINCREMENT,body TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS observation_sessions(id TEXT PRIMARY KEY, body TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS observation_calls(id TEXT PRIMARY KEY,session_id TEXT NOT NULL REFERENCES observation_sessions(id) ON DELETE CASCADE,request_key TEXT NOT NULL,signature TEXT NOT NULL,body TEXT NOT NULL,UNIQUE(session_id,request_key));
       CREATE TABLE IF NOT EXISTS observation_events(id INTEGER PRIMARY KEY AUTOINCREMENT,session_id TEXT NOT NULL REFERENCES observation_sessions(id) ON DELETE CASCADE,body TEXT NOT NULL);

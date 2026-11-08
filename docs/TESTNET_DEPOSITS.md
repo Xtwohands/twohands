@@ -1,0 +1,70 @@
+# Base Sepolia test deposits
+
+The Credits page at `#dashboard/credits` supports a development-only USDC deposit flow on Base Sepolia. It is disabled by default and was deliberately left disabled on the local development server at the user's request. No receiving wallet was configured and no real or testnet transfer was sent during implementation.
+
+## Enable later
+
+Configure these server environment variables, then restart the backend:
+
+```dotenv
+DEPOSITS_TESTNET_ENABLED=true
+BASE_SEPOLIA_DEPOSIT_ADDRESS=<public EVM address you control>
+BASE_SEPOLIA_RPC_URL=https://sepolia.base.org
+```
+
+Use only a public receiving address. The server does not require or accept a private key. RPC credentials, if used in a dedicated endpoint URL, stay server-side. The public RPC can be rate limited; configure a suitable dedicated RPC for sustained testing.
+
+Set `DEPOSITS_TESTNET_ENABLED=false` and restart to disable creation and verification. Historical requests and test balances remain readable. Existing credited receipts replay without another network request.
+
+## User flow
+
+1. Open Credits and choose Add test credits.
+2. Enter 1–1,000 test USDC, with up to six decimal places, and the public sending wallet address.
+3. Create the deposit request. The server records its exact amount, sender, recipient, network, token, and a 30-minute transfer window.
+4. In a separate wallet, send the exact test USDC amount on Base Sepolia to the displayed receiving address. The wallet requires test ETH for gas. octolab does not sign or send this transfer.
+5. Submit the transaction hash and choose Verify transaction.
+6. A matching transfer remains pending until its block is finalized. Use Check transaction again to recheck; checks are limited to one per request per ten seconds.
+
+The transfer must be mined within the request window. Verification can finish after that window; finalization does not require creating another request. Incorrect transfers are not credited. A rejected request can be checked with a corrected hash after the cooldown.
+
+Get test USDC from [Circle's faucet](https://faucet.circle.com/). Testnet tokens have no financial value, as described in [Circle's contract documentation](https://developers.circle.com/stablecoins/usdc-contract-addresses).
+
+## Verification boundary
+
+The verifier is pinned to Base Sepolia, chain ID `84532`, and Circle's USDC contract `0x036CbD53842c5426634e7929541eC2318f3dCF7e`. API callers cannot override the chain or token.
+
+Every credited deposit requires:
+
+- RPC chain identity matching Base Sepolia.
+- A successful receipt for the submitted transaction hash.
+- A canonical block whose hash and number agree with the receipt.
+- A block timestamp inside the original request's transfer window.
+- Exactly one unremoved ERC-20 Transfer event from the configured USDC contract, matching the sending wallet, receiving address, and exact integer amount.
+- A finalized network block at or above the receipt's block, followed by another canonical block-hash check.
+
+See [Base chain identity](https://docs.base.org/base-chain/api-reference/ethereum-json-rpc-api/eth_chainId), [Base finalized-head semantics](https://docs.base.org/base-chain/specs/protocol/consensus/derivation), and the [ERC-20 Transfer specification](https://eips.ethereum.org/EIPS/eip-20). Finality is reported by the configured RPC; this is not an independent cryptographic light client.
+
+Amounts use integer six-decimal units. Deposit request creation has a client-generated idempotency key; changing an amount or sender with the same key is rejected. A transaction can credit the workspace only once, enforced by a database uniqueness constraint. Ledger insertion, credited request state, and its audit event commit in one SQLite transaction. Repeated verification of an already credited deposit returns the saved result without further RPC calls.
+
+Ledger entries and deposit audit events live in their own tables. They are excluded from provider statistics and commercial observation aggregates. The test-credit balance does not increase backend research budgets or pay actual provider invoices.
+
+## API
+
+All routes inherit the existing workspace bearer-token and cross-origin write protection.
+
+| Method | Route                                        | Behavior                                                                                                                            |
+| ------ | -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| GET    | `/api/workspace/funding`                     | Configuration booleans, public network/address details, aggregate test balance, and latest 100 requests. Never returns the RPC URL. |
+| POST   | `/api/workspace/funding/deposits`            | Create or replay `{requestKey, amount, sender}`. Amount is a decimal string.                                                        |
+| GET    | `/api/workspace/funding/deposits/:id`        | Read one saved request.                                                                                                             |
+| POST   | `/api/workspace/funding/deposits/:id/verify` | Verify `{transactionHash}` using read-only JSON-RPC calls.                                                                          |
+
+The local workspace supports at most 1,000 requests. It uses one shared receiver and balance. This is not an authenticated per-customer payment system.
+
+## Tests and remaining activation work
+
+Unit tests exercise exact decimals, idempotency, delayed finality, expiry, missing receipts, incorrect network/token/sender/recipient/amount, reverted and removed events, duplicate events, inconsistent blocks, malformed RPC data, concurrent claims, persistence, authorization, and origin protection. Browser tests exercise both the disabled production setup state and a complete simulated deposit with duplicate prevention. Fixture RPC responses and receiving addresses exist only in the dedicated in-memory fixture server.
+
+Before enabling even test deposits, choose a receiving address you control and configure the server. Then perform an explicitly authorized wallet transfer and compare its real receipt with the saved ledger. That live transfer has not been performed.
+
+Production funds require a separate implementation and review: authenticated account ownership, customer attribution, payment reconciliation, wallet/custody policy, operational monitoring, accounting rules, and an independently reviewed mainnet activation path. Mainnet cannot be enabled by changing a chain ID in the current configuration.

@@ -144,9 +144,20 @@ export function CopyButton({
     </Button>
   );
 }
-export function download(name: string, data: unknown) {
+export function download(
+  name: string,
+  data: unknown,
+  type = "application/json",
+) {
   const url = URL.createObjectURL(
-    new Blob([JSON.stringify(data, null, 2)], { type: "application/json" }),
+    new Blob(
+      [
+        type === "application/json"
+          ? JSON.stringify(data, null, 2)
+          : String(data),
+      ],
+      { type },
+    ),
   );
   const a = document.createElement("a");
   a.href = url;

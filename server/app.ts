@@ -1,4 +1,7 @@
 import express from "express";
+import { FundingService } from "./funding.js";
+import { fundingRoutes } from "./funding-api.js";
+import { workspaceRoutes } from "./workspace-api.js";
 import { sanitizedEventData } from "./sanitized.js";
 import { analytics } from "./analytics.js";
 import { randomUUID, timingSafeEqual, createHash } from "node:crypto";
@@ -55,8 +58,10 @@ export function createApp(
   engine = new Engine(store),
   observatory = new Observatory(store, undefined, engine.timestamps),
   providerLab = new ProviderLab(store, undefined, engine.timestamps),
+  funding = new FundingService(store),
 ) {
   const app = express();
+  app.locals.funding = funding;
   app.locals.providerLab = providerLab;
   observatory.controlledSamples = () => providerLab.controlledSamples();
   app.disable("x-powered-by");
@@ -125,6 +130,8 @@ export function createApp(
   app.use("/api/observations", express.json({ limit: "160kb" }));
   app.use(express.json({ limit: "24kb" }));
   observationRoutes(app, observatory);
+  workspaceRoutes(app, observatory);
+  fundingRoutes(app, funding);
   providerLabRoutes(app, providerLab);
   app.get("/api/company-insights/:provider", (req, res) => {
     const p = z

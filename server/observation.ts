@@ -17,6 +17,7 @@ import { publicEvidenceUrl } from "./url-policy.js";
 import { digest, ObservationStore } from "./observation-store.js";
 import type { Store } from "./store.js";
 import type { ProviderId } from "./types.js";
+import type { RoutingPolicy } from "./workspace-types.js";
 import type {
   ObservationSession,
   ObservedCall,
@@ -133,6 +134,98 @@ export class Observatory {
     const s = this.db.get(id);
     if (!s) throw new ObservationError(404, "Session not found.");
     return s;
+  }
+  routingPolicy(): RoutingPolicy {
+    const row = this.db.store.db
+      .prepare("SELECT body FROM workspace_settings WHERE key='routing'")
+      .get();
+    return row
+      ? JSON.parse(row.body as string)
+      : { revision: 0, disabledTools: [], updatedAt: null };
+  }
+  updateRoutingPolicy(raw: unknown): RoutingPolicy {
+    const input = z
+      .object({
+        revision: z.number().int().min(0),
+        disabledTools: z
+          .array(z.enum(["exa_search", "tavily_search", "firecrawl_extract"]))
+          .max(3),
+      })
+      .strict()
+      .parse(raw);
+    return this.db.transaction(() => {
+      const previous = this.routingPolicy();
+      if (previous.revision !== input.revision)
+        throw new ObservationError(
+          409,
+          "Routing settings changed elsewhere. Reload the latest settings and try again.",
+        );
+      const policy: RoutingPolicy = {
+        revision: previous.revision + 1,
+        disabledTools: [...new Set(input.disabledTools)].sort(),
+        updatedAt: new Date().toISOString(),
+      };
+      this.db.store.db
+        .prepare(
+          "INSERT INTO workspace_settings VALUES ('routing',?) ON CONFLICT(key) DO UPDATE SET body=excluded.body",
+        )
+        .run(JSON.stringify(policy));
+      this.db.store.db
+        .prepare("INSERT INTO workspace_policy_events(body) VALUES (?)")
+        .run(
+          JSON.stringify({
+            type: "routing_policy_updated",
+            previous,
+            policy,
+            source: "workspace_api",
+          }),
+        );
+      return policy;
+    });
+  }
+  preview(input: DiscoveryInput) {
+    const catalog = this.catalog();
+    const policy = this.routingPolicy();
+    let discovery: ReturnType<typeof matchTools>;
+    try {
+      discovery = matchTools(
+        input,
+        Object.fromEntries(catalog.map((t) => [t.tool, t.available])) as Record<
+          ToolName,
+          boolean
+        >,
+        config.agentSessionBudgetMicros,
+      );
+    } catch (error) {
+      if (error instanceof z.ZodError) throw error;
+      throw new ObservationError(
+        400,
+        error instanceof Error ? error.message : "Invalid discovery request.",
+      );
+    }
+    const tools = discovery.tools.map((tool) => ({
+      ...tool,
+      enabled: !policy.disabledTools.includes(tool.tool),
+      discoveryMatches: tool.discoveryMatches.map((match) =>
+        policy.disabledTools.includes(tool.tool) && match.status === "eligible"
+          ? {
+              ...match,
+              status: "disabled" as const,
+              reason: "Paused by workspace routing settings.",
+            }
+          : match,
+      ),
+    }));
+    return {
+      ...discovery,
+      tools,
+      candidateTools: tools
+        .filter((t) => t.discoveryMatches.some((m) => m.status === "eligible"))
+        .map((t) => t.tool),
+      preview: true,
+      budgetMicros: config.agentSessionBudgetMicros,
+      policyRevision: policy.revision,
+    };
   }
   create(
     input: z.infer<typeof sessionInput>,
@@ -282,6 +375,7 @@ export class Observatory {
       return {
         tool,
         provider,
+        enabled: !this.routingPolicy().disabledTools.includes(tool),
         reputation: {
           organic: {
             source: "observed_workspace_calls",
@@ -380,6 +474,18 @@ export class Observatory {
       estimateScope:
         "Each quote is one candidate request, not a batch total. Default prices apply only when no request quote is available.",
     }));
+    for (const tool of tools) {
+      if (!tool.enabled)
+        tool.discoveryMatches = tool.discoveryMatches.map((match) =>
+          match.status === "eligible"
+            ? {
+                ...match,
+                status: "disabled",
+                reason: "Paused by workspace routing settings.",
+              }
+            : match,
+        );
+    }
     const offerId = this.db.newId();
     const intentContext = {
       objective: session.objective,
@@ -463,6 +569,11 @@ export class Observatory {
     let call!: ObservedCall;
     this.db.transaction(() => {
       const s = this.require(id);
+      if (this.routingPolicy().disabledTools.includes(input.tool))
+        throw new ObservationError(
+          409,
+          "This tool is paused by workspace routing settings. Discover another enabled tool.",
+        );
       if (!s.approvedAt)
         throw new ObservationError(
           409,
