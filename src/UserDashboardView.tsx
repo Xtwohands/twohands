@@ -92,7 +92,7 @@ const labels: Record<DashboardSection, [string, string]> = {
   ],
   credits: [
     "Credits",
-    "Test USDC deposits on Base Sepolia, with a verified on-chain receipt.",
+    "Test credits from Stripe payments and verified USDC deposits on Base Sepolia.",
   ],
   connections: [
     "Connections",

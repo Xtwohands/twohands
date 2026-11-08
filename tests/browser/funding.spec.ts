@@ -12,11 +12,14 @@ test("test funding remains disabled by default with clear setup instructions", a
   await expect(
     page.getByRole("button", { name: "Add test credits", exact: true }),
   ).toBeDisabled();
-  await expect(page.locator(".ws-funding-method")).toContainText(
+  await expect(page.locator(".ws-funding-method").first()).toContainText(
     "Setup required",
   );
+  await expect(
+    page.getByRole("button", { name: "Deposit with Stripe", exact: true }),
+  ).toBeDisabled();
   await expect(page.locator(".ws-funding-notice")).toContainText(
-    "Mainnet deposits are not supported",
+    "No real-money deposits are accepted",
   );
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
   expect(
@@ -53,7 +56,7 @@ test("fixture test deposit creates, verifies, and credits exactly once", async (
   await page
     .getByRole("button", { name: "Verify transaction", exact: true })
     .click();
-  if (before.totalDeposits === 0) {
+  if (before.onchainDeposits === 0) {
     await expect(page.getByRole("dialog")).toContainText(
       "10.00 test USDC added",
     );
@@ -65,12 +68,12 @@ test("fixture test deposit creates, verifies, and credits exactly once", async (
   const after = await (
     await request.get(`${base}/api/workspace/funding`)
   ).json();
-  expect(after.balanceUnits).toBe(10000000);
-  expect(after.totalDeposits).toBe(1);
+  expect(after.onchainBalanceUnits).toBe(10000000);
+  expect(after.onchainDeposits).toBe(1);
   await expect(page.getByRole("dialog")).toHaveCSS("opacity", "1");
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
   await page.getByRole("button", { name: "Close", exact: true }).click();
-  await expect(page.locator(".ws-balance-card")).toContainText("10.00");
+  await expect(page.locator(".ws-balance-card")).toContainText("test credits");
   await page.reload();
-  await expect(page.locator(".ws-balance-card")).toContainText("10.00");
+  await expect(page.locator(".ws-balance-card")).toContainText("test credits");
 });

@@ -34,7 +34,7 @@ The user sidebar groups **Tool catalog**, **Routing**, **Activity**, **Usage**, 
 
 Activity supports date, provider, status, and text filters, pagination, receipt inspection, and matching CSV exports. Usage separates configured estimates from provider-reported USD or credits. Connection status reports historical requests, not a live heartbeat. This remains a shared local workspace; account isolation and scoped API-key issuance are not implemented. See [interface decisions](research/2026-11-08-tool-routing-workspace.md).
 
-**Base Sepolia test USDC deposits are disabled by default.** The Credits page includes an opt-in deposit flow, finalized on-chain receipt verification, and a separate test-credit ledger. Test credits never fund paid provider calls. No mainnet, signing, wallet custody, withdrawals, or Stripe integration is enabled. See [test deposit setup and validation](docs/TESTNET_DEPOSITS.md).
+**Stripe test payments and Base Sepolia test USDC deposits are disabled by default.** The Credits page offers both methods with one test-credit balance, separate receipts, and an append-only adjustment ledger. Stripe uses hosted Checkout, signed webhooks, server-retrieved payment proof, refund adjustments, and dispute holds. On-chain deposits require finalized matching USDC transfers. Test credits never fund paid provider calls. Live payments, mainnet, wallet custody, and withdrawals are unsupported. See [Stripe setup](docs/STRIPE_DEPOSITS.md) and [on-chain setup](docs/TESTNET_DEPOSITS.md).
 
 ## Connect an agent
 

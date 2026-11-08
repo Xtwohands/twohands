@@ -31,13 +31,19 @@ for (const signal of ["SIGTERM", "SIGINT"])
     for (const id of app.locals.providerLab.active)
       app.locals.providerLab.cancel(id);
     server.close();
-    const deadline = setTimeout(() => process.exit(1), config.timeoutMs + 3000);
+    const deadline = setTimeout(
+      () => process.exit(1),
+      Math.max(config.timeoutMs, 60000) + 3000,
+    );
     deadline.unref();
     const drain = setInterval(() => {
       if (
         engine.active.size === 0 &&
         observatory.active.size === 0 &&
-        app.locals.providerLab.active.size === 0
+        app.locals.providerLab.active.size === 0 &&
+        app.locals.funding.active.size === 0 &&
+        app.locals.stripeFunding.active.size === 0 &&
+        app.locals.stripeFunding.creating.size === 0
       ) {
         clearInterval(drain);
         clearTimeout(deadline);

@@ -1,6 +1,6 @@
 # Base Sepolia test deposits
 
-The Credits page at `#dashboard/credits` supports a development-only USDC deposit flow on Base Sepolia. It is disabled by default and was deliberately left disabled on the local development server at the user's request. No receiving wallet was configured and no real or testnet transfer was sent during implementation.
+The Credits page at `#dashboard/credits` supports a development-only USDC deposit flow on Base Sepolia alongside [Stripe test deposits](STRIPE_DEPOSITS.md). Both methods share one test-credit balance with separate payment receipts. On-chain deposits are disabled by default and were deliberately left disabled on the local development server at the user's request. No receiving wallet was configured and no real or testnet transfer was sent during implementation.
 
 ## Enable later
 
@@ -46,20 +46,20 @@ See [Base chain identity](https://docs.base.org/base-chain/api-reference/ethereu
 
 Amounts use integer six-decimal units. Deposit request creation has a client-generated idempotency key; changing an amount or sender with the same key is rejected. A transaction can credit the workspace only once, enforced by a database uniqueness constraint. Ledger insertion, credited request state, and its audit event commit in one SQLite transaction. Repeated verification of an already credited deposit returns the saved result without further RPC calls.
 
-Ledger entries and deposit audit events live in their own tables. They are excluded from provider statistics and commercial observation aggregates. The test-credit balance does not increase backend research budgets or pay actual provider invoices.
+The append-only `funding_ledger` combines on-chain credits and Stripe credit adjustments. Existing on-chain receipts in `funding_credits` are imported once with stable source IDs; historical proof remains intact. One test USDC or one test USD equals one test credit, represented in integer millionths. A Stripe refund or dispute affects only that payment's net credits. Funding ledger entries and deposit audit events are excluded from provider statistics and commercial observation aggregates. The test-credit balance does not increase backend research budgets or pay actual provider invoices.
 
 ## API
 
 All routes inherit the existing workspace bearer-token and cross-origin write protection.
 
-| Method | Route                                        | Behavior                                                                                                                            |
-| ------ | -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| GET    | `/api/workspace/funding`                     | Configuration booleans, public network/address details, aggregate test balance, and latest 100 requests. Never returns the RPC URL. |
-| POST   | `/api/workspace/funding/deposits`            | Create or replay `{requestKey, amount, sender}`. Amount is a decimal string.                                                        |
-| GET    | `/api/workspace/funding/deposits/:id`        | Read one saved request.                                                                                                             |
-| POST   | `/api/workspace/funding/deposits/:id/verify` | Verify `{transactionHash}` using read-only JSON-RPC calls.                                                                          |
+| Method | Route                                        | Behavior                                                                                                                                                                                                |
+| ------ | -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GET    | `/api/workspace/funding`                     | Both method statuses, public network/address details, combined test balance, per-method counts, latest 100 receipts per method, and latest 100 ledger entries. Never returns RPC or Stripe credentials. |
+| POST   | `/api/workspace/funding/deposits`            | Create or replay `{requestKey, amount, sender}`. Amount is a decimal string.                                                                                                                            |
+| GET    | `/api/workspace/funding/deposits/:id`        | Read one saved request.                                                                                                                                                                                 |
+| POST   | `/api/workspace/funding/deposits/:id/verify` | Verify `{transactionHash}` using read-only JSON-RPC calls.                                                                                                                                              |
 
-The local workspace supports at most 1,000 requests. It uses one shared receiver and balance. This is not an authenticated per-customer payment system.
+The local workspace supports at most 1,000 on-chain requests, separately from the Stripe intent limit. It uses one shared receiver and balance. This is not an authenticated per-customer payment system.
 
 ## Tests and remaining activation work
 

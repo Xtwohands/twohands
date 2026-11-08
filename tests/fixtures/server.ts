@@ -1,6 +1,9 @@
 /** TEST PROCESS ONLY. No fixture adapter is imported by server/index.ts. */
 import { config } from "../../server/config.js";
 import { Store } from "../../server/store.js";
+import { FundingService } from "../../server/funding.js";
+import { StripeFundingService } from "../../server/stripe-funding.js";
+import { FixtureStripeGateway, fixtureStripeSettings } from "./stripe.js";
 import { createApp } from "../../server/app.js";
 config.keys.exa = "TEST_ONLY_EXA_KEY";
 config.keys.tavily = "TEST_ONLY_TAVILY_KEY";
@@ -118,7 +121,58 @@ globalThis.fetch = async (input, init) => {
   );
 };
 const store = new Store(":memory:");
-const server = createApp(store).listen(
+const funding = new FundingService(store);
+const stripeGateway = new FixtureStripeGateway();
+const stripeFunding = new StripeFundingService(
+  funding,
+  {
+    ...fixtureStripeSettings,
+    appUrl: `http://127.0.0.1:${process.env.FIXTURE_PORT || 3102}`,
+  },
+  stripeGateway,
+);
+const app = createApp(
+  store,
+  undefined,
+  undefined,
+  undefined,
+  funding,
+  stripeFunding,
+);
+// Fixture control exists only in this dedicated in-memory test process.
+app.post("/__fixture/stripe/:id", async (req, res) => {
+  try {
+    const intent = stripeFunding.get(String(req.params.id));
+    const payment = stripeGateway.pay(
+      intent.checkoutSessionId!,
+      Number(req.body.refundedCents || 0),
+      req.body.disputed === true,
+    );
+    const event = stripeGateway.signed(
+      req.body.disputed
+        ? "charge.dispute.created"
+        : req.body.refundedCents
+          ? "charge.refunded"
+          : "checkout.session.completed",
+      payment,
+    );
+    const response = await nativeFetch(
+      `http://127.0.0.1:${process.env.FIXTURE_PORT || 3102}/api/webhooks/stripe`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "stripe-signature": event.signature,
+        },
+        body: event.payload.toString(),
+      },
+    );
+    res.status(response.status).json(await response.json());
+  } catch (e) {
+    res.status(500).json({ error: (e as Error).message });
+  }
+});
+const server = app.listen(
   Number(process.env.FIXTURE_PORT || 3102),
   "127.0.0.1",
   () =>
