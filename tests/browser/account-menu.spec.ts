@@ -61,6 +61,7 @@ test("help opens inside the app and returns keyboard focus to the account contro
     exact: true,
   });
   await expect(help).toBeVisible();
+  await expect(help).toHaveCSS("opacity", "1");
   await expect(
     page.getByRole("dialog", { name: "Account options" }),
   ).toBeHidden();

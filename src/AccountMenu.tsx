@@ -45,7 +45,7 @@ export function AccountMenu({
             <User01 />
           </span>
           <span className="account-menu-identity">
-            <strong title={label}>{label}</strong>
+            <strong title={label}>{label}</strong>{" "}
             {detail && <small>{detail}</small>}
           </span>
           <ChevronUp className="account-menu-chevron" aria-hidden="true" />
