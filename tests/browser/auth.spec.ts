@@ -554,9 +554,9 @@ test("tool company registration never forces a customer workspace or exposes the
   };
   await page.reload();
   await expect(
-    page.getByRole("heading", { name: "No usage available yet", exact: true }),
+    page.getByRole("heading", { name: "No usage yet", exact: true }),
   ).toBeVisible();
-  await captureJourney(page, "company-approved-no-cohort");
+  await captureJourney(page, "company-approved-no-usage");
   state.companies[0].status = "rejected";
   state.companies[0].revision = 1;
   await page.goto("/#company/" + state.companies[0].id + "/details");
@@ -648,7 +648,7 @@ test("administrator previews standard roles from settings and can always return"
     page.getByText("Provider preview", { exact: true }),
   ).toBeVisible();
   await expect(
-    page.getByRole("heading", { name: "No usage available yet", exact: true }),
+    page.getByRole("heading", { name: "No usage yet", exact: true }),
   ).toBeVisible();
   await expect(page.getByText("Your areas", { exact: true })).toHaveCount(0);
   await captureJourney(page, "role-preview-company");
@@ -767,7 +767,7 @@ test("admin switches selected companies, drops late reports, and retains return 
     page.getByRole("heading", { name: "Tavily dashboard" }),
   ).toBeVisible();
   await expect(
-    page.getByRole("heading", { name: "No usage available yet", exact: true }),
+    page.getByRole("heading", { name: "No usage yet", exact: true }),
   ).toBeVisible();
   await captureJourney(page, "company-preview-provider");
   await expect(page.locator("body")).not.toContainText("987654");
