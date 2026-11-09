@@ -101,6 +101,15 @@ export class PostgresDatabase implements Database {
       idleTimeoutMillis: 30000,
       ssl: local ? false : { rejectUnauthorized: true },
     });
+    // pg-pool removes its idle error listener while a client is checked out.
+    // Keep a handler during transactions and other gaps between queries. The
+    // failed client rejects further queries; runtime ownership has its own
+    // additional handler that still stops the process if that connection dies.
+    this.pool.on("connect", (client) => {
+      client.on("error", () =>
+        console.error("A checked-out database connection closed unexpectedly."),
+      );
+    });
     this.pool.on("error", () =>
       console.error("A database connection closed unexpectedly."),
     );

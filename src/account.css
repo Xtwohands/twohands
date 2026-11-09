@@ -106,7 +106,7 @@
   font: inherit;
 }
 .account-scope-select select:focus-visible {
-  outline: 2px solid #a8b4cf;
+  outline: 2px solid var(--ring);
   outline-offset: 2px;
 }
 @media (max-width: 480px) {

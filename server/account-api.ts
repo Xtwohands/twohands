@@ -55,7 +55,9 @@ export function accountPreviewAccess(accounts: Accounts) {
           403,
           "Only administrators can preview another role.",
         );
-      accounts.assertAdmin(identity);
+      // User preview only removes admin powers and uses real memberships.
+      // Impersonating a tool company still requires verified admin access.
+      if (role === "company") accounts.assertAdmin(identity);
       if (targetHeader && role !== "company")
         throw new AccountError(
           400,
@@ -199,11 +201,21 @@ export function accountAccess(
         return;
       }
       const identity = await accounts.identity(req);
-      if (accounts.isAdmin(identity.userId)) accounts.assertAdmin(identity);
-      const workspace = await accounts.workspace(
-        identity,
-        req.header("x-octolab-workspace"),
-      );
+      const admin = accounts.isAdmin(identity.userId);
+      if (admin && operatorRestricted(req, path))
+        accounts.assertAdmin(identity);
+      let workspace;
+      try {
+        workspace = await accounts.workspace(
+          identity,
+          req.header("x-octolab-workspace"),
+        );
+      } catch (error) {
+        // An admin without a real membership must verify before using
+        // platform-wide access. Personal membership access needs no elevation.
+        if (admin) accounts.assertAdmin(identity);
+        throw error;
+      }
       if (workspace.role === "platform_admin") accounts.assertAdmin(identity);
       if (!accounts.isAdmin(identity.userId) && operatorRestricted(req, path))
         throw new AccountError(

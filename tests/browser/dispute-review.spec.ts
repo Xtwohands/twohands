@@ -32,8 +32,13 @@ test("admin dispute queue records reviews, retains holds, reopens changed eviden
   await expect(row).toHaveCount(1);
   await expect(row).toContainText("Needs review");
   await page
+    .locator(".ws-table tbody tr")
+    .filter({ hasText: payment.id.slice(0, 8) })
     .getByRole("button", { name: "Review payment", exact: true })
     .click();
+  await expect(
+    page.getByRole("dialog").getByText(payment.id, { exact: true }),
+  ).toBeVisible();
   await expect(page.getByRole("dialog")).toContainText("Credit hold retained");
   await page.getByLabel("Review decision").selectOption("reviewed");
   await page
@@ -105,8 +110,13 @@ test("admin review rejects a concurrent stale decision without replacing the dra
     .getByRole("textbox", { name: "Search disputed payments" })
     .fill(payment.id);
   await page
+    .locator(".ws-table tbody tr")
+    .filter({ hasText: payment.id.slice(0, 8) })
     .getByRole("button", { name: "Review payment", exact: true })
     .click();
+  await expect(
+    page.getByRole("dialog").getByText(payment.id, { exact: true }),
+  ).toBeVisible();
   await page
     .getByRole("textbox", { name: "Dispute review note" })
     .fill("My pending review note must survive a conflict.");
@@ -194,8 +204,13 @@ test("rejected admin credentials clear open evidence and drafts", async ({
     .getByRole("textbox", { name: "Search disputed payments" })
     .fill(payment.id);
   await page
+    .locator(".ws-table tbody tr")
+    .filter({ hasText: payment.id.slice(0, 8) })
     .getByRole("button", { name: "Review payment", exact: true })
     .click();
+  await expect(
+    page.getByRole("dialog").getByText(payment.id, { exact: true }),
+  ).toBeVisible();
   await page
     .getByRole("textbox", { name: "Dispute review note" })
     .fill("Sensitive draft should clear when credential is rejected.");

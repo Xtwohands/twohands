@@ -33,7 +33,7 @@
   --foreground: #eeeeec;
   --card: #1e1e1e;
   --popover: #242424;
-  --primary: #007d9b;
+  --primary: var(--brand-accent);
   --primary-foreground: #ffffff;
   --secondary: #292929;
   --muted: #252525;
@@ -42,8 +42,8 @@
   --destructive: #666666;
   --border: #303030;
   --input: #3c3c3c;
-  --brand-cyan: #00ceff;
-  --ring: var(--brand-cyan);
+  --brand-accent: #3aa0ed;
+  --ring: var(--brand-accent);
   --radius: 10px;
 }
 @layer base {
@@ -82,7 +82,7 @@
     font: inherit;
   }
   ::selection {
-    background: #00ceff40;
+    background: #3aa0ed40;
   }
   :focus-visible {
     outline: 2px solid var(--ring);
@@ -1068,7 +1068,7 @@
   margin: 5px 0;
 }
 .evidence-checks input {
-  accent-color: #aaaaaa;
+  accent-color: var(--ring);
   width: 13px;
   height: 13px;
 }

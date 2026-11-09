@@ -184,6 +184,65 @@ suite("authenticated account and tenant boundaries", () => {
       ).status,
     ).toBe(403);
   });
+  it("keeps an administrator's own customer account usable without elevating platform access", async () => {
+    identities.set("fixture-admin-personal", {
+      ...identities.get("fixture-admin")!,
+      aal: "aal1",
+      mfaVerified: false,
+    });
+    const personal = headers("fixture-admin-personal", ids.legacy);
+    for (const path of ["/api/workspace/usage", "/api/observations/catalog"]) {
+      expect((await request(app).get(path).set(personal)).status).toBe(200);
+      expect(
+        (
+          await request(app)
+            .get(path)
+            .set({ ...personal, "X-Octolab-Preview": "user" })
+        ).status,
+      ).toBe(200);
+    }
+    const profile = await request(app)
+      .get("/api/auth/me")
+      .set({
+        ...personal,
+        "X-Octolab-Preview": "user",
+      });
+    expect(profile.status).toBe(200);
+    expect(profile.body.isAdmin).toBe(false);
+    expect(
+      profile.body.workspaces.map((item: { id: string }) => item.id),
+    ).toEqual([ids.legacy]);
+    expect(
+      (
+        await request(app)
+          .get("/api/workspace/usage")
+          .set({
+            ...headers("fixture-admin-personal", bWorkspace),
+            "X-Octolab-Preview": "user",
+          })
+      ).status,
+    ).toBe(403);
+    for (const path of [
+      "/api/admin/workspace-allowances",
+      "/api/provider-lab/runs",
+      "/api/auth/preview-targets",
+    ]) {
+      const response = await request(app).get(path).set(personal);
+      expect(response.status).toBe(403);
+      expect(response.body.code).toBe("mfa_required");
+    }
+    expect(
+      (
+        await request(app)
+          .get("/api/auth/me")
+          .set({
+            ...personal,
+            "X-Octolab-Preview": "company",
+            "X-Octolab-Preview-Target": "provider:exa",
+          })
+      ).body.code,
+    ).toBe("mfa_required");
+  });
   it("sets up a private account once across concurrent tabs without granting spending or claiming historical data", async () => {
     const identity: VerifiedIdentity = {
       userId: randomUUID(),
