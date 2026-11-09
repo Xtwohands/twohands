@@ -6,7 +6,7 @@ Assessment date: November 8, 2026. This report covers the provider workbench cha
 
 **Verified for a local/operator-controlled pilot. Not yet ready to onboard arbitrary tool companies as a production self-service service.** The provider workflow is functional; deployment, provider identity/access, generic integration onboarding, and model-based experiments require separate verification or implementation.
 
-The canonical integration includes PostgreSQL/Supabase accounts, separate role portals, and a workspace-scoped suite migration. Seven hosted schema migrations and the historical SQLite import have been checksum/content verified; see [the rollout checkpoint](SUPABASE_ROLLOUT.md). Passing local adapter tests does not establish deployed login/email delivery or public-launch readiness.
+The canonical integration includes PostgreSQL/Supabase accounts, separate role portals, and a workspace-scoped suite migration. Eight hosted schema migrations and the historical SQLite import have been checksum/content verified; see [the rollout checkpoint](SUPABASE_ROLLOUT.md). Passing local adapter tests does not establish deployed login/email delivery or public-launch readiness.
 
 ## What is integrated
 
