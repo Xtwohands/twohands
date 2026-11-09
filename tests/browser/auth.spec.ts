@@ -1155,9 +1155,11 @@ test("ordinary accounts cannot open admin tool access and see honest workspace a
     }),
   );
   await login(page);
-  await expect(page.getByRole("status")).toContainText(
-    "Tool access has not been enabled",
-  );
+  await expect(
+    page.getByRole("status").filter({
+      hasText: "Tool access has not been enabled",
+    }),
+  ).toBeVisible();
   await page.goto("/#tool-access");
   await expect(
     page.getByRole("heading", { name: "Administrator access required" }),
