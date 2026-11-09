@@ -6,7 +6,7 @@
   "description": "Observe agent intent, explicit tool choices, evidence, and evaluated outcomes over MCP",
   "scripts": {
     "dev": "concurrently -k -n api,web \"node --use-env-proxy --env-file-if-exists=.env --import tsx --watch server/index.ts\" \"vite --host 127.0.0.1\"",
-    "build": "tsc --noEmit && vite build && tsc -p tsconfig.server.json",
+    "build": "tsc --noEmit && vite build && tsc -p tsconfig.server.json && node scripts/build-release-manifest.mjs",
     "start": "node --use-env-proxy --env-file-if-exists=.env build/index.js",
     "test": "vitest run",
     "test:e2e": "playwright test",
@@ -20,10 +20,14 @@
     "test:soak": "node --import tsx scripts/soak-observation.ts",
     "test:soak:providers": "node --import tsx scripts/soak-provider-lab.ts",
     "verify:evidence": "node scripts/verify-evidence.mjs",
-    "db:inspect": "node --env-file-if-exists=.env --import tsx server/database-cli.ts inspect",
-    "db:migrate": "node --env-file-if-exists=.env --import tsx server/database-cli.ts migrate",
-    "db:import": "node --env-file-if-exists=.env --import tsx server/database-cli.ts import",
-    "db:verify": "node --env-file-if-exists=.env --import tsx server/database-cli.ts verify"
+    "db:inspect": "node --use-env-proxy --env-file-if-exists=.env build/database-cli.js inspect",
+    "db:migrate": "node --use-env-proxy --env-file-if-exists=.env build/database-cli.js migrate",
+    "db:import": "node --use-env-proxy --env-file-if-exists=.env build/database-cli.js import",
+    "db:verify": "node --use-env-proxy --env-file-if-exists=.env build/database-cli.js verify",
+    "verify:release": "node scripts/verify-release-artifact.mjs",
+    "db:backup": "node --use-env-proxy build/backup-cli.js backup",
+    "db:restore": "node --use-env-proxy build/backup-cli.js restore",
+    "test:restore": "node --import tsx scripts/restore-drill.ts"
   },
   "engines": {
     "node": ">=24.5.0"

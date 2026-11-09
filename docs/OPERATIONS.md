@@ -123,6 +123,8 @@ SIGTERM/SIGINT stops accepting connections, asks active legacy plans and control
 
 ## Deployment artifact
 
+Use the [release and recovery checklist](RELEASE_CHECKLIST.md) for the packaged application/recovery images, compiled migration commands, exact-revision CI evidence, encrypted backup ownership/retention and tested fresh-destination restore procedure. The offline application archive excludes hosted Auth identities and object storage; those need their own recovery arrangements. No hosted backup, restore, data cutover or deployment is implied by a passing isolated drill.
+
 The Dockerfile builds both the browser and server, installs runtime dependencies separately, and runs as the non-root `node` user. Use a persistent `/app/data` volume for SQLite. For PostgreSQL, complete the [verified cutover](POSTGRES_MIGRATION.md) and supply the backend selection, workspace ID, and private connection string through deployment configuration. SQLite refuses public binding without a long owner token; PostgreSQL starts only with valid public Auth configuration and enforces account access. Complete actual redirect/email/login validation before hosted rollout. Supply secrets through your hosting system and terminate TLS in front of the container.
 
-The Docker artifact passes local and CI build/runtime/restart checks. It still has to be configured and validated in the target deployment environment; it is not a claim that a hosted service has been deployed. Buyer interviews, vendor terms review, and willingness-to-pay validation remain operational tasks.
+Use the actual CI results for the selected image revision to establish which build/runtime/restart/restore checks passed. It still has to be configured and validated in the target deployment environment; a prepared artifact is not a deployed service. Buyer interviews, vendor terms review, and willingness-to-pay validation remain operational tasks.

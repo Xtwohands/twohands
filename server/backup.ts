@@ -58,6 +58,7 @@ function toolEnvironment(raw: string): NodeJS.ProcessEnv {
   const local = ["127.0.0.1", "localhost", "[::1]"].includes(url.hostname);
   return {
     PATH: process.env.PATH,
+    HOME: process.env.HOME,
     LANG: "C",
     LC_ALL: "C",
     PGHOST: url.hostname.replace(/^\[|\]$/g, ""),
@@ -184,6 +185,7 @@ export async function backupDatabase(
       "pg_dump",
       [
         "--format=custom",
+        "--no-password",
         "--no-owner",
         "--no-tablespaces",
         "--schema=octolab",
@@ -323,6 +325,7 @@ export async function restoreDatabase(
   const directory = await mkdtemp(join(tmpdir(), "octolab-recovery-")),
     plaintext = join(directory, "authenticated-payload");
   let database: PostgresDatabase | undefined;
+  let release: (() => Promise<void>) | undefined;
   try {
     const { manifest, offset } = await decryptBackup(
       input,
@@ -330,8 +333,19 @@ export async function restoreDatabase(
       passphrase,
     );
     database = new PostgresDatabase(connection, () => "");
+    release = await claimRuntime(database);
     const client = await database.pool.connect();
     try {
+      const targetMajor = Math.floor(
+        Number(
+          (await client.query("SHOW server_version_num")).rows[0]
+            .server_version_num,
+        ) / 10000,
+      );
+      if (targetMajor < manifest.serverMajor)
+        throw new BackupError(
+          "Restore requires the same or a newer PostgreSQL major version.",
+        );
       const existing = await client.query(
         "SELECT 1 FROM pg_namespace WHERE nspname IN ('octolab','octolab_migrations') LIMIT 1",
       );
@@ -358,6 +372,7 @@ export async function restoreDatabase(
     const { child, done } = runTool(
       "pg_restore",
       [
+        "--no-password",
         "--dbname",
         parsed.database,
         "--single-transaction",
@@ -414,6 +429,7 @@ export async function restoreDatabase(
       "Restore failed. No successful recovery is claimed; private connection details were omitted.",
     );
   } finally {
+    await release?.();
     await database?.close();
     await rm(directory, { recursive: true, force: true });
   }

@@ -225,11 +225,9 @@ export function createApp(
         .safeParse(req.params.provider),
       days = z.enum(["7", "30", "90"]).safeParse(req.query.days ?? "30");
     if (!provider.success || !days.success) {
-      res
-        .status(400)
-        .json({
-          error: "Choose a supported provider and a 7, 30, or 90 day window.",
-        });
+      res.status(400).json({
+        error: "Choose a supported provider and a 7, 30, or 90 day window.",
+      });
       return;
     }
     res.json(

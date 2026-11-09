@@ -1,6 +1,9 @@
 /** Disposable, local-only recovery fixture. Never imported by the production runtime. */
 import { randomBytes, randomUUID } from "node:crypto";
 import assert from "node:assert/strict";
+import { ProviderBilling } from "../../server/provider-billing.js";
+import { assignProviderAccount } from "../../server/provider-accounts.js";
+import { providerRegistry } from "../../server/provider-adapters.js";
 import { mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -64,6 +67,7 @@ export async function runRestoreDrill(
     rowDigestsMatch: false,
     auditChainsValid: false,
     financialBalancesMatch: false,
+    billingAmountsMatch: false,
     workspaceIsolationPassed: false,
     sourceDatabaseDropped: false,
     restoredDatabaseDropped: false,
@@ -89,6 +93,7 @@ export async function runRestoreDrill(
     const obs = new Observatory(source, {
       search: async (_provider, _query, _domains, callId) => ({
         httpStatus: 200,
+        requestId: `restore-request-${callId}`,
         sources: [
           {
             id: randomUUID(),
@@ -118,6 +123,11 @@ export async function runRestoreDrill(
             allowedTools: ["exa_search"],
             limitUsd: "0.1",
           });
+          await assignProviderAccount(source!, "exa_search", {
+            accountReference: `restore-account-${index}`,
+            credentialRevision:
+              providerRegistry.credentialStatus("exa_search").revision,
+          });
           const session = await obs.createAgentSession(
             {
               title: `Restore fixture ${index}`,
@@ -129,7 +139,7 @@ export async function runRestoreDrill(
             },
             key.id,
           );
-          await obs.execute(
+          const receipt = await obs.execute(
             session.id,
             {
               tool: "exa_search",
@@ -138,6 +148,34 @@ export async function runRestoreDrill(
               requestKey: "fixture-call",
             },
             key.id,
+          );
+          const billing = new ProviderBilling(obs),
+            start = new Date();
+          start.setUTCHours(0, 0, 0, 0);
+          const batch = await billing.import({
+            requestKey: randomUUID(),
+            provider: "exa",
+            accountReference: `restore-account-${index}`,
+            sourceKind: "invoice",
+            sourceReference: `restore-invoice-${index}`,
+            windowStart: start.toISOString(),
+            windowEnd: new Date(start.getTime() + 86400000).toISOString(),
+            records: [
+              {
+                recordId: "fixture-invoice-line",
+                requestId: receipt.result?.requestId,
+                amountMicros: 10000 + index,
+              },
+            ],
+          });
+          await billing.review(
+            batch.id,
+            {
+              requestKey: randomUUID(),
+              decision: "approved",
+              note: "Synthetic recovery fixture",
+            },
+            owner,
           );
           const funding = new FundingService(source!, {
             enabled: false,
@@ -235,7 +273,8 @@ export async function runRestoreDrill(
     restored = new Store(":unused:", targetUrl.toString(), workspaces[0]);
     const restoredObs = new Observatory(restored);
     await restoredObs.ready;
-    let isolated = true;
+    let isolated = true,
+      billingMatch = true;
     const restoredBalances: number[] = [];
     for (const [index, workspaceId] of workspaces.entries())
       await restored.scope.run(workspaceId, async () => {
@@ -247,6 +286,12 @@ export async function runRestoreDrill(
           isolated = false;
         if (!(await restoredObs.db.detail(sessions[0].id))?.integrity)
           isolated = false;
+        if (
+          (await new ProviderBilling(restoredObs).overview())
+            .reconciledMicros !==
+          10000 + index
+        )
+          billingMatch = false;
         restoredBalances.push(
           await new FundingService(restored!, {
             enabled: false,
@@ -256,6 +301,7 @@ export async function runRestoreDrill(
         );
       });
     evidence.workspaceIsolationPassed = isolated;
+    evidence.billingAmountsMatch = billingMatch;
     evidence.financialBalancesMatch =
       JSON.stringify(balances) === JSON.stringify(restoredBalances) &&
       balances[0] === 7500000 &&
@@ -272,6 +318,7 @@ export async function runRestoreDrill(
         evidence.rowDigestsMatch,
         evidence.auditChainsValid,
         evidence.financialBalancesMatch,
+        evidence.billingAmountsMatch,
         evidence.workspaceIsolationPassed,
       ].some((value) => !value)
     )

@@ -3,6 +3,7 @@ import {
   applyMigrations,
   importSqlite,
   readSqliteSnapshot,
+  claimRuntime,
 } from "./migration.js";
 const command = process.argv[2];
 if (command === "inspect") {
@@ -19,7 +20,12 @@ if (command === "inspect") {
   );
   try {
     if (command === "migrate") {
-      await applyMigrations(database);
+      const release = await claimRuntime(database);
+      try {
+        await applyMigrations(database);
+      } finally {
+        await release();
+      }
       console.log("Postgres schema migrations verified.");
     } else if (command === "import" || command === "verify")
       console.log(
