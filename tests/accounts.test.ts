@@ -184,6 +184,116 @@ suite("authenticated account and tenant boundaries", () => {
       ).status,
     ).toBe(403);
   });
+  it("sets up a private account once across concurrent tabs without granting spending or claiming historical data", async () => {
+    const identity: VerifiedIdentity = {
+      userId: randomUUID(),
+      email: "new-account@fixture.invalid",
+      sessionId: randomUUID(),
+      expiresAt: Date.now() + 3600000,
+    };
+    identities.set("fixture-setup", identity);
+    await db.pool.query(
+      "INSERT INTO auth.users(id,email,email_confirmed_at) VALUES($1,$2,now())",
+      [identity.userId, identity.email],
+    );
+    await db.pool.query("INSERT INTO auth.sessions(id,user_id) VALUES($1,$2)", [
+      identity.sessionId,
+      identity.userId,
+    ]);
+    const responses = await Promise.all(
+      Array.from({ length: 4 }, () =>
+        request(app)
+          .post("/api/auth/setup")
+          .set(headers("fixture-setup"))
+          .send({}),
+      ),
+    );
+    for (const response of responses) expect(response.status).toBe(200);
+    const created = responses[0].body;
+    expect(new Set(responses.map((response) => response.body.id)).size).toBe(1);
+    expect(created).toMatchObject({ name: "Personal account", role: "owner" });
+    expect([ids.legacy, aWorkspace, bWorkspace]).not.toContain(created.id);
+    const memberships = await db.pool.query(
+      "SELECT workspace_id,role FROM octolab.workspace_memberships WHERE user_id=$1",
+      [identity.userId],
+    );
+    expect(memberships.rows).toEqual([
+      { workspace_id: created.id, role: "owner" },
+    ]);
+    const audit = await db.pool.query(
+      "SELECT id FROM octolab.account_audit_events WHERE workspace_id=$1 AND actor_user_id=$2 AND type='workspace_created'",
+      [created.id, identity.userId],
+    );
+    expect(audit.rowCount).toBe(1);
+    const balance = await store.scope.run(created.id, () =>
+      funding.ledger.balance(),
+    );
+    expect(balance).toBe(0);
+    const allowance = await store.scope.run(created.id, () =>
+      store.allowance.status(),
+    );
+    expect(allowance).toMatchObject({
+      state: "unconfigured",
+      remainingMicros: 0,
+      limitMicros: 0,
+    });
+    const repeated = await request(app)
+      .post("/api/auth/setup")
+      .set(headers("fixture-setup"))
+      .send({});
+    expect(repeated.body.id).toBe(created.id);
+    const existing = await request(app)
+      .post("/api/auth/setup")
+      .set(headers("fixture-a"))
+      .send({});
+    expect(existing.body.id).toBe(aWorkspace);
+    expect(
+      (
+        await request(app)
+          .get("/api/observations")
+          .set(headers("fixture-b", created.id))
+      ).status,
+    ).toBe(403);
+    expect((await request(app).post("/api/auth/setup").send({})).status).toBe(
+      401,
+    );
+    expect(
+      (
+        await request(app)
+          .post("/api/auth/setup")
+          .set(headers("fixture-setup"))
+          .send({ userId: ids.b })
+      ).status,
+    ).toBe(400);
+    expect(
+      (
+        await request(app)
+          .post("/api/auth/setup")
+          .set({
+            ...headers("fixture-setup"),
+            Origin: "https://unrelated.invalid",
+          })
+          .send({})
+      ).status,
+    ).toBe(403);
+    expect(
+      (
+        await request(app)
+          .post("/api/auth/setup")
+          .set(headers("fixture-setup"))
+          .type("text/plain")
+          .send("{}")
+      ).status,
+    ).toBe(415);
+    expect(
+      (
+        await request(app)
+          .post("/api/auth/setup")
+          .set({ ...headers("fixture-admin"), "X-Octolab-Preview": "user" })
+          .send({})
+      ).status,
+    ).toBe(403);
+  });
   it("denies cross-tenant IDs and checks membership/roles from the database on every request", async () => {
     const created = await request(app)
       .post("/api/observations/agent-sessions")

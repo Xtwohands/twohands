@@ -56,6 +56,7 @@ async function mockAuth(
             { id: first, name: "Workspace A", role: "owner" },
             { id: second, name: "Workspace B", role: "owner" },
           ],
+    setupCalls: 0,
     revoked: false,
     pause: false,
     waiting: 0,
@@ -204,6 +205,14 @@ async function mockAuth(
               : state.companies,
           },
     });
+  });
+  await page.route("**/api/auth/setup", async (route) => {
+    state.setupCalls++;
+    if (!state.workspaces.length)
+      state.workspaces = [
+        { id: first, name: "Personal account", role: "owner" },
+      ];
+    await route.fulfill({ json: state.workspaces[0] });
   });
   await page.route("**/api/auth/workspaces", async (route) => {
     const body = route.request().postDataJSON(),
@@ -379,8 +388,27 @@ async function login(page: Page, destination = "/#dashboard/activity") {
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
 }
 async function openNav(page: Page) {
-  if (test.info().project.name === "mobile")
-    await page.getByRole("button", { name: "Open navigation" }).click();
+  if (test.info().project.name !== "mobile") return;
+  const menu = page.getByRole("button", { name: /^Account menu/ }).last();
+  if (await menu.isVisible()) return;
+  const button = page.getByRole("button", { name: "Open navigation" });
+  await expect(button).toBeVisible();
+  await button.click();
+  await expect(menu).toBeVisible();
+}
+async function openAccountMenu(page: Page) {
+  const popover = page.getByRole("dialog", { name: "Account options" });
+  if (!(await popover.isVisible())) {
+    await openNav(page);
+    await page
+      .getByRole("button", { name: /^Account menu/ })
+      .last()
+      .click();
+  }
+}
+async function openSettings(page: Page) {
+  await openAccountMenu(page);
+  await page.getByRole("link", { name: "Settings", exact: true }).click();
 }
 test("email sign-in, persisted session, and sign-out clear the private workspace", async ({
   page,
@@ -395,17 +423,25 @@ test("email sign-in, persisted session, and sign-out clear the private workspace
     "Private A receipt",
   );
   await openNav(page);
-  await page.getByRole("button", { name: "Sign out", exact: true }).click();
+  await openAccountMenu(page);
+  await page
+    .getByRole("button", { name: "Sign out", exact: true })
+    .last()
+    .click();
   await expect(
     page.getByRole("heading", { name: "Sign in to octolab" }),
   ).toBeVisible();
   await expect(page.getByText("Private A receipt")).toHaveCount(0);
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
 });
-test("workspace switching discards late responses from the previous workspace", async ({
+test("admin account selection discards late responses from the previous account", async ({
   page,
 }) => {
-  const state = await mockAuth(page);
+  const state = await mockAuth(page, false, "admin");
+  state.workspaces = [
+    { id: first, name: "Account A", role: "platform_admin" },
+    { id: second, name: "Account B", role: "platform_admin" },
+  ];
   await login(page);
   await expect(page.locator(".ws-activity-table")).toContainText(
     "Private A receipt",
@@ -414,9 +450,10 @@ test("workspace switching discards late responses from the previous workspace", 
   await page.getByRole("button", { name: "Refresh workspace" }).click();
   await expect.poll(() => state.waiting).toBeGreaterThan(0);
   await openNav(page);
-  await page.getByRole("link", { name: "Settings", exact: true }).click();
+  await openSettings(page);
+  await openAccountMenu(page);
   await page
-    .getByRole("combobox", { name: "Current workspace" })
+    .getByRole("combobox", { name: "Customer account" })
     .selectOption(second);
   state.release();
   await page.goto("/#dashboard/activity");
@@ -429,22 +466,24 @@ test("workspace switching discards late responses from the previous workspace", 
     "Private B receipt",
   );
 });
-test("new accounts explicitly create a workspace and expired access removes private content", async ({
+test("new accounts start automatically and expired access removes private content", async ({
   page,
 }) => {
   const state = await mockAuth(page, true);
   await login(page);
+  await expect(page.getByLabel("Workspace name")).toHaveCount(0);
   await expect(
-    page.getByRole("heading", { name: "Create your workspace" }),
-  ).toBeVisible();
-  await captureJourney(page, "new-workspace");
-  await page.getByLabel("Workspace name").fill("My new workspace");
-  await page
-    .getByRole("button", { name: "Create workspace", exact: true })
-    .click();
+    page.getByRole("button", { name: "Create workspace", exact: true }),
+  ).toHaveCount(0);
   await expect(page.locator(".ws-activity-table")).toContainText(
     "Private A receipt",
   );
+  expect(state.setupCalls).toBe(1);
+  await page.reload();
+  await expect(page.locator(".ws-activity-table")).toContainText(
+    "Private A receipt",
+  );
+  expect(state.setupCalls).toBe(1);
   state.revoked = true;
   await page.getByRole("button", { name: "Refresh workspace" }).click();
   await expect(
@@ -453,6 +492,122 @@ test("new accounts explicitly create a workspace and expired access removes priv
   await expect(page.getByText("Private A receipt")).toHaveCount(0);
   await captureJourney(page, "expired-session");
 });
+test("direct sign-in starts a new customer account without workspace onboarding", async ({
+  page,
+}) => {
+  const state = await mockAuth(page, true);
+  await login(page, "/#signin");
+  await expect(page).toHaveURL(/#dashboard/);
+  await expect(
+    page.getByRole("heading", { name: "My dashboard", exact: true }),
+  ).toBeVisible();
+  await openNav(page);
+  await expect(
+    page.getByRole("button", { name: /^Account menu/ }).last(),
+  ).toBeAttached();
+  await expect(page.getByLabel("Workspace name")).toHaveCount(0);
+  await expect(page.getByLabel("Current workspace")).toHaveCount(0);
+  expect(state.setupCalls).toBe(1);
+});
+
+test("existing accounts keep their remembered scope without a customer picker", async ({
+  page,
+}) => {
+  const state = await mockAuth(page);
+  await page.addInitScript(
+    ({ id, scope }) => localStorage.setItem("octolab.workspace." + id, scope),
+    { id: userId, scope: second },
+  );
+  await login(page);
+  await expect(page.locator(".ws-activity-table")).toContainText(
+    "Private B receipt",
+  );
+  await openAccountMenu(page);
+  await expect(page.getByLabel("Customer account")).toHaveCount(0);
+  await expect(page.getByLabel("Current workspace")).toHaveCount(0);
+  await expect(
+    page.getByRole("link", { name: "Settings", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Help and documentation", exact: true }),
+  ).toBeVisible();
+  expect(state.setupCalls).toBe(0);
+});
+
+test("account setup failures offer a retry without workspace management", async ({
+  page,
+}) => {
+  const state = await mockAuth(page, true);
+  let attempts = 0;
+  await page.route("**/api/auth/setup", async (route) => {
+    attempts++;
+    if (attempts === 1)
+      return route.fulfill({
+        status: 503,
+        json: { error: "Account setup is temporarily unavailable." },
+      });
+    state.workspaces = [{ id: first, name: "Personal account", role: "owner" }];
+    return route.fulfill({ json: state.workspaces[0] });
+  });
+  await login(page);
+  await expect(
+    page.getByText("Account setup is temporarily unavailable."),
+  ).toBeVisible();
+  await expect(page.getByLabel("Workspace name")).toHaveCount(0);
+  await page
+    .getByRole("button", { name: "Retry account access", exact: true })
+    .click();
+  await expect(page.locator(".ws-activity-table")).toContainText(
+    "Private A receipt",
+  );
+  expect(attempts).toBe(2);
+});
+
+test("a delayed setup response cannot restore the previous account after sign-out", async ({
+  page,
+}) => {
+  const state = await mockAuth(page, true);
+  let release!: () => void,
+    waiting = false,
+    finished = false;
+  const gate = new Promise<void>((resolve) => (release = resolve));
+  await page.route("**/api/auth/setup", async (route) => {
+    waiting = true;
+    await gate;
+    await route.fulfill({
+      json: { id: first, name: "Previous account", role: "owner" },
+    });
+    finished = true;
+  });
+  await login(page);
+  await expect.poll(() => waiting).toBe(true);
+  await page.evaluate(() =>
+    window.dispatchEvent(new Event("octolab-session-invalid")),
+  );
+  await expect(
+    page.getByRole("heading", { name: "Sign in to octolab", exact: true }),
+  ).toBeVisible();
+  state.actorId = "00000000-0000-4000-8000-000000000099";
+  state.workspaces = [{ id: second, name: "Next account", role: "owner" }];
+  await page
+    .getByLabel("Email", { exact: true })
+    .fill("second@fixture.invalid");
+  await page
+    .getByLabel("Password", { exact: true })
+    .fill("fixture-password-123");
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await expect(page.locator(".ws-activity-table")).toContainText(
+    "Private B receipt",
+  );
+  release();
+  await expect.poll(() => finished).toBe(true);
+  await page.getByRole("button", { name: "Refresh workspace" }).click();
+  await expect(page.locator(".ws-activity-table")).toContainText(
+    "Private B receipt",
+  );
+  await expect(page.getByText("Private A receipt")).toHaveCount(0);
+});
+
 test("confirmation, recovery, invalid credentials, and public landing stay usable", async ({
   page,
 }) => {
@@ -511,6 +666,7 @@ test("tool company registration never forces a customer workspace or exposes the
     page.getByRole("heading", { name: "Bring your tool to octolab" }),
   ).toBeVisible();
   await expect(page.getByLabel("Workspace name")).toHaveCount(0);
+  expect(state.setupCalls).toBe(0);
   await page.getByLabel("Company name", { exact: true }).fill("Fixture tools");
   await page
     .getByLabel("Company website")
@@ -594,6 +750,7 @@ test("admin company reviews work without creating a customer workspace", async (
     page.getByRole("heading", { name: "Company reviews" }),
   ).toBeVisible();
   await expect(page.getByLabel("Workspace name")).toHaveCount(0);
+  expect(state.setupCalls).toBe(0);
   await page.getByRole("button", { name: /Fixture tools/ }).click();
   await page.getByLabel("Verified provider integration").selectOption("exa");
   await page
@@ -619,7 +776,7 @@ test("account settings replace the sidebar area switcher and preserve user navig
   await expect(
     page.getByRole("link", { name: "Administration", exact: true }),
   ).toHaveCount(0);
-  await page.getByRole("link", { name: "Settings", exact: true }).click();
+  await openSettings(page);
   await expect(
     page.getByRole("heading", { name: "Settings", exact: true }),
   ).toBeVisible();
@@ -641,7 +798,7 @@ test("administrator previews standard roles from settings and can always return"
     page.getByRole("heading", { name: "Company reviews" }),
   ).toBeVisible();
   await openNav(page);
-  await page.getByRole("link", { name: "Settings", exact: true }).click();
+  await openSettings(page);
   await page.getByLabel("Preview as").selectOption("company");
   await page.getByLabel("Company to preview").selectOption("provider:exa");
   await page.getByRole("button", { name: "Open company preview" }).click();
@@ -666,10 +823,12 @@ test("administrator previews standard roles from settings and can always return"
     page.getByRole("heading", { name: "Company reviews" }),
   ).toBeVisible();
   await openNav(page);
-  await page.getByRole("link", { name: "Settings", exact: true }).click();
+  await openSettings(page);
   await page.getByLabel("Preview as").selectOption("user");
   await expect(
-    page.getByRole("heading", { name: "Create your workspace" }),
+    page.getByRole("heading", {
+      name: "No customer account available to preview",
+    }),
   ).toBeVisible();
   await page
     .getByRole("button", { name: "Return to admin", exact: true })
@@ -735,7 +894,7 @@ test("admin switches selected companies, drops late reports, and retains return 
   });
   await login(page);
   await openNav(page);
-  await page.getByRole("link", { name: "Settings", exact: true }).click();
+  await openSettings(page);
   await page.getByLabel("Preview as").selectOption("company");
   await page.getByLabel("Company to preview").selectOption(`company:${a.id}`);
   await captureJourney(page, "company-preview-picker");
@@ -937,7 +1096,10 @@ test("admin direct workspace route never silently renders company reviews withou
     fullPage: true,
   });
   await expect(
-    page.getByRole("heading", { name: "Select a workspace", exact: true }),
+    page.getByRole("heading", {
+      name: "Select a customer account",
+      exact: true,
+    }),
   ).toBeVisible();
   await openNav(page);
   await expect(
@@ -1028,7 +1190,10 @@ test("admin without a workspace retains route and navigation without workspace r
   ]) {
     await page.goto("/" + hash);
     await expect(
-      page.getByRole("heading", { name: "Select a workspace", exact: true }),
+      page.getByRole("heading", {
+        name: "Select a customer account",
+        exact: true,
+      }),
     ).toBeVisible();
     await expect(page).toHaveURL(new RegExp(hash + "$"));
     await openNav(page);
@@ -1375,6 +1540,7 @@ test("late enrollment cannot repopulate an authenticator secret after sign-out",
     .click();
   await expect.poll(() => waiting).toBe(true);
   await openNav(page);
+  await openAccountMenu(page);
   await page
     .getByRole("button", { name: "Sign out", exact: true })
     .last()
@@ -1421,6 +1587,7 @@ test("a previous settings response cannot overwrite the next signed-in admin's c
     .click();
   await expect.poll(() => waiting).toBe(true);
   await openNav(page);
+  await openAccountMenu(page);
   await page
     .getByRole("button", { name: "Sign out", exact: true })
     .last()
@@ -1506,6 +1673,7 @@ test("late MFA verification cannot restore privileged UI after sign-out", async 
     .click();
   await expect.poll(() => waiting).toBe(true);
   await openNav(page);
+  await openAccountMenu(page);
   await page
     .getByRole("button", { name: "Sign out", exact: true })
     .last()
@@ -1596,6 +1764,7 @@ test("MFA session adoption cannot persist or broadcast an old session after sign
     .click();
   await expect.poll(() => waiting).toBe(true);
   await openNav(page);
+  await openAccountMenu(page);
   await page
     .getByRole("button", { name: "Sign out", exact: true })
     .last()

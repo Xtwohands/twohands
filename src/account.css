@@ -88,47 +88,24 @@
   font-size: 13px;
   color: #d0d0d6;
 }
-.account-controls {
-  margin: 12px 0 4px;
-  border-top: 1px solid #2b2b30;
-  padding-top: 14px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.account-controls label {
+.account-scope-select {
   display: flex;
   flex-direction: column;
   gap: 7px;
-  font-size: 11px;
+  font-size: 12px;
   color: #9c9ca5;
 }
-.account-controls select {
+.account-scope-select select {
   width: 100%;
-  max-width: 100%;
   min-height: 36px;
   border: 1px solid #36363c;
   border-radius: 7px;
   background: #202023;
   color: #e8e8eb;
   padding: 6px 9px;
-  font-family: inherit;
-  font-size: 13px;
+  font: inherit;
 }
-.account-user {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 4px;
-}
-.account-user > span {
-  font-size: 11px;
-  color: #9999a4;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.account-controls select:focus-visible {
+.account-scope-select select:focus-visible {
   outline: 2px solid #a8b4cf;
   outline-offset: 2px;
 }
