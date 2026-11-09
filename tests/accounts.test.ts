@@ -54,7 +54,7 @@ suite("authenticated account and tenant boundaries", () => {
     db = store.db as PostgresDatabase;
     await applyMigrations(db);
     await db.pool.query(
-      "CREATE SCHEMA IF NOT EXISTS auth; CREATE TABLE IF NOT EXISTS auth.users(id UUID PRIMARY KEY,deleted_at TIMESTAMPTZ,banned_until TIMESTAMPTZ); CREATE TABLE IF NOT EXISTS auth.sessions(id UUID PRIMARY KEY,user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,not_after TIMESTAMPTZ);",
+      "CREATE SCHEMA IF NOT EXISTS auth; CREATE TABLE IF NOT EXISTS auth.users(id UUID PRIMARY KEY,deleted_at TIMESTAMPTZ,banned_until TIMESTAMPTZ); ALTER TABLE auth.users ADD COLUMN IF NOT EXISTS email TEXT; CREATE TABLE IF NOT EXISTS auth.sessions(id UUID PRIMARY KEY,user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,not_after TIMESTAMPTZ);",
     );
     for (const name of ["a", "b", "admin"] as const) {
       const identity = {
@@ -64,8 +64,9 @@ suite("authenticated account and tenant boundaries", () => {
         expiresAt: Date.now() + 3600000,
       };
       identities.set("fixture-" + name, identity);
-      await db.pool.query("INSERT INTO auth.users(id) VALUES($1)", [
+      await db.pool.query("INSERT INTO auth.users(id,email) VALUES($1,$2)", [
         identity.userId,
+        identity.email,
       ]);
       await db.pool.query(
         "INSERT INTO auth.sessions(id,user_id) VALUES($1,$2)",
@@ -401,6 +402,240 @@ suite("authenticated account and tenant boundaries", () => {
     expect(review.status).toBe(200);
     expect(review.body.history[0].actor).toBe("account " + ids.admin);
     expect(review.body.item.holdRetained).toBe(true);
+  });
+  it("keeps company registration independent from user workspace and requires explicit admin ownership review", async () => {
+    const body = {
+      name: "Fixture tool company",
+      website: "https://tools.fixture.invalid",
+      toolName: "Fixture search",
+      description: "A synthetic integration for isolated tests.",
+      requestKey: randomUUID(),
+    };
+    const created = await request(app)
+      .post("/api/auth/companies")
+      .set(headers("fixture-a"))
+      .send(body);
+    expect(created.status).toBe(201);
+    const id = created.body.id;
+    expect(created.body).toMatchObject({
+      status: "pending",
+      providerId: null,
+      insightsEnabled: false,
+    });
+    expect(
+      (
+        await request(app)
+          .post("/api/auth/companies")
+          .set(headers("fixture-a"))
+          .send(body)
+      ).body.id,
+    ).toBe(id);
+    expect(
+      (
+        await request(app)
+          .post("/api/auth/companies")
+          .set(headers("fixture-a"))
+          .send({ ...body, providerId: "exa", status: "approved" })
+      ).status,
+    ).toBe(400);
+    expect(
+      (await request(app).get(`/api/companies/${id}`).set(headers("fixture-b")))
+        .status,
+    ).toBe(404);
+    expect(
+      (
+        await request(app)
+          .get(`/api/companies/${id}/insights`)
+          .set(headers("fixture-a"))
+      ).status,
+    ).toBe(403);
+    expect(
+      (await request(app).get("/api/admin/companies").set(headers("fixture-a")))
+        .status,
+    ).toBe(403);
+    for (const path of [
+      "/api/company-insights/exa?source=local&scope=workspace",
+      "/api/Provider-Lab/",
+      "/api/observations/aggregate",
+    ])
+      expect(
+        (await request(app).get(path).set(headers("fixture-a", aWorkspace)))
+          .status,
+      ).toBe(403);
+    const review = {
+      revision: 0,
+      status: "approved",
+      providerId: "exa",
+      insightsEnabled: false,
+      feedback: "Fixture ownership verified by admin.",
+    };
+    expect(
+      (
+        await request(app)
+          .post(`/api/admin/companies/${id}/review`)
+          .set(headers("fixture-a"))
+          .send(review)
+      ).status,
+    ).toBe(403);
+    const queue = await request(app)
+      .get("/api/admin/companies")
+      .set(headers("fixture-admin"));
+    expect(queue.status).toBe(200);
+    expect(queue.body.items.some((c: any) => c.id === id)).toBe(true);
+    const approved = await request(app)
+      .post(`/api/admin/companies/${id}/review`)
+      .set(headers("fixture-admin"))
+      .send(review);
+    expect(approved.status).toBe(200);
+    expect(
+      (
+        await request(app)
+          .get(`/api/companies/${id}/insights`)
+          .set(headers("fixture-a"))
+      ).body,
+    ).toMatchObject({ status: "awaiting_release", metrics: null });
+    expect(
+      (
+        await request(app)
+          .post(`/api/admin/companies/${id}/review`)
+          .set(headers("fixture-admin"))
+          .send(review)
+      ).status,
+    ).toBe(409);
+    expect(
+      (
+        await request(app)
+          .post(`/api/admin/companies/${id}/review`)
+          .set(headers("fixture-admin"))
+          .send({ ...review, revision: 1, insightsEnabled: true })
+      ).status,
+    ).toBe(200);
+    const report = await request(app)
+      .get(`/api/companies/${id}/insights`)
+      .set(headers("fixture-a", bWorkspace));
+    expect(report.status).toBe(200);
+    expect(report.body).toMatchObject({
+      status: "insufficient_data",
+      metrics: null,
+    });
+    expect(JSON.stringify(report.body)).not.toContain(
+      "Private account fixture",
+    );
+    const history = await request(app)
+      .get(`/api/admin/companies/${id}/history`)
+      .set(headers("fixture-admin"));
+    expect(history.body).toHaveLength(3);
+    expect(history.body[0].actorId).toBe(ids.admin);
+    expect(
+      (
+        await request(app)
+          .get(`/api/admin/companies/${id}/history`)
+          .set(headers("fixture-a"))
+      ).status,
+    ).toBe(403);
+    const companyProfile = await request(app)
+      .get("/api/auth/me")
+      .set(headers("fixture-a"));
+    expect(companyProfile.body.companies[0].id).toBe(id);
+    expect(
+      companyProfile.body.workspaces.some((w: any) => w.id === aWorkspace),
+    ).toBe(true);
+    expect(
+      (
+        await request(app)
+          .post(`/api/admin/companies/${id}/review`)
+          .set(headers("fixture-admin"))
+          .send({
+            ...review,
+            revision: 2,
+            status: "suspended",
+            insightsEnabled: false,
+          })
+      ).status,
+    ).toBe(200);
+    expect(
+      (
+        await request(app)
+          .get(`/api/companies/${id}/insights`)
+          .set(headers("fixture-a"))
+      ).status,
+    ).toBe(403);
+  });
+  it("lets company owners revise rejected registrations without claiming provider access", async () => {
+    const input = {
+      name: "Second fixture company",
+      website: "https://second.fixture.invalid",
+      toolName: "Second tool",
+      description: "Another isolated synthetic tool integration.",
+      requestKey: randomUUID(),
+    };
+    const created = await request(app)
+      .post("/api/auth/companies")
+      .set(headers("fixture-b"))
+      .send(input);
+    const id = created.body.id;
+    const decision = {
+      revision: 0,
+      status: "rejected",
+      providerId: null,
+      insightsEnabled: false,
+      feedback: "Please clarify the ownership evidence.",
+    };
+    expect(
+      (
+        await request(app)
+          .post(`/api/admin/companies/${id}/review`)
+          .set(headers("fixture-admin"))
+          .send(decision)
+      ).status,
+    ).toBe(200);
+    const { requestKey, ...details } = input;
+    const changed = {
+      ...details,
+      description: "Updated synthetic ownership and integration details.",
+      revision: 1,
+    };
+    expect(
+      (
+        await request(app)
+          .post(`/api/companies/${id}/resubmit`)
+          .set(headers("fixture-a"))
+          .send(changed)
+      ).status,
+    ).toBe(404);
+    const resubmitted = await request(app)
+      .post(`/api/companies/${id}/resubmit`)
+      .set(headers("fixture-b"))
+      .send(changed);
+    expect(resubmitted.status).toBe(200);
+    expect(resubmitted.body).toMatchObject({
+      status: "pending",
+      revision: 2,
+      providerId: null,
+      insightsEnabled: false,
+    });
+    expect(
+      (
+        await request(app)
+          .post(`/api/companies/${id}/resubmit`)
+          .set(headers("fixture-b"))
+          .send(changed)
+      ).status,
+    ).toBe(409);
+    expect(
+      (
+        await request(app)
+          .get("/api/admin/companies?status=pending")
+          .set(headers("fixture-admin"))
+      ).body.items.some((c: any) => c.id === id),
+    ).toBe(true);
+    expect(
+      (
+        await request(app)
+          .get("/api/admin/companies?status=approved")
+          .set(headers("fixture-admin"))
+      ).body.items.some((c: any) => c.id === id),
+    ).toBe(false);
   });
   it("rejects revoked or banned sessions even while identity verification is cached", async () => {
     await request(app).get("/api/auth/me").set(headers("fixture-a"));

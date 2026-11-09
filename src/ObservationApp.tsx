@@ -1,3 +1,4 @@
+import { CompanyPortal, AdminCompanyReview, RoleLinks } from "./RolePortals";
 import { AccountControls, useAccount } from "./AccountGate";
 import { DisputeReviewView } from "./DisputeReviewView";
 import { ToolOptions } from "./components/ToolOptions";
@@ -91,6 +92,7 @@ import {
 } from "./observation-ui";
 
 type Page =
+  | "admin"
   | "home"
   | "dashboard"
   | "sessions"
@@ -151,6 +153,7 @@ function readRoute() {
     };
   return {
     page: ([
+      "admin",
       "home",
       "dashboard",
       "sessions",
@@ -180,6 +183,7 @@ function readRoute() {
       "record",
       "benchmarks",
       "plans",
+      "insights",
     ].includes(section)
       ? section
       : "overview",
@@ -339,15 +343,29 @@ export function ObservationApp() {
       window.removeEventListener("popstate", onRoute);
     };
   }, []);
+  const independentArea =
+    account.enabled &&
+    (route.page === "company" ||
+      route.page === "admin" ||
+      !account.workspaceId);
+  const operatorArea =
+    !account.enabled ||
+    (!!account.profile?.isAdmin &&
+      !["dashboard", "company", "home", "admin"].includes(route.page));
   const refresh = useCallback(async () => {
+    if (independentArea || route.page === "home") return true;
     const current = ++generation.current;
     try {
       const [ss, sm, ct, h, l, c] = await Promise.all([
-        api<ObservationListItem[]>("/observations"),
-        api<Summary>("/observations/summary"),
+        operatorArea
+          ? api<ObservationListItem[]>("/observations")
+          : Promise.resolve([]),
+        operatorArea
+          ? api<Summary>("/observations/summary")
+          : Promise.resolve(undefined),
         api<Catalog>("/observations/catalog"),
         api<ServerHealth>("/health"),
-        api<TaskSummary[]>("/tasks"),
+        operatorArea ? api<TaskSummary[]>("/tasks") : Promise.resolve([]),
         api<typeof connection>("/observations/connection"),
       ]);
       if (current !== generation.current) return;
@@ -378,7 +396,7 @@ export function ObservationApp() {
     } finally {
       if (current === generation.current) setLoading(false);
     }
-  }, []);
+  }, [independentArea, operatorArea, route.page]);
   const reloadDetail = useCallback(async (id: string) => {
     const current = ++detailGeneration.current;
     try {
@@ -463,16 +481,56 @@ export function ObservationApp() {
             ? "Connections & settings"
             : pages.find((p) => p.id === route.page)?.label || "Sessions";
   if (route.page === "home") return <LandingView />;
+  if (account.enabled && route.page === "company")
+    return (
+      <CompanyPortal
+        key={route.id === "new" ? "new" : route.id || "company"}
+        id={route.id}
+        section={route.section}
+      />
+    );
+  if (
+    account.enabled &&
+    account.profile?.isAdmin &&
+    (route.page === "admin" || !account.workspaceId)
+  )
+    return <AdminCompanyReview />;
+  const ownerAccess =
+    !account.enabled ||
+    account.profile?.isAdmin ||
+    account.profile?.workspaces.some(
+      (w) => w.id === account.workspaceId && w.role === "owner",
+    );
+  if (
+    account.enabled &&
+    !ownerAccess &&
+    route.page === "dashboard" &&
+    ["credits", "keys"].includes(route.id || "")
+  )
+    return (
+      <main className="account-page">
+        <section className="account-card">
+          <h1>Workspace owner access required</h1>
+          <p>Ask your workspace owner to manage credits and API keys.</p>
+          <Button asChild>
+            <a href="#dashboard">Back to your workspace</a>
+          </Button>
+        </section>
+      </main>
+    );
   if (
     account.enabled &&
     !account.profile?.isAdmin &&
-    !["dashboard", "company"].includes(route.page)
+    !["dashboard"].includes(route.page)
   )
     return (
       <main className="account-page">
         <section className="account-card">
           <h1>Administrator access required</h1>
-          <p>This area is reserved for workspace operations.</p>
+          <p>
+            This area is reserved for platform administration. Your user
+            workspace and company portal are separate.
+          </p>
           <Button asChild>
             <a href="#dashboard">Open your dashboard</a>
           </Button>
@@ -491,6 +549,13 @@ export function ObservationApp() {
         <img src="/octolab.svg" alt="" width="32" height="32" />
         octolab
       </a>
+      <div className="portal-area">
+        {surface === "user"
+          ? "User workspace"
+          : surface === "business"
+            ? "Tool company preview"
+            : "Administration"}
+      </div>
       <nav
         aria-label={
           surface === "user"
@@ -550,30 +615,34 @@ export function ObservationApp() {
                 Usage
               </a>
             </div>
-            <div className="ws-nav-group">
-              <span>Funding</span>
-              <a
-                href="#dashboard/credits"
-                className={route.id === "credits" ? "selected" : ""}
-                aria-current={route.id === "credits" ? "page" : undefined}
-              >
-                <CreditCard01 />
-                Credits
-                <Badge variant="outline" className="ws-testnet-nav">
-                  Testnet
-                </Badge>
-              </a>
-            </div>
+            {ownerAccess && (
+              <div className="ws-nav-group">
+                <span>Funding</span>
+                <a
+                  href="#dashboard/credits"
+                  className={route.id === "credits" ? "selected" : ""}
+                  aria-current={route.id === "credits" ? "page" : undefined}
+                >
+                  <CreditCard01 />
+                  Credits
+                  <Badge variant="outline" className="ws-testnet-nav">
+                    Testnet
+                  </Badge>
+                </a>
+              </div>
+            )}
             <div className="ws-nav-group">
               <span>Integration</span>
-              <a
-                href="#dashboard/keys"
-                className={route.id === "keys" ? "selected" : ""}
-                aria-current={route.id === "keys" ? "page" : undefined}
-              >
-                <Key01 />
-                API keys
-              </a>
+              {ownerAccess && (
+                <a
+                  href="#dashboard/keys"
+                  className={route.id === "keys" ? "selected" : ""}
+                  aria-current={route.id === "keys" ? "page" : undefined}
+                >
+                  <Key01 />
+                  API keys
+                </a>
+              )}
               <a
                 href="#dashboard/connections"
                 className={route.id === "connections" ? "selected" : ""}
@@ -620,6 +689,15 @@ export function ObservationApp() {
         )}
       </nav>
       <div className="sidebar-bottom">
+        <RoleLinks
+          current={
+            surface === "user"
+              ? "user"
+              : surface === "business"
+                ? "company"
+                : "admin"
+          }
+        />
         <div className="host-card">
           <span className="host-icon">
             <TerminalSquare />
@@ -642,11 +720,11 @@ export function ObservationApp() {
           </div>
         </div>
         <a
-          href="#settings"
+          href={surface === "user" ? "#dashboard/connections" : "#settings"}
           className={route.page === "settings" ? "selected" : ""}
         >
           <Settings01 />
-          Connections & settings
+          {surface === "user" ? "Connection setup" : "Operator settings"}
         </a>
         <AccountControls />
         <div className="workspace-status">
@@ -1204,49 +1282,51 @@ export function ObservationApp() {
                   </p>
                 </div>
               </div>
-              <Panel
-                title="Dashboards"
-                description="Switch surfaces here until dashboard access moves behind sign-in."
-              >
-                <div className="session-list">
-                  <a className="session-row" href="#dashboard">
-                    <div className="session-name">
-                      <span className="session-symbol">
-                        <Grid01 />
-                      </span>
-                      <div>
-                        <strong>My dashboard</strong>
-                        <span>Your tools and usage</span>
+              {!account.enabled && (
+                <Panel
+                  title="Dashboards"
+                  description="Switch surfaces here until dashboard access moves behind sign-in."
+                >
+                  <div className="session-list">
+                    <a className="session-row" href="#dashboard">
+                      <div className="session-name">
+                        <span className="session-symbol">
+                          <Grid01 />
+                        </span>
+                        <div>
+                          <strong>My dashboard</strong>
+                          <span>Your tools and usage</span>
+                        </div>
                       </div>
-                    </div>
-                    <ArrowUpRight />
-                  </a>
-                  <a className="session-row" href="#sessions">
-                    <div className="session-name">
-                      <span className="session-symbol">
-                        <TerminalSquare />
-                      </span>
-                      <div>
-                        <strong>Operator console</strong>
-                        <span>Sessions, reviews, and workspace settings</span>
+                      <ArrowUpRight />
+                    </a>
+                    <a className="session-row" href="#sessions">
+                      <div className="session-name">
+                        <span className="session-symbol">
+                          <TerminalSquare />
+                        </span>
+                        <div>
+                          <strong>Operator console</strong>
+                          <span>Sessions, reviews, and workspace settings</span>
+                        </div>
                       </div>
-                    </div>
-                    <Badge variant="outline">Current area</Badge>
-                  </a>
-                  <a className="session-row" href="#company/exa">
-                    <div className="session-name">
-                      <span className="session-symbol">
-                        <BarChartSquare02 />
-                      </span>
-                      <div>
-                        <strong>Tool company</strong>
-                        <span>Provider insights and controlled tests</span>
+                      <Badge variant="outline">Current area</Badge>
+                    </a>
+                    <a className="session-row" href="#company/exa">
+                      <div className="session-name">
+                        <span className="session-symbol">
+                          <BarChartSquare02 />
+                        </span>
+                        <div>
+                          <strong>Tool company</strong>
+                          <span>Provider insights and controlled tests</span>
+                        </div>
                       </div>
-                    </div>
-                    <ArrowUpRight />
-                  </a>
-                </div>
-              </Panel>
+                      <ArrowUpRight />
+                    </a>
+                  </div>
+                </Panel>
+              )}
               <div className="settings-grid">
                 <Panel
                   title="Agent connection"

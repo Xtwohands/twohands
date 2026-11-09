@@ -27,7 +27,7 @@ export function LandingView() {
 
   useEffect(() => {
     let active = true;
-    api<CatalogItem[]>("/observations/catalog")
+    api<CatalogItem[]>("/public/catalog")
       .then((data) => {
         if (active) {
           setCatalog(data);
@@ -69,11 +69,14 @@ export function LandingView() {
           <span>octolab</span>
         </a>
         <div className="landing-nav-actions">
+          <Button variant="ghost" size="sm" asChild>
+            <a href="#company">For tool companies</a>
+          </Button>
           <Button variant="outline" size="sm" asChild>
-            <a href="#settings">Connect agent</a>
+            <a href="#dashboard/connections">Connect agent</a>
           </Button>
           <Button size="sm" asChild>
-            <a href="#sessions">
+            <a href="#dashboard">
               Open workspace
               <ArrowUpRight />
             </a>
@@ -91,7 +94,7 @@ export function LandingView() {
           </p>
           <div className="landing-cta-row">
             <Button asChild>
-              <a href="#settings">Connect with one command</a>
+              <a href="#dashboard/connections">Connect with one command</a>
             </Button>
             <Button variant="outline" asChild>
               <a href="#landing-catalog">Browse the catalog</a>
@@ -192,10 +195,10 @@ export function LandingView() {
           </p>
           <div className="landing-cta-row">
             <Button asChild>
-              <a href="#settings">Connect agent</a>
+              <a href="#dashboard/connections">Connect agent</a>
             </Button>
             <Button variant="outline" asChild>
-              <a href="#sessions">Open workspace</a>
+              <a href="#dashboard">Open workspace</a>
             </Button>
           </div>
         </section>

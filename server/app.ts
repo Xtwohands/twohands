@@ -1,7 +1,9 @@
+import { toolCapabilities } from "./provider-capabilities.js";
 import { type Accounts } from "./accounts.js";
 import {
   accountRoutes,
   accountAccess,
+  companyAccountRoutes,
   adminAccountAccess,
 } from "./account-api.js";
 import express from "express";
@@ -94,7 +96,24 @@ export function createApp(
     await store.db.prepare("SELECT 1").get();
     res.json({ ok: true });
   });
+  app.get("/api/public/catalog", (_req, res) =>
+    res.json(
+      Object.entries(toolCapabilities).map(([tool, capability]) => {
+        const provider = tool.split("_")[0] as import("./types.js").ProviderId;
+        return {
+          tool,
+          provider,
+          description: capability.description,
+          available:
+            !!config.keys[provider] ||
+            (provider === "firecrawl" && config.allowKeylessFirecrawl),
+          estimatedMicros: config.prices[provider],
+        };
+      }),
+    ),
+  );
   accountRoutes(app, accounts);
+  companyAccountRoutes(app, accounts);
   if (accounts)
     stripeFunding.workspaceForWebhook = (identity) =>
       accounts.paymentWorkspace(identity);

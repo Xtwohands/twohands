@@ -26,14 +26,22 @@ const user = () => ({
   app_metadata: { provider: "email" },
   user_metadata: {},
 });
-async function mockAuth(page: Page, empty = false) {
+async function mockAuth(
+  page: Page,
+  empty = false,
+  role: "user" | "company" | "admin" = "user",
+) {
   const state = {
-    workspaces: empty
-      ? []
-      : [
-          { id: first, name: "Workspace A", role: "owner" },
-          { id: second, name: "Workspace B", role: "owner" },
-        ],
+    companies: [] as any[],
+    role,
+    reviewed: null as any,
+    workspaces:
+      empty || role !== "user"
+        ? []
+        : [
+            { id: first, name: "Workspace A", role: "owner" },
+            { id: second, name: "Workspace B", role: "owner" },
+          ],
     revoked: false,
     pause: false,
     waiting: 0,
@@ -118,7 +126,8 @@ async function mockAuth(page: Page, empty = false) {
         : {
             user: { id: userId, email: "account@fixture.invalid" },
             workspaces: state.workspaces,
-            isAdmin: false,
+            isAdmin: state.role === "admin",
+            companies: state.companies,
           },
     }),
   );
@@ -168,6 +177,91 @@ async function mockAuth(page: Page, empty = false) {
         page: 1,
         pageSize: 20,
       },
+    });
+  });
+  const company = {
+    id: "00000000-0000-4000-8000-000000000051",
+    name: "Fixture tools",
+    website: "https://tools.fixture.invalid",
+    toolName: "Fixture search",
+    description: "Search integration for fixture evidence.",
+    status: "pending",
+    providerId: null,
+    insightsEnabled: false,
+    feedback: "",
+    revision: 0,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+  await page.route("**/api/auth/companies", async (route) => {
+    const body = route.request().postDataJSON();
+    const saved = { ...company, ...body };
+    state.companies = [saved];
+    await route.fulfill({ status: 201, json: saved });
+  });
+  await page.route("**/api/companies/*", async (route) => {
+    const item = state.companies.find((c) =>
+      route.request().url().endsWith(c.id),
+    );
+    await route.fulfill({
+      status: item ? 200 : 404,
+      json: item ?? { error: "Company not found." },
+    });
+  });
+  await page.route("**/api/companies/*/insights", async (route) => {
+    const item = state.companies[0];
+    await route.fulfill({
+      status: item?.status === "approved" ? 200 : 403,
+      json:
+        item?.status === "approved"
+          ? {
+              providerId: item.providerId,
+              minimumCohort: 5,
+              status: "insufficient_data",
+              metrics: null,
+            }
+          : {
+              error:
+                "Company approval is required before insights are available.",
+            },
+    });
+  });
+  await page.route("**/api/companies/*/resubmit", async (route) => {
+    const body = route.request().postDataJSON();
+    if (body.revision !== state.companies[0].revision) {
+      await route.fulfill({
+        status: 409,
+        json: { error: "Stale registration." },
+      });
+      return;
+    }
+    state.companies[0] = {
+      ...state.companies[0],
+      ...body,
+      status: "pending",
+      revision: body.revision + 1,
+    };
+    await route.fulfill({ json: state.companies[0] });
+  });
+  await page.route("**/api/admin/companies?**", (route) =>
+    route.fulfill({
+      status: state.role === "admin" ? 200 : 403,
+      json:
+        state.role === "admin"
+          ? {
+              items: [{ ...company, ownerEmail: "owner@fixture.invalid" }],
+              nextCursor: null,
+            }
+          : { error: "Platform administrator access is required." },
+    }),
+  );
+  await page.route("**/api/admin/companies/*/history", (route) =>
+    route.fulfill({ json: [] }),
+  );
+  await page.route("**/api/admin/companies/*/review", async (route) => {
+    state.reviewed = route.request().postDataJSON();
+    await route.fulfill({
+      json: { ...company, ...state.reviewed, revision: 1 },
     });
   });
   return state;
@@ -296,4 +390,122 @@ test("confirmation, recovery, invalid credentials, and public landing stay usabl
       () => document.documentElement.scrollWidth <= innerWidth,
     ),
   ).toBe(true);
+});
+
+test("tool company registration never forces a customer workspace or exposes the operator lab", async ({
+  page,
+}) => {
+  const state = await mockAuth(page, true, "company");
+  await page.goto("/#company");
+  await page
+    .getByLabel("Email", { exact: true })
+    .fill("account@fixture.invalid");
+  await page
+    .getByLabel("Password", { exact: true })
+    .fill("fixture-password-123");
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "Bring your tool to octolab" }),
+  ).toBeVisible();
+  await expect(page.getByLabel("Workspace name")).toHaveCount(0);
+  await page.getByLabel("Company name", { exact: true }).fill("Fixture tools");
+  await page
+    .getByLabel("Company website")
+    .fill("https://tools.fixture.invalid");
+  await page.getByLabel("Tool name", { exact: true }).fill("Fixture search");
+  await page
+    .getByLabel("What does your tool do?")
+    .fill("Search integration for fixture evidence.");
+  await page.getByRole("button", { name: "Submit for review" }).click();
+  await expect(
+    page.getByRole("heading", { name: "Fixture tools" }),
+  ).toBeVisible();
+  await expect(page.getByText("Under review", { exact: true })).toBeVisible();
+  await openNav(page);
+  await expect(
+    page.getByRole("link", { name: "Provider lab", exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("link", { name: "API keys", exact: true }),
+  ).toHaveCount(0);
+  await page.getByRole("link", { name: "Tool insights", exact: true }).click();
+  await expect(
+    page.getByText(
+      "Insights will become available after your company and integration are approved.",
+    ),
+  ).toBeVisible();
+  state.companies[0] = {
+    ...state.companies[0],
+    status: "approved",
+    providerId: "exa",
+    insightsEnabled: true,
+  };
+  await page.reload();
+  await expect(page.getByText(/No report available yet/)).toBeVisible();
+  state.companies[0].status = "rejected";
+  state.companies[0].revision = 1;
+  await page.goto("/#company/" + state.companies[0].id + "/overview");
+  await page
+    .getByRole("button", { name: "Update registration", exact: true })
+    .click();
+  await page
+    .getByLabel("What does your tool do?")
+    .fill("Updated ownership details for the reviewed tool.");
+  await page
+    .getByRole("button", { name: "Resubmit for review", exact: true })
+    .click();
+  await expect(page.getByText("Under review", { exact: true })).toBeVisible();
+  state.companies[0].status = "suspended";
+  await page.goto("/#company/" + state.companies[0].id + "/insights");
+  await page.reload();
+  await expect(
+    page.getByText(
+      "Insights will become available after your company and integration are approved.",
+    ),
+  ).toBeVisible();
+  expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+});
+test("admin company reviews work without creating a customer workspace", async ({
+  page,
+}) => {
+  const state = await mockAuth(page, true, "admin");
+  await login(page);
+  await expect(
+    page.getByRole("heading", { name: "Company reviews" }),
+  ).toBeVisible();
+  await expect(page.getByLabel("Workspace name")).toHaveCount(0);
+  await page.getByRole("button", { name: /Fixture tools/ }).click();
+  await page.getByLabel("Verified provider integration").selectOption("exa");
+  await page
+    .getByLabel("Feedback to company")
+    .fill("Ownership checked against the company website.");
+  await page.getByRole("button", { name: "Save review", exact: true }).click();
+  await expect(page.getByRole("status")).toContainText("Company review saved");
+  expect(state.reviewed).toMatchObject({
+    status: "approved",
+    providerId: "exa",
+    insightsEnabled: false,
+    revision: 0,
+  });
+  expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+});
+test("user navigation stays in the user workspace and denied admin links preserve a return path", async ({
+  page,
+}) => {
+  await mockAuth(page);
+  await login(page);
+  await openNav(page);
+  await expect(
+    page.getByRole("link", { name: "Administration", exact: true }),
+  ).toHaveCount(0);
+  await page
+    .getByRole("link", { name: "Connection setup", exact: true })
+    .click();
+  await expect(page).toHaveURL(/#dashboard\/connections/);
+  await page.goto("/#settings");
+  await expect(
+    page.getByRole("heading", { name: "Administrator access required" }),
+  ).toBeVisible();
+  await page.getByRole("link", { name: "Open your dashboard" }).click();
+  await expect(page).toHaveURL(/#dashboard/);
 });

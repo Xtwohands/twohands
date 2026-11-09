@@ -250,6 +250,13 @@ export function UserDashboardView({
   refreshCatalog: () => Promise<unknown>;
   connectionRevision: number;
 }) {
+  const account = useAccount();
+  const canManage =
+    !account.enabled ||
+    account.profile?.isAdmin ||
+    account.profile?.workspaces.some(
+      (w) => w.id === account.workspaceId && w.role === "owner",
+    );
   const [days, setDays] = useState("7");
   const [usage, setUsage] = useState<WorkspaceUsage>();
   const [policy, setPolicy] = useState<RoutingPolicy>();
@@ -363,7 +370,7 @@ export function UserDashboardView({
     refreshTick,
   ]);
   async function toggle(tool: ToolName, enabled: boolean) {
-    if (!policy || saving) return;
+    if (!policy || saving || !canManage) return;
     setSaving(true);
     setNotice("");
     setError("");
@@ -788,7 +795,7 @@ export function UserDashboardView({
                       <Switch
                         aria-label={`${enabled(t.tool) ? "Pause" : "Enable"} ${t.tool}`}
                         checked={enabled(t.tool)}
-                        disabled={!policy || saving}
+                        disabled={!policy || saving || !canManage}
                         onCheckedChange={(value) => void toggle(t.tool, value)}
                       />
                     </div>
@@ -861,7 +868,7 @@ export function UserDashboardView({
               }
               enabled={enabled(selectedTool.tool)}
               onToggle={(v) => void toggle(selectedTool.tool, v)}
-              saving={saving || !policy}
+              saving={saving || !policy || !canManage}
             />
           )}
         </DialogContent>

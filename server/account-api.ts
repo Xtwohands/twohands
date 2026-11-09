@@ -67,6 +67,15 @@ export function accountRoutes(app: Express, accounts?: Accounts) {
       accountFailure(error, res);
     }
   });
+  router.post("/companies", async (req, res) => {
+    try {
+      res
+        .status(201)
+        .json(await accounts.companies.register(res.locals.account, req.body));
+    } catch (error) {
+      accountFailure(error, res);
+    }
+  });
   app.use("/api/auth", router);
 }
 export function accountAccess(
@@ -130,7 +139,12 @@ function normalizedPath(req: Request) {
   }
 }
 function operatorRestricted(req: Request, path: string) {
-  if (path.startsWith("/provider-lab")) return true;
+  if (
+    path.startsWith("/provider-lab") ||
+    path.startsWith("/company-insights") ||
+    path === "/observations/aggregate"
+  )
+    return true;
   if (["GET", "HEAD", "OPTIONS"].includes(req.method)) return false;
   if (
     path.startsWith("/tasks") ||
@@ -172,4 +186,94 @@ export function adminAccountAccess(accounts: Accounts, store: Store) {
       accountFailure(error, res);
     }
   };
+}
+
+/** Company and global admin operations require account identity, never a consumer workspace or machine key. */
+export function companyAccountRoutes(app: Express, accounts?: Accounts) {
+  if (!accounts) return;
+  const router = express.Router();
+  router.use(async (req, res, next) => {
+    if (!/^\/(?:companies|admin\/companies)(?:\/|$)/i.test(req.path)) {
+      next("router");
+      return;
+    }
+    try {
+      if (!sameOriginWrite(req, res)) return;
+      res.locals.account = await accounts.identity(req);
+      next();
+    } catch (error) {
+      accountFailure(error, res);
+    }
+  });
+  router.use(express.json({ limit: "12kb" }));
+  const route =
+    (fn: (req: Request, res: Response) => Promise<unknown>) =>
+    async (req: Request, res: Response) => {
+      try {
+        await fn(req, res);
+      } catch (error) {
+        accountFailure(error, res);
+      }
+    };
+  router.get(
+    "/companies/:id",
+    route(async (req, res) =>
+      res.json(
+        await accounts.companies.get(res.locals.account, String(req.params.id)),
+      ),
+    ),
+  );
+  router.post(
+    "/companies/:id/resubmit",
+    route(async (req, res) =>
+      res.json(
+        await accounts.companies.resubmit(
+          res.locals.account,
+          String(req.params.id),
+          req.body,
+        ),
+      ),
+    ),
+  );
+  router.get(
+    "/companies/:id/insights",
+    route(async (req, res) =>
+      res.json(
+        await accounts.companies.insights(
+          res.locals.account,
+          String(req.params.id),
+        ),
+      ),
+    ),
+  );
+  router.get(
+    "/admin/companies",
+    route(async (req, res) =>
+      res.json(await accounts.companies.queue(res.locals.account, req.query)),
+    ),
+  );
+  router.get(
+    "/admin/companies/:id/history",
+    route(async (req, res) =>
+      res.json(
+        await accounts.companies.history(
+          res.locals.account,
+          String(req.params.id),
+        ),
+      ),
+    ),
+  );
+  router.post(
+    "/admin/companies/:id/review",
+    route(async (req, res) =>
+      res.json(
+        await accounts.companies.review(
+          res.locals.account,
+          String(req.params.id),
+          req.body,
+        ),
+      ),
+    ),
+  );
+  app.use("/api", router);
 }

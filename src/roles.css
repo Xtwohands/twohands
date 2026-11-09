@@ -1,0 +1,241 @@
+.portal-area {
+  padding: 0 16px 14px;
+  color: #aaaab3;
+  font-size: 13px;
+  font-weight: 500;
+}
+.role-links {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 10px 0;
+  border-top: 1px solid #2b2b30;
+}
+.role-links > span {
+  padding: 3px 10px;
+  color: #888891;
+  font-size: 11px;
+}
+.role-links a {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  color: #b7b7c0;
+  font-size: 12px;
+  text-decoration: none;
+}
+.role-links svg {
+  width: 15px;
+  height: 15px;
+}
+.role-links a:hover,
+.role-links a[aria-current="page"] {
+  background: #242426;
+  color: #eee;
+}
+.portal-form {
+  display: grid;
+  gap: 20px;
+  max-width: 600px;
+}
+.portal-form label,
+.portal-company-select {
+  display: grid;
+  gap: 8px;
+  font-size: 13px;
+  color: #b5b5bd;
+}
+.portal-form input,
+.portal-form textarea,
+.portal-form select,
+.portal-company-select select {
+  background: #19191c;
+  border: 1px solid #343438;
+  color: #eee;
+  border-radius: 7px;
+  padding: 10px 12px;
+  max-width: 100%;
+  font: inherit;
+  min-height: 40px;
+}
+.portal-form textarea {
+  min-height: 100px;
+  resize: vertical;
+}
+.portal-form input:focus-visible,
+.portal-form select:focus-visible,
+.portal-company-select select:focus-visible {
+  outline: 2px solid #a8b4cf;
+  outline-offset: 2px;
+}
+.portal-form > button {
+  justify-self: start;
+}
+.portal-form .portal-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  line-height: 1.6;
+}
+.portal-checkbox input {
+  min-height: 18px;
+  width: 18px;
+  flex-shrink: 0;
+  accent-color: #a8b4cf;
+}
+.portal-details {
+  display: grid;
+  grid-template-columns: 100px minmax(0, 1fr);
+  gap: 12px;
+  font-size: 13px;
+  line-height: 1.7;
+  margin-bottom: 24px;
+}
+.portal-details dt {
+  color: #92929c;
+}
+.portal-details dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.portal-details a {
+  color: #d5d5db;
+  text-decoration: underline;
+}
+.portal-company-select {
+  max-width: 340px;
+  margin-bottom: 20px;
+}
+.portal-status {
+  border: 1px solid #3b3b40;
+  border-radius: 6px;
+  padding: 5px 9px;
+  font-size: 12px;
+  color: #c6c6cd;
+}
+.portal-steps {
+  padding-left: 22px;
+  display: grid;
+  gap: 22px;
+  max-width: 720px;
+  font-size: 14px;
+  line-height: 1.6;
+}
+.portal-steps li {
+  padding-left: 8px;
+}
+.portal-steps p {
+  margin: 6px 0 0;
+  color: #9999a4;
+  font-size: 13px;
+}
+.portal-review-grid {
+  display: grid;
+  grid-template-columns: minmax(240px, 1fr) minmax(0, 2fr);
+  gap: 24px;
+}
+.portal-company-list {
+  display: grid;
+  gap: 8px;
+}
+.portal-company-list button {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  text-align: left;
+  padding: 14px;
+  background: #19191c;
+  border: 1px solid #303035;
+  border-radius: 8px;
+  color: #ddd;
+  cursor: pointer;
+}
+.portal-company-list button[aria-pressed="true"] {
+  border-color: #a8b4cf;
+  background: #242426;
+}
+.portal-company-list span {
+  font-size: 12px;
+  color: #9c9ca7;
+}
+.portal-audit {
+  margin-top: 28px;
+  color: #9999a4;
+  font-size: 12px;
+}
+.portal-audit summary {
+  cursor: pointer;
+  color: #ccc;
+}
+.portal-audit > div {
+  border-bottom: 1px solid #2e2e33;
+  padding: 14px 0;
+}
+.account-purpose {
+  border: 1px solid #303035;
+  border-radius: 8px;
+  padding: 14px;
+  margin: 18px 0;
+}
+.account-purpose p {
+  font-size: 13px;
+  line-height: 1.6;
+  color: #aaaab4;
+}
+.account-purpose p:first-child {
+  margin-top: 0;
+  color: #eee;
+}
+.account-purpose p:last-child {
+  margin-bottom: 0;
+}
+.portal-mobile-nav {
+  display: none;
+}
+.role-portal .obs-main > .panel {
+  margin-bottom: 24px;
+}
+@media (max-width: 900px) {
+  .portal-review-grid {
+    grid-template-columns: 1fr;
+  }
+  .portal-mobile-nav {
+    display: flex;
+    flex-direction: column;
+    background: #151517;
+    border-bottom: 1px solid #333;
+    padding: 18px;
+  }
+  .portal-mobile-nav nav {
+    display: grid;
+    gap: 6px;
+  }
+  .portal-mobile-nav nav a {
+    padding: 9px;
+    border-radius: 6px;
+    color: #bbb;
+  }
+  .portal-mobile-nav nav a.selected {
+    background: #29292d;
+    color: #eee;
+  }
+  .portal-mobile-nav .sidebar-bottom {
+    margin-top: 16px;
+  }
+  .portal-mobile-nav .obs-brand {
+    margin-bottom: 16px;
+  }
+  .portal-mobile-nav .portal-area {
+    padding-left: 0;
+  }
+  .portal-form input,
+  .portal-form textarea,
+  .portal-form select {
+    font-size: 16px;
+  }
+  .portal-details {
+    grid-template-columns: 80px minmax(0, 1fr);
+  }
+}

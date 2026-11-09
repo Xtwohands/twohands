@@ -21,6 +21,7 @@ type AccountContext = {
   select: (id: string) => void;
   signOut: () => void;
   create: () => void;
+  refresh: () => Promise<void>;
 };
 const Context = createContext<AccountContext>({
   enabled: false,
@@ -28,32 +29,39 @@ const Context = createContext<AccountContext>({
   select: () => {},
   signOut: () => {},
   create: () => {},
+  refresh: async () => {},
 });
 export const useAccount = () => useContext(Context);
-export function AccountControls() {
+export function AccountControls({
+  showWorkspace = true,
+}: {
+  showWorkspace?: boolean;
+}) {
   const account = useAccount();
   if (!account.enabled || !account.profile) return null;
   return (
     <div className="account-controls">
-      <label>
-        <span>Workspace</span>
-        <select
-          aria-label="Current workspace"
-          value={account.workspaceId}
-          onChange={(e) =>
-            e.target.value === "__new__"
-              ? account.create()
-              : account.select(e.target.value)
-          }
-        >
-          {account.profile.workspaces.map((w) => (
-            <option key={w.id} value={w.id}>
-              {w.name}
-            </option>
-          ))}
-          <option value="__new__">Create workspace…</option>
-        </select>
-      </label>
+      {showWorkspace && (
+        <label>
+          <span>Workspace</span>
+          <select
+            aria-label="Current workspace"
+            value={account.workspaceId}
+            onChange={(e) =>
+              e.target.value === "__new__"
+                ? account.create()
+                : account.select(e.target.value)
+            }
+          >
+            {account.profile.workspaces.map((w) => (
+              <option key={w.id} value={w.id}>
+                {w.name}
+              </option>
+            ))}
+            <option value="__new__">Create workspace…</option>
+          </select>
+        </label>
+      )}
       <div className="account-user">
         <span title={account.profile.user.email}>
           {account.profile.user.email}
@@ -92,6 +100,7 @@ export function AccountGate({ children }: { children: ReactNode }) {
     version = useRef(0),
     creationKey = useRef(crypto.randomUUID());
   const activeWorkspace = useRef("");
+  const routedAccount = useRef("");
   const select = (id: string) => {
     if (
       !profile?.workspaces.some((w) => w.id === id) ||
@@ -107,6 +116,7 @@ export function AccountGate({ children }: { children: ReactNode }) {
   };
   const clear = () => {
     version.current++;
+    routedAccount.current = "";
     currentSession.current = null;
     activeWorkspace.current = "";
     setMode("signin");
@@ -144,6 +154,14 @@ export function AccountGate({ children }: { children: ReactNode }) {
       const selected =
         result.workspaces.find((w) => w.id === preferred) ??
         result.workspaces[0];
+      if (routedAccount.current !== result.user.id) {
+        routedAccount.current = result.user.id;
+        if (location.hash === "#dashboard" || location.hash === "#signin") {
+          if (result.isAdmin) location.hash = "admin";
+          else if (!result.workspaces.length && result.companies?.length)
+            location.hash = "company";
+        }
+      }
       setProfile(result);
       activeWorkspace.current = selected?.id || "";
       setWorkspaceId(selected?.id || "");
@@ -280,6 +298,9 @@ export function AccountGate({ children }: { children: ReactNode }) {
     workspaceId,
     select,
     signOut,
+    refresh: async () => {
+      if (currentSession.current) await loadProfile(currentSession.current);
+    },
     create: () => {
       creationKey.current = crypto.randomUUID();
       setCreating(true);
@@ -289,7 +310,16 @@ export function AccountGate({ children }: { children: ReactNode }) {
   if (config && !config.enabled) return <>{children}</>;
   if (publicPage)
     return <Context.Provider value={context}>{children}</Context.Provider>;
-  if (profile && workspaceId && !creating && mode !== "recover")
+  const independentArea =
+    route.startsWith("#company") ||
+    route.startsWith("#admin") ||
+    (profile?.isAdmin && !workspaceId);
+  if (
+    profile &&
+    (workspaceId || independentArea) &&
+    !creating &&
+    mode !== "recover"
+  )
     return (
       <Context.Provider value={context}>
         <div
@@ -320,14 +350,34 @@ export function AccountGate({ children }: { children: ReactNode }) {
         <h1>{!ready ? "Loading your workspace…" : title}</h1>
         <p>
           {workspaceForm
-            ? "Keep your tools, activity, and API keys together."
-            : "One account for your tools and workspace."}
+            ? "Use tools through your agent. Your workspace holds activity, routing settings, credits, and API keys."
+            : route.startsWith("#company")
+              ? "Sign in to register or manage your tool company."
+              : "Sign in to manage your tools and usage."}
         </p>
         {error && <InlineError message={error} />}
         {notice && (
           <p role="status" className="account-notice">
             {notice}
           </p>
+        )}
+        {workspaceForm && !workspaceId && (
+          <div className="account-purpose">
+            <p>Here to provide a tool?</p>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setCreating(false);
+                location.hash = "company";
+              }}
+            >
+              Register a tool company
+            </Button>
+            <p>
+              Company registration has its own review and does not need a user
+              workspace.
+            </p>
+          </div>
         )}
         {ready &&
           config?.enabled &&
@@ -372,7 +422,13 @@ export function AccountGate({ children }: { children: ReactNode }) {
                   } else {
                     const auth = client.current.auth,
                       redirect =
-                        location.origin + "/?auth_callback=1#dashboard";
+                        location.origin +
+                        "/?auth_callback=1" +
+                        (route.startsWith("#company")
+                          ? "#company"
+                          : route.startsWith("#admin")
+                            ? "#admin"
+                            : "#dashboard");
                     if (mode === "signin") {
                       const { error } = await auth.signInWithPassword({
                         email,
@@ -491,6 +547,11 @@ export function AccountGate({ children }: { children: ReactNode }) {
         )}
         {ready && (!config || (config.enabled && !client.current)) && (
           <Button onClick={() => location.reload()}>Retry</Button>
+        )}
+        {workspaceForm && (
+          <Button variant="ghost" onClick={signOut}>
+            Sign out
+          </Button>
         )}
         {workspaceForm && creating && workspaceId && (
           <Button variant="ghost" onClick={() => setCreating(false)}>

@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { createClient } from "@supabase/supabase-js";
 import type { Request } from "express";
 import { z } from "zod";
+import { Companies } from "./companies.js";
 import { PostgresDatabase } from "./database.js";
 import type { Store } from "./store.js";
 import type {
@@ -106,6 +107,7 @@ export function supabaseVerifier(settings: AccountSettings): IdentityVerifier {
   };
 }
 export class Accounts {
+  readonly companies = new Companies(this);
   readonly database: PostgresDatabase;
   private cache = new Map<
     string,
@@ -220,6 +222,7 @@ export class Accounts {
       user: { id: identity.userId, email: identity.email },
       workspaces: result.rows,
       isAdmin: this.isAdmin(identity.userId),
+      companies: await this.companies.list(identity),
     };
   }
   async workspace(
