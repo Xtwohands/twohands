@@ -118,6 +118,7 @@
 /* Soft pills stay quiet so tool results and charts remain the primary content. */
 [data-slot="badge"],
 .tool-workspace .ws-status,
+.tool-workspace .ws-tool-tags span,
 .portal-status {
   min-height: 23px;
   padding: 2px 8px;
