@@ -1247,11 +1247,14 @@ export function ObservationApp() {
               </div>
               {!account.enabled && (
                 <Panel
-                  title="Dashboards"
-                  description="Switch surfaces here until dashboard access moves behind sign-in."
+                  title="Product views"
+                  description="Manage your tools, your company, or platform activity."
                 >
-                  <div className="session-list">
-                    <a className="session-row" href="#dashboard">
+                  <nav
+                    className="settings-destinations"
+                    aria-label="Product views"
+                  >
+                    <a className="settings-destination" href="#dashboard">
                       <div className="session-name">
                         <span className="session-symbol">
                           <Grid01 />
@@ -1263,19 +1266,19 @@ export function ObservationApp() {
                       </div>
                       <ArrowUpRight />
                     </a>
-                    <a className="session-row" href="#sessions">
+                    <a className="settings-destination" href="#sessions">
                       <div className="session-name">
                         <span className="session-symbol">
                           <TerminalSquare />
                         </span>
                         <div>
-                          <strong>Operator console</strong>
-                          <span>Sessions, reviews, and workspace settings</span>
+                          <strong>Administration</strong>
+                          <span>Sessions, reviews, and platform settings</span>
                         </div>
                       </div>
-                      <Badge variant="outline">Current area</Badge>
+                      <ArrowUpRight />
                     </a>
-                    <a className="session-row" href="#company/exa">
+                    <a className="settings-destination" href="#company/exa">
                       <div className="session-name">
                         <span className="session-symbol">
                           <BarChartSquare02 />
@@ -1287,7 +1290,7 @@ export function ObservationApp() {
                       </div>
                       <ArrowUpRight />
                     </a>
-                  </div>
+                  </nav>
                 </Panel>
               )}
               <div className="settings-grid">

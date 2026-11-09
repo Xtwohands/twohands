@@ -1280,6 +1280,39 @@
   border-radius: 7px;
   padding: 13px;
 }
+.settings-destinations {
+  display: grid;
+}
+.settings-destination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  min-width: 0;
+  padding: 18px 8px;
+  border-bottom: 1px solid #2b2b2b;
+  border-radius: 6px;
+  text-decoration: none;
+  transition: background-color 120ms;
+}
+.settings-destination:last-child {
+  border-bottom: 0;
+}
+.settings-destination:hover {
+  background: #232323;
+}
+.settings-destination > svg {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  color: #999;
+}
+.settings-destination .session-name strong {
+  white-space: normal;
+}
+.settings-destination .session-name div > span {
+  overflow-wrap: anywhere;
+}
 .settings-grid {
   display: grid;
   grid-template-columns: 1.3fr 1fr;
