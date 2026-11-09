@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { captureJourney } from "./helpers/launch-screenshots";
 import AxeBuilder from "@axe-core/playwright";
 const authBrowserUrl =
   process.env.OCTOLAB_AUTH_BROWSER_URL || "http://127.0.0.1:3102";
@@ -372,6 +373,7 @@ test("new accounts explicitly create a workspace and expired access removes priv
   await expect(
     page.getByRole("heading", { name: "Create your workspace" }),
   ).toBeVisible();
+  await captureJourney(page, "new-workspace");
   await page.getByLabel("Workspace name").fill("My new workspace");
   await page
     .getByRole("button", { name: "Create workspace", exact: true })
@@ -385,6 +387,7 @@ test("new accounts explicitly create a workspace and expired access removes priv
     page.getByRole("heading", { name: "Sign in to octolab" }),
   ).toBeVisible();
   await expect(page.getByText("Private A receipt")).toHaveCount(0);
+  await captureJourney(page, "expired-session");
 });
 test("confirmation, recovery, invalid credentials, and public landing stay usable", async ({
   page,
@@ -457,6 +460,7 @@ test("tool company registration never forces a customer workspace or exposes the
     page.getByRole("heading", { name: "Fixture tools" }),
   ).toBeVisible();
   await expect(page.getByText("Under review", { exact: true })).toBeVisible();
+  await captureJourney(page, "company-pending");
   await openNav(page);
   await expect(
     page.getByRole("link", { name: "Provider lab", exact: true }),
@@ -495,6 +499,7 @@ test("tool company registration never forces a customer workspace or exposes the
   };
   await page.reload();
   await expect(page.getByText(/No report available yet/)).toBeVisible();
+  await captureJourney(page, "company-approved-no-cohort");
   state.companies[0].status = "rejected";
   state.companies[0].revision = 1;
   await page.goto("/#company/" + state.companies[0].id + "/overview");
@@ -534,6 +539,7 @@ test("admin company reviews work without creating a customer workspace", async (
     .fill("Ownership checked against the company website.");
   await page.getByRole("button", { name: "Save review", exact: true }).click();
   await expect(page.getByRole("status")).toContainText("Company review saved");
+  await captureJourney(page, "admin-approval");
   expect(state.reviewed).toMatchObject({
     status: "approved",
     providerId: "exa",
@@ -582,6 +588,7 @@ test("administrator previews standard roles from settings and can always return"
     page.getByText("Previewing as tool company", { exact: true }),
   ).toBeVisible();
   await expect(page.getByText("Your areas", { exact: true })).toHaveCount(0);
+  await captureJourney(page, "role-preview-company");
   await page
     .getByRole("button", { name: "Return to admin", exact: true })
     .click();
@@ -600,4 +607,93 @@ test("administrator previews standard roles from settings and can always return"
   await expect(
     page.getByRole("heading", { name: "Company reviews" }),
   ).toBeVisible();
+});
+
+test("workspace members get usable connection guidance without owner-only key controls", async ({
+  page,
+}) => {
+  const state = await mockAuth(page);
+  state.workspaces[0].role = "member";
+  await login(page);
+  await page.goto("/#dashboard/connections");
+  await expect(
+    page.getByText(
+      "Ask your workspace owner for a scoped API key before starting the bridge.",
+    ),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: "Manage API keys", exact: true }),
+  ).toHaveCount(0);
+  await expect(page.locator(".ws-agent-environment")).toContainText(
+    "APILAYER_URL=" + new URL("/api", authBrowserUrl).href,
+  );
+  await captureJourney(page, "member-connection-setup");
+});
+
+test("signed-in workspace owner can create the first key and proceed to agent setup", async ({
+  page,
+}) => {
+  await mockAuth(page);
+  const secret = "oct_key_" + "launch_fixture_secret".padEnd(43, "x");
+  let created: any = null;
+  let sentHeaders: Record<string, string> = {};
+  await page.route("**/api/workspace/api-keys", async (route) => {
+    if (route.request().method() === "POST") {
+      sentHeaders = route.request().headers();
+      const body = route.request().postDataJSON();
+      created = {
+        id: "00000000-0000-4000-8000-000000000071",
+        workspaceId: first,
+        name: body.name,
+        prefix: secret.slice(0, 15),
+        scopes: body.scopes,
+        allowedTools: body.allowedTools,
+        limitMicros: 10000000,
+        spentMicros: 0,
+        reservedMicros: 0,
+        remainingMicros: 10000000,
+        revision: 0,
+        createdAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + 86400000).toISOString(),
+        revokedAt: null,
+        lastUsedAt: null,
+        status: "active",
+      };
+      await route.fulfill({ status: 201, json: { key: created, secret } });
+    } else
+      await route.fulfill({
+        json: {
+          keys: created ? [created] : [],
+          enabled: true,
+          unavailableReason: null,
+        },
+      });
+  });
+  await login(page);
+  await page.goto("/#dashboard/keys");
+  await expect(
+    page.getByRole("button", { name: "Create API key", exact: true }),
+  ).toBeEnabled();
+  await page
+    .getByRole("button", { name: "Create API key", exact: true })
+    .click();
+  await page.getByLabel("API key name", { exact: true }).fill("First agent");
+  await page.getByRole("button", { name: "Create key", exact: true }).click();
+  await expect(
+    page.getByLabel("New API key secret", { exact: true }),
+  ).toHaveAttribute("type", "password");
+  expect(sentHeaders.authorization).toMatch(/^Bearer /);
+  expect(sentHeaders["x-octolab-workspace"]).toBe(first);
+  await captureJourney(page, "first-api-key");
+  await page
+    .getByRole("link", { name: "Agent connection setup", exact: true })
+    .click();
+  await expect(
+    page.getByLabel("New API key secret", { exact: true }),
+  ).toHaveCount(0);
+  await expect(page.locator(".ws-agent-environment")).toContainText(
+    "APILAYER_URL=" + new URL("/api", authBrowserUrl).href,
+  );
+  expect(page.url()).not.toContain(secret);
+  await captureJourney(page, "owner-agent-setup");
 });

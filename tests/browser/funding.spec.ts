@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { captureJourney } from "./helpers/launch-screenshots";
 import AxeBuilder from "@axe-core/playwright";
 
 test("test funding remains disabled by default with clear setup instructions", async ({
@@ -13,7 +14,7 @@ test("test funding remains disabled by default with clear setup instructions", a
     page.getByRole("button", { name: "Add test credits", exact: true }),
   ).toBeDisabled();
   await expect(page.locator(".ws-funding-method").first()).toContainText(
-    "Setup required",
+    "Unavailable",
   );
   await expect(
     page.getByRole("button", { name: "Deposit with Stripe", exact: true }),
@@ -21,6 +22,14 @@ test("test funding remains disabled by default with clear setup instructions", a
   await expect(page.locator(".ws-funding-notice")).toContainText(
     "No real-money deposits are accepted",
   );
+  await expect(
+    page.getByRole("link", { name: "Get test USDC", exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByText("Payments disabled", { exact: true }),
+  ).toBeVisible();
+  await expect(page.getByText(/workspace owner can enable/)).toHaveCount(0);
+  await captureJourney(page, "payments-disabled");
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
   expect(
     await page.evaluate(

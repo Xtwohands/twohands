@@ -85,7 +85,11 @@ export function FundingView() {
     <div className="ws-funding">
       <InlineError message={error} />
       <div className="ws-funding-notice">
-        <Badge variant="outline">Sandbox only</Badge>
+        <Badge variant="outline">
+          {summary?.enabled || summary?.stripe?.enabled
+            ? "Sandbox only"
+            : "Payments disabled"}
+        </Badge>
         <p>
           Stripe test payments and Base Sepolia USDC add test credits only. Test
           credits do not pay for live tool calls. No real-money deposits are
@@ -117,21 +121,21 @@ export function FundingView() {
                   <p>Verified on-chain deposits</p>
                 </div>
                 <Badge variant="outline">
-                  {summary?.enabled ? "Available" : "Setup required"}
+                  {summary?.enabled ? "Available" : "Unavailable"}
                 </Badge>
               </header>
               <div>
                 <p>
-                  Send an exact amount from your wallet, submit the transaction
-                  hash, and check its status. Test credits are added once the
-                  matching transfer reaches the network’s finalized block.
+                  {summary?.enabled
+                    ? "Send an exact amount from your wallet, submit the transaction hash, and check its status. Test credits are added once the matching transfer reaches the network’s finalized block."
+                    : "Test deposits are not enabled for this service. You can continue setting up your agent without adding credits."}
                 </p>
                 {!summary?.enabled && (
                   <div className="ws-funding-setup">
                     <strong>On-chain deposits are unavailable</strong>
                     <p>
-                      The workspace owner can enable Base Sepolia deposits after
-                      choosing a receiving wallet.
+                      No wallet setup or transfer is needed. Deposits will be
+                      available when octolab enables this payment method.
                     </p>
                   </div>
                 )}
@@ -147,15 +151,19 @@ export function FundingView() {
                   <Plus />
                   Add test credits
                 </Button>
-                <br />
-                <a
-                  href="https://faucet.circle.com/"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  Get test USDC
-                  <ArrowUpRight size={14} />
-                </a>
+                {summary?.enabled && (
+                  <>
+                    <br />
+                    <a
+                      href="https://faucet.circle.com/"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      Get test USDC
+                      <ArrowUpRight size={14} />
+                    </a>
+                  </>
+                )}
               </div>
             </section>
             <StripeFundingPanel summary={summary} refresh={refresh} />

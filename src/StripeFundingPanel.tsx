@@ -100,21 +100,21 @@ export function StripeFundingPanel({
             <p>Hosted Checkout · USD test payments</p>
           </div>
           <Badge variant="outline">
-            {summary?.stripe?.enabled ? "Available" : "Setup required"}
+            {summary?.stripe?.enabled ? "Available" : "Unavailable"}
           </Badge>
         </header>
         <div>
           <p>
-            Complete a test payment on Stripe’s secure checkout. Each verified
-            test dollar adds one test credit. Refunds and disputed payments
-            adjust the credit balance.
+            {summary?.stripe?.enabled
+              ? "Complete a test payment on Stripe’s secure checkout. Each verified test dollar adds one test credit. Refunds and disputed payments adjust the credit balance."
+              : "Card payments are not available yet. There is nothing to configure in your account."}
           </p>
           {!summary?.stripe?.enabled && (
             <div className="ws-funding-setup">
               <strong>Card deposits are unavailable</strong>
               <p>
-                The workspace owner can enable Stripe test payments when setup
-                is complete.
+                You can continue setting up your agent without a payment method.
+                No card details are needed.
               </p>
             </div>
           )}

@@ -19,6 +19,7 @@ import {
 } from "./components/ui/dialog";
 import { CopyButton, Empty, InlineError, date } from "./observation-ui";
 import { api, ApiError } from "./api";
+import { AgentEnvironment } from "./components/AgentEnvironment";
 import {
   API_KEY_SCOPES,
   API_KEY_TOOLS,
@@ -346,17 +347,15 @@ export function ApiKeysView() {
         </header>
         <div className="ws-key-instructions">
           <p>
-            Set <code>APILAYER_API_KEY</code> in the MCP client’s environment or
-            your private local environment file, then restart the client. Keep
-            the workspace owner token for administration.
+            Add these settings to the bridge project’s private .env file.
+            Replace the placeholder with your saved API key, then restart your
+            MCP client. Never use a provider credential here.
           </p>
-          <div className="command-box">
-            <code>APILAYER_API_KEY=&lt;your scoped key&gt;</code>
-            <CopyButton text="APILAYER_API_KEY=<your scoped key>" />
-          </div>
+          <AgentEnvironment />
           <p>
-            Every key belongs to this current shared workspace. Hosted accounts
-            and workspace isolation will be added with the auth migration.
+            Each key accesses only its workspace and the permissions and tools
+            you allow. Manage or revoke it here without changing other agents’
+            keys.
           </p>
           <a className="ws-text-link" href="#dashboard/connections">
             MCP connection setup
@@ -431,6 +430,12 @@ export function ApiKeysView() {
                 </p>
               )}
               <Button onClick={close}>Done</Button>
+              <Button variant="outline" asChild>
+                <a href="#dashboard/connections" onClick={close}>
+                  Agent connection setup
+                  <ArrowRight />
+                </a>
+              </Button>
             </div>
           ) : mode === "revoke" && selected ? (
             <div className="ws-deposit-detail">

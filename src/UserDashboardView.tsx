@@ -45,6 +45,7 @@ import type { Observatory } from "../server/observation";
 import "./workspace.css";
 import { ApiKeysView } from "./ApiKeysView";
 import { FundingView } from "./FundingView";
+import { AgentEnvironment } from "./components/AgentEnvironment";
 
 type Catalog = Awaited<ReturnType<Observatory["catalog"]>>;
 type Preview = Awaited<ReturnType<Observatory["preview"]>>;
@@ -1620,6 +1621,13 @@ function ConnectionView({
 }) {
   const account = useAccount();
   const [client, setClient] = useState("codex");
+  const canManageKeys =
+    !account.enabled ||
+    account.profile?.isAdmin ||
+    account.profile?.workspaces.some(
+      (workspace) =>
+        workspace.id === account.workspaceId && workspace.role === "owner",
+    );
   const command =
     client === "other"
       ? "npm run mcp:install -- project"
@@ -1652,20 +1660,26 @@ function ConnectionView({
             ))}
           </div>
           <p className="ws-panel-note">
-            Use a separate scoped credential for each agent.{" "}
-            <a href="#dashboard/keys" className="ws-text-link">
-              Manage API keys
-            </a>{" "}
-            and set APILAYER_API_KEY before starting the bridge.
+            {canManageKeys ? (
+              <>
+                Use a separate scoped credential for each agent.{" "}
+                <a href="#dashboard/keys" className="ws-text-link">
+                  Manage API keys
+                </a>{" "}
+                before starting the bridge.
+              </>
+            ) : (
+              "Ask your workspace owner for a scoped API key before starting the bridge."
+            )}
           </p>
           <ol className="ws-setup-steps">
             <li>
               <span>1</span>
               <div>
-                <strong>Build and run octolab</strong>
+                <strong>Build the local MCP bridge</strong>
                 <p>
-                  In the project folder, build the local MCP bridge. Keep the
-                  server running.
+                  Run this in the octolab project folder. If you run the server
+                  locally, keep it running in a separate terminal.
                 </p>
                 <div className="command-box">
                   <code>npm run build</code>
@@ -1675,6 +1689,18 @@ function ConnectionView({
             </li>
             <li>
               <span>2</span>
+              <div>
+                <strong>Add your connection settings</strong>
+                <p>
+                  Save these in the bridge project’s private .env file. Replace
+                  the placeholder with your API key. The address points to this
+                  octolab server, including its port.
+                </p>
+                <AgentEnvironment />
+              </div>
+            </li>
+            <li>
+              <span>3</span>
               <div>
                 <strong>
                   {client === "other"
@@ -1693,7 +1719,7 @@ function ConnectionView({
               </div>
             </li>
             <li>
-              <span>3</span>
+              <span>4</span>
               <div>
                 <strong>Restart your client and ask your agent</strong>
                 <p>

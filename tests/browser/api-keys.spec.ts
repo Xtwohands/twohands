@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { captureJourney } from "./helpers/launch-screenshots";
 import AxeBuilder from "@axe-core/playwright";
 const base = "http://127.0.0.1:3107";
 const owner = "fixture-owner-token-0000000000001";
@@ -52,6 +53,7 @@ test("create, use, limit, edit, and revoke a scoped key without revealing it aga
   const field = page.getByLabel("New API key secret", { exact: true });
   await expect(field).toBeVisible();
   await expect(field).toHaveAttribute("type", "password");
+  await captureJourney(page, "local-key-secret-masked");
   const secret = await field.inputValue();
   await page
     .getByRole("button", { name: "Reveal API key", exact: true })
