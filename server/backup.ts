@@ -429,8 +429,14 @@ export async function restoreDatabase(
       "Restore failed. No successful recovery is claimed; private connection details were omitted.",
     );
   } finally {
-    await release?.();
-    await database?.close();
-    await rm(directory, { recursive: true, force: true });
+    try {
+      await release?.();
+    } finally {
+      try {
+        await database?.close();
+      } finally {
+        await rm(directory, { recursive: true, force: true });
+      }
+    }
   }
 }

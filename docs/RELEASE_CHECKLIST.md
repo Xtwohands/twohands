@@ -42,7 +42,7 @@ The tool below is an offline application backup: the API and maintenance process
 
 ## Making an encrypted application backup
 
-Build first, or use the separate recovery image. Supply these variables through a private environment/secret store, not command-line values or a committed file:
+Use the separate recovery image for container backups, or a host build with compatible PostgreSQL clients installed. Supply these variables through a private environment/secret store, not command-line values or a committed file:
 
 | Variable              | Meaning                                                                                                       |
 | --------------------- | ------------------------------------------------------------------------------------------------------------- |
