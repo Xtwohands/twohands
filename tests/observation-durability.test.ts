@@ -66,11 +66,11 @@ it("survives an actual process kill after reservation and never repeats uncertai
         return { httpStatus: 200, text: "Unexpected retry" };
       },
     });
-    expect(obs.require(sessionId).reservedMicros).toBe(1000);
-    const key = obs.db.apiKeys.list()[0];
+    expect((await obs.require(sessionId)).reservedMicros).toBe(1000);
+    const key = (await obs.db.apiKeys.list())[0];
     expect(key).toMatchObject({ spentMicros: 0, reservedMicros: 1000 });
-    obs.db.recover();
-    obs.db.recover();
+    await obs.db.recover();
+    await obs.db.recover();
     const receipt = await obs.execute(sessionId, {
       tool: "firecrawl_extract",
       url: "https://example.com",
@@ -79,54 +79,56 @@ it("survives an actual process kill after reservation and never repeats uncertai
       statedReason: "Synthetic crash fixture",
     });
     expect(receipt.status).toBe("interrupted");
-    expect(obs.db.apiKeys.get(key.id)).toMatchObject({
+    expect(await obs.db.apiKeys.get(key.id)).toMatchObject({
       spentMicros: 1000,
       reservedMicros: 0,
     });
     expect(executed).toBe(0);
-    expect(obs.require(sessionId)).toMatchObject({
+    expect(await obs.require(sessionId)).toMatchObject({
       spentMicros: 1000,
       reservedMicros: 0,
     });
     expect(
-      obs.db.events(sessionId).filter((e) => e.type === "call_interrupted"),
+      (await obs.db.events(sessionId)).filter(
+        (e) => e.type === "call_interrupted",
+      ),
     ).toHaveLength(1);
-    expect(obs.db.detail(sessionId)?.integrity).toBe(true);
+    expect((await obs.db.detail(sessionId))?.integrity).toBe(true);
   } finally {
     child.kill("SIGKILL");
-    store?.close();
+    await store?.close();
     await rm(dir, { recursive: true, force: true });
   }
 });
-it("includes records beyond 500 sessions in history and summary", () => {
+it("includes records beyond 500 sessions in history and summary", async () => {
   const store = new Store(":memory:");
   try {
     const obs = new Observatory(store);
     let first = "";
     for (let i = 0; i < 505; i++) {
-      const s = obs.create(input(), "operator_entered");
+      const s = await obs.create(input(), "operator_entered");
       first ||= s.id;
     }
-    expect(obs.db.list()).toHaveLength(505);
-    expect(obs.summary().sessions).toBe(505);
-    expect(obs.db.list().some((s) => s.id === first)).toBe(true);
+    expect(await obs.db.list()).toHaveLength(505);
+    expect((await obs.summary()).sessions).toBe(505);
+    expect((await obs.db.list()).some((s) => s.id === first)).toBe(true);
   } finally {
-    store.close();
+    await store.close();
   }
 });
-it("does not invent a model score for five reviewed sessions with unknown identity", () => {
+it("does not invent a model score for five reviewed sessions with unknown identity", async () => {
   const store = new Store(":memory:");
   try {
     const obs = new Observatory(store);
     for (let i = 0; i < 5; i++) {
-      const s = obs.create(input(), "operator_entered");
-      obs.approve(s.id, s.intentHash);
-      const out = obs.outcome(s.id, {
+      const s = await obs.create(input(), "operator_entered");
+      await obs.approve(s.id, s.intentHash);
+      const out = await obs.outcome(s.id, {
         requestKey: "o",
         text: "Synthetic output",
         evidenceCallIds: [],
       });
-      obs.evaluate(s.id, {
+      await obs.evaluate(s.id, {
         outcomeId: out.outcomes[0].id,
         criteria: s.criteria.map((c) => ({
           criterionId: c.id,
@@ -136,12 +138,12 @@ it("does not invent a model score for five reviewed sessions with unknown identi
         })),
       });
     }
-    expect(obs.summary().models[0]).toMatchObject({
+    expect((await obs.summary()).models[0]).toMatchObject({
       fullyReviewed: 5,
       score: null,
     });
   } finally {
-    store.close();
+    await store.close();
   }
 });
 it("retention deletes old evidence but retains open cases and recent sessions", async () => {
@@ -149,16 +151,16 @@ it("retention deletes old evidence but retains open cases and recent sessions", 
   const path = join(dir, "workspace.sqlite");
   let store = new Store(path);
   const obs = new Observatory(store);
-  const old = obs.create(input(), "operator_entered");
-  const held = obs.create(input(), "operator_entered");
-  const recent = obs.create(input(), "operator_entered");
-  obs.approve(held.id, held.intentHash);
-  const out = obs.outcome(held.id, {
+  const old = await obs.create(input(), "operator_entered");
+  const held = await obs.create(input(), "operator_entered");
+  const recent = await obs.create(input(), "operator_entered");
+  await obs.approve(held.id, held.intentHash);
+  const out = await obs.outcome(held.id, {
     requestKey: "o",
     text: "Synthetic shortfall",
     evidenceCallIds: [],
   });
-  const review = obs.evaluate(held.id, {
+  const review = await obs.evaluate(held.id, {
     outcomeId: out.outcomes[0].id,
     criteria: held.criteria.map((c) => ({
       criterionId: c.id,
@@ -167,18 +169,18 @@ it("retention deletes old evidence but retains open cases and recent sessions", 
       evidenceCallIds: [],
     })),
   });
-  obs.openCase(
+  await obs.openCase(
     held.id,
     review.evaluations[0].id,
     "Retain the evidence while this review is open.",
   );
   for (const id of [old.id, held.id])
-    store.db
+    await store.db
       .prepare(
         "UPDATE observation_sessions SET body=json_set(body,'$.updatedAt',?) WHERE id=?",
       )
       .run("2000-01-01T00:00:00Z", id);
-  store.close();
+  await store.close();
   try {
     const result = await execute(
       process.execPath,
@@ -188,12 +190,12 @@ it("retention deletes old evidence but retains open cases and recent sessions", 
     expect(result.stdout).toContain("1 observation sessions");
     store = new Store(path);
     const reloaded = new Observatory(store);
-    expect(reloaded.db.get(old.id)).toBeUndefined();
-    expect(reloaded.db.events(old.id)).toHaveLength(0);
-    expect(reloaded.db.get(held.id)).toBeDefined();
-    expect(reloaded.db.get(recent.id)).toBeDefined();
+    expect(await reloaded.db.get(old.id)).toBeUndefined();
+    expect(await reloaded.db.events(old.id)).toHaveLength(0);
+    expect(await reloaded.db.get(held.id)).toBeDefined();
+    expect(await reloaded.db.get(recent.id)).toBeDefined();
   } finally {
-    store.close();
+    await store.close();
     await rm(dir, { recursive: true, force: true });
   }
 });

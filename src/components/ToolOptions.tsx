@@ -14,7 +14,7 @@ import type {
 
 // Optional new fields preserve the rendering of historical discovery events.
 type ToolOption = Pick<
-  ReturnType<Observatory["catalog"]>[number],
+  Awaited<ReturnType<Observatory["catalog"]>>[number],
   "tool" | "provider" | "available" | "estimatedMicros" | "sampleCount"
 > & {
   requestEstimates?: (Omit<
@@ -25,7 +25,9 @@ type ToolOption = Pick<
       Pick<DiscoveryEstimate, "operationIndex" | "origin" | "mappingNotes">
     >)[];
   discoveryMatches?: DiscoveryMatch[];
-  reputation?: ReturnType<Observatory["catalog"]>[number]["reputation"];
+  reputation?: Awaited<
+    ReturnType<Observatory["catalog"]>
+  >[number]["reputation"];
 };
 export const providerLogos = {
   exa: "/providers/exa-icon.svg",

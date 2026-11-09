@@ -68,7 +68,7 @@ export function disputeReviewRoutes(
     };
   router.get(
     "/disputes",
-    handle((req, res) => {
+    handle(async (req, res) => {
       const q = z
         .object({
           status: z
@@ -79,20 +79,20 @@ export function disputeReviewRoutes(
         })
         .strict()
         .parse(req.query);
-      res.json(service.list(q.status, q.q, q.page));
+      res.json(await service.list(q.status, q.q, q.page));
     }),
   );
   router.get(
     "/disputes/:id",
-    handle((req, res) => {
-      res.json(service.detail(z.uuid().parse(req.params.id)));
+    handle(async (req, res) => {
+      res.json(await service.detail(z.uuid().parse(req.params.id)));
     }),
   );
   router.post(
     "/disputes/:id/review",
-    handle((req, res) => {
+    handle(async (req, res) => {
       res.json(
-        service.review(
+        await service.review(
           z.uuid().parse(req.params.id),
           req.body,
           res.locals.adminActor,
@@ -105,9 +105,9 @@ export function disputeReviewRoutes(
     handle(async (req, res) => {
       z.object({}).strict().parse(req.body);
       const id = z.uuid().parse(req.params.id);
-      service.get(id);
+      await service.get(id);
       await service.stripe.reconcile(id, true);
-      res.json(service.detail(id));
+      res.json(await service.detail(id));
     }),
   );
   router.use((_req, res) => {

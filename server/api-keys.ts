@@ -60,32 +60,20 @@ type KeyBody = Omit<
   "spentMicros" | "reservedMicros" | "remainingMicros" | "status"
 >;
 export class ApiKeyService {
-  readonly workspaceId: string;
+  get workspaceId() {
+    return this.store.workspaceId;
+  }
   constructor(
     public store: Store,
     private now = () => Date.now(),
-  ) {
-    store.db
-      .exec(`CREATE TABLE IF NOT EXISTS api_key_workspace(id INTEGER PRIMARY KEY CHECK(id=1),workspace_id TEXT NOT NULL);
-      CREATE TABLE IF NOT EXISTS workspace_api_keys(id TEXT PRIMARY KEY,workspace_id TEXT NOT NULL,secret_hash TEXT NOT NULL UNIQUE,create_request_key TEXT NOT NULL UNIQUE,input_hash TEXT NOT NULL,body TEXT NOT NULL,spent_micros INTEGER NOT NULL DEFAULT 0 CHECK(spent_micros>=0),reserved_micros INTEGER NOT NULL DEFAULT 0 CHECK(reserved_micros>=0));
-      CREATE TABLE IF NOT EXISTS api_key_spend(call_id TEXT PRIMARY KEY,key_id TEXT NOT NULL REFERENCES workspace_api_keys(id),amount_micros INTEGER NOT NULL CHECK(amount_micros>=0),state TEXT NOT NULL CHECK(state IN ('reserved','settled')),created_at TEXT NOT NULL,settled_at TEXT);
-      CREATE TABLE IF NOT EXISTS api_key_events(id TEXT PRIMARY KEY,key_id TEXT NOT NULL REFERENCES workspace_api_keys(id),body TEXT NOT NULL);`);
-    store.db
-      .prepare("INSERT OR IGNORE INTO api_key_workspace VALUES (1,?)")
-      .run(randomUUID());
-    this.workspaceId = String(
-      store.db
-        .prepare("SELECT workspace_id FROM api_key_workspace WHERE id=1")
-        .get()!.workspace_id,
-    );
-  }
-  hasIssuedKeys() {
-    return !!this.store.db
+  ) {}
+  async hasIssuedKeys() {
+    return !!(await this.store.db
       .prepare("SELECT 1 FROM workspace_api_keys LIMIT 1")
-      .get();
+      .get());
   }
-  get(id: string): WorkspaceApiKey {
-    const row = this.store.db
+  async get(id: string): Promise<WorkspaceApiKey> {
+    const row = await this.store.db
       .prepare(
         "SELECT body,spent_micros,reserved_micros FROM workspace_api_keys WHERE id=? AND workspace_id=?",
       )
@@ -111,38 +99,41 @@ export class ApiKeyService {
             : "active",
     };
   }
-  list() {
-    return this.store.db
-      .prepare(
-        "SELECT id FROM workspace_api_keys WHERE workspace_id=? ORDER BY rowid DESC LIMIT 1000",
-      )
-      .all(this.workspaceId)
-      .map((r) => this.get(String(r.id)));
+  async list() {
+    return await Promise.all(
+      (
+        await this.store.db
+          .prepare(
+            "SELECT id FROM workspace_api_keys WHERE workspace_id=? ORDER BY rowid DESC LIMIT 1000",
+          )
+          .all(this.workspaceId)
+      ).map(async (r) => await this.get(String(r.id))),
+    );
   }
-  active(id: string) {
-    const value = this.get(id);
+  async active(id: string) {
+    const value = await this.get(id);
     if (value.revokedAt || Date.parse(value.expiresAt) <= this.now())
       throw new ApiKeyError(401, "This API key is revoked or expired.");
     return value;
   }
-  authenticate(secret: string) {
+  async authenticate(secret: string) {
     if (!/^oct_key_[A-Za-z0-9_-]{43}$/.test(secret))
       throw new ApiKeyError(401, "Invalid API key.");
-    const row = this.store.db
+    const row = await this.store.db
       .prepare(
         "SELECT id FROM workspace_api_keys WHERE secret_hash=? AND workspace_id=?",
       )
       .get(hash(secret), this.workspaceId);
     if (!row) throw new ApiKeyError(401, "Invalid API key.");
-    const value = this.active(String(row.id));
-    this.store.db
+    const value = await this.active(String(row.id));
+    await this.store.db
       .prepare(
         "UPDATE workspace_api_keys SET body=json_set(body,'$.lastUsedAt',?) WHERE id=?",
       )
       .run(new Date(this.now()).toISOString(), value.id);
-    return this.get(value.id);
+    return await this.get(value.id);
   }
-  private audit(
+  private async audit(
     type: ApiKeyEvent["type"],
     previous: WorkspaceApiKey | null,
     current: WorkspaceApiKey,
@@ -156,24 +147,25 @@ export class ApiKeyService {
       previous,
       current,
     };
-    this.store.db
+    await this.store.db
       .prepare("INSERT INTO api_key_events VALUES (?,?,?)")
       .run(event.id, current.id, JSON.stringify(event));
   }
-  events(id: string): ApiKeyEvent[] {
-    this.get(id);
-    return this.store.db
-      .prepare(
-        "SELECT body FROM api_key_events WHERE key_id=? ORDER BY rowid DESC LIMIT 100",
-      )
-      .all(id)
-      .map((r) => JSON.parse(String(r.body)));
+  async events(id: string): Promise<ApiKeyEvent[]> {
+    await this.get(id);
+    return (
+      await this.store.db
+        .prepare(
+          "SELECT body FROM api_key_events WHERE key_id=? ORDER BY rowid DESC LIMIT 100",
+        )
+        .all(id)
+    ).map((r) => JSON.parse(String(r.body)));
   }
-  create(raw: unknown) {
+  async create(raw: unknown) {
     const input = createInput.parse(raw);
     const signature = hash(JSON.stringify(input));
-    return this.store.transaction(() => {
-      const old = this.store.db
+    return await this.store.transaction(async () => {
+      const old = await this.store.db
         .prepare(
           "SELECT id,input_hash FROM workspace_api_keys WHERE create_request_key=?",
         )
@@ -184,9 +176,13 @@ export class ApiKeyService {
             409,
             "This creation request was already used with different key settings.",
           );
-        return { key: this.get(String(old.id)), secret: null, replayed: true };
+        return {
+          key: await this.get(String(old.id)),
+          secret: null,
+          replayed: true,
+        };
       }
-      const keys = this.list();
+      const keys = await this.list();
       if (
         keys.length >= 1000 ||
         keys.filter((k) => !k.revokedAt && Date.parse(k.expiresAt) > this.now())
@@ -214,7 +210,7 @@ export class ApiKeyService {
         revokedAt: null,
         lastUsedAt: null,
       };
-      this.store.db
+      await this.store.db
         .prepare("INSERT INTO workspace_api_keys VALUES (?,?,?,?,?,?,0,0)")
         .run(
           body.id,
@@ -224,15 +220,15 @@ export class ApiKeyService {
           signature,
           JSON.stringify(body),
         );
-      const key = this.get(body.id);
-      this.audit("created", null, key);
+      const key = await this.get(body.id);
+      await this.audit("created", null, key);
       return { key, secret, replayed: false };
     });
   }
-  update(id: string, raw: unknown) {
+  async update(id: string, raw: unknown) {
     const input = updateInput.parse(raw);
-    return this.store.transaction(() => {
-      const previous = this.get(id);
+    return await this.store.transaction(async () => {
+      const previous = await this.get(id);
       if (previous.status === "expired" || previous.status === "revoked")
         throw new ApiKeyError(
           409,
@@ -248,7 +244,7 @@ export class ApiKeyService {
           409,
           "The limit cannot be lower than spent and reserved estimates.",
         );
-      this.store.db
+      await this.store.db
         .prepare(
           "UPDATE workspace_api_keys SET body=json_set(body,'$.name',?,'$.scopes',json(?),'$.allowedTools',json(?),'$.limitMicros',?,'$.revision',?) WHERE id=?",
         )
@@ -260,36 +256,36 @@ export class ApiKeyService {
           previous.revision + 1,
           id,
         );
-      const current = this.get(id);
-      this.audit("updated", previous, current);
+      const current = await this.get(id);
+      await this.audit("updated", previous, current);
       return current;
     });
   }
-  revoke(id: string, raw: unknown) {
+  async revoke(id: string, raw: unknown) {
     const input = z
       .object({ revision: z.number().int().nonnegative() })
       .strict()
       .parse(raw);
-    return this.store.transaction(() => {
-      const previous = this.get(id);
+    return await this.store.transaction(async () => {
+      const previous = await this.get(id);
       if (previous.revokedAt) return previous;
       if (previous.revision !== input.revision)
         throw new ApiKeyError(
           409,
           "Key settings changed. Refresh before revoking.",
         );
-      this.store.db
+      await this.store.db
         .prepare(
           "UPDATE workspace_api_keys SET body=json_set(body,'$.revokedAt',?,'$.revision',?) WHERE id=?",
         )
         .run(new Date(this.now()).toISOString(), previous.revision + 1, id);
-      const current = this.get(id);
-      this.audit("revoked", previous, current);
+      const current = await this.get(id);
+      await this.audit("revoked", previous, current);
       return current;
     });
   }
-  toolAccess(id: string, tool: (typeof API_KEY_TOOLS)[number]) {
-    const key = this.active(id);
+  async toolAccess(id: string, tool: (typeof API_KEY_TOOLS)[number]) {
+    const key = await this.active(id);
     if (
       !key.scopes.includes("tools:execute") ||
       !key.allowedTools.includes(tool)
@@ -298,13 +294,13 @@ export class ApiKeyService {
     return key;
   }
   /** Called inside the same transaction that creates the provider call receipt. */
-  reserve(
+  async reserve(
     id: string,
     callId: string,
     tool: (typeof API_KEY_TOOLS)[number],
     amount: number,
   ) {
-    const key = this.toolAccess(id, tool);
+    const key = await this.toolAccess(id, tool);
     if (!Number.isSafeInteger(amount) || amount < 0)
       throw new Error("Invalid key reservation");
     if (key.spentMicros + key.reservedMicros + amount > key.limitMicros)
@@ -312,36 +308,35 @@ export class ApiKeyService {
         409,
         "This call would exceed the API key's total estimated-spend limit.",
       );
-    this.store.db
+    await this.store.db
       .prepare("INSERT INTO api_key_spend VALUES (?,?,?,'reserved',?,NULL)")
       .run(callId, id, amount, new Date(this.now()).toISOString());
-    this.store.db
+    await this.store.db
       .prepare(
         "UPDATE workspace_api_keys SET reserved_micros=reserved_micros+? WHERE id=?",
       )
       .run(amount, id);
   }
   /** Called with provider settlement/recovery in the enclosing receipt transaction. */
-  settle(callId: string) {
-    const row = this.store.db
+  async settle(callId: string) {
+    const row = await this.store.db
       .prepare(
         "SELECT key_id,amount_micros FROM api_key_spend WHERE call_id=? AND state='reserved'",
       )
       .get(callId);
     if (!row) return;
-    this.store.db
+    await this.store.db
       .prepare(
         "UPDATE workspace_api_keys SET reserved_micros=reserved_micros-?,spent_micros=spent_micros+? WHERE id=?",
       )
       .run(row.amount_micros, row.amount_micros, row.key_id);
-    this.store.db
+    await this.store.db
       .prepare(
         "UPDATE api_key_spend SET state='settled',settled_at=? WHERE call_id=?",
       )
       .run(new Date(this.now()).toISOString(), callId);
   }
 }
-
 /** Explicit allowlist: scoped credentials cannot access owner/admin/legacy billing paths. */
 export function requiredApiKeyScope(
   method: string,

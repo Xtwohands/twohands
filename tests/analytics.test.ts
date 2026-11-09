@@ -6,26 +6,29 @@ let store: Store;
 beforeEach(() => {
   store = new Store(":memory:");
 });
-afterEach(() => store.close());
-function trace(consent = true) {
-  const task = createTask(store, { consent });
+afterEach(async () => await store.close());
+async function trace(consent = true) {
+  const task = await createTask(store, { consent });
   const invocationId = task.id + "-invocation";
   const candidates = [
     { provider: "exa", eligible: true, reasons: [] },
     { provider: "tavily", eligible: true, reasons: [] },
   ];
-  store.event(task.id, "tool_invoked", {
+  await store.event(task.id, "tool_invoked", {
     invocationId,
     query: "PRIVATE QUERY",
   });
-  store.event(task.id, "provider_candidates", { invocationId, candidates });
-  store.event(
+  await store.event(task.id, "provider_candidates", {
+    invocationId,
+    candidates,
+  });
+  await store.event(
     task.id,
     "route_selected",
     { invocationId, provider: "tavily" },
     "first-" + task.id,
   );
-  store.event(
+  await store.event(
     task.id,
     "provider_response",
     {
@@ -38,14 +41,14 @@ function trace(consent = true) {
     },
     "first-" + task.id,
   );
-  store.event(
+  await store.event(
     task.id,
     "outcome_evaluated",
     { invocationId, pass: false },
     "first-" + task.id,
   );
-  store.event(task.id, "fallback_triggered", { invocationId });
-  store.event(task.id, "provider_candidates", {
+  await store.event(task.id, "fallback_triggered", { invocationId });
+  await store.event(task.id, "provider_candidates", {
     invocationId,
     candidates: [
       { ...candidates[0] },
@@ -56,13 +59,13 @@ function trace(consent = true) {
       },
     ],
   });
-  store.event(
+  await store.event(
     task.id,
     "route_selected",
     { invocationId, provider: "exa" },
     "second-" + task.id,
   );
-  store.event(
+  await store.event(
     task.id,
     "provider_response",
     {
@@ -75,7 +78,7 @@ function trace(consent = true) {
     },
     "second-" + task.id,
   );
-  store.event(
+  await store.event(
     task.id,
     "outcome_evaluated",
     { invocationId, pass: true },
@@ -84,9 +87,9 @@ function trace(consent = true) {
   return task;
 }
 describe("privacy-preserving cross-provider aggregates", () => {
-  it("counts an initial routing opportunity once, excluding fallback rechecks", () => {
-    for (let i = 0; i < 5; i++) trace();
-    const data = analytics(store);
+  it("counts an initial routing opportunity once, excluding fallback rechecks", async () => {
+    for (let i = 0; i < 5; i++) await trace();
+    const data = await analytics(store);
     expect(data.suppressed).toBe(false);
     if (data.suppressed) return;
     const exa = data.providers.find((p) => p.provider === "exa")!;
@@ -97,17 +100,20 @@ describe("privacy-preserving cross-provider aggregates", () => {
     expect(data.insufficient200).toBe(5);
     expect(JSON.stringify(data)).not.toContain("PRIVATE QUERY");
   });
-  it("withholds rare metric cohorts even after the overall task threshold is reached", () => {
-    trace();
-    for (let i = 0; i < 4; i++) createTask(store, { consent: true });
-    const data = analytics(store);
+  it("withholds rare metric cohorts even after the overall task threshold is reached", async () => {
+    await trace();
+    for (let i = 0; i < 4; i++) await createTask(store, { consent: true });
+    const data = await analytics(store);
     if (data.suppressed) throw new Error("Overall cohort should be ready");
     expect(data.capabilities.search).toBeNull();
     expect(data.fallbacks).toBeNull();
     expect(data.providers.every((p) => p.suppressed)).toBe(true);
   });
-  it("excludes nonconsenting traces and never counts their recovered outcomes", () => {
-    for (let i = 0; i < 5; i++) trace(false);
-    expect(analytics(store)).toMatchObject({ suppressed: true, cohortSize: 0 });
+  it("excludes nonconsenting traces and never counts their recovered outcomes", async () => {
+    for (let i = 0; i < 5; i++) await trace(false);
+    expect(await analytics(store)).toMatchObject({
+      suppressed: true,
+      cohortSize: 0,
+    });
   });
 });

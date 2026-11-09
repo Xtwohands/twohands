@@ -3,7 +3,6 @@ import Stripe from "stripe";
 import { z } from "zod";
 import { FundingError, type FundingService } from "./funding.js";
 import type { StripeDeposit, StripeFundingStatus } from "./funding-types.js";
-
 export type StripeSettings = {
   enabled: boolean;
   secretKey: string;
@@ -132,7 +131,6 @@ const EVENTS = new Set([
   "charge.dispute.created",
   "charge.dispute.closed",
 ]);
-
 export class StripeFundingService {
   readonly active = new Map<string, Promise<StripeDeposit>>();
   readonly creating = new Map<string, Promise<StripeDeposit>>();
@@ -142,12 +140,7 @@ export class StripeFundingService {
     public settings = stripeSettings(),
     private gateway = stripeGateway(settings),
     private now = () => Date.now(),
-  ) {
-    funding.store.db
-      .exec(`CREATE TABLE IF NOT EXISTS stripe_deposits(id TEXT PRIMARY KEY,request_key TEXT NOT NULL UNIQUE,session_id TEXT UNIQUE,payment_intent_id TEXT UNIQUE,charge_id TEXT UNIQUE,body TEXT NOT NULL);
-      CREATE TABLE IF NOT EXISTS stripe_webhook_receipts(id TEXT PRIMARY KEY,event_type TEXT NOT NULL,deposit_id TEXT,created_at TEXT NOT NULL);
-      CREATE TABLE IF NOT EXISTS stripe_deposit_events(id INTEGER PRIMARY KEY AUTOINCREMENT,deposit_id TEXT NOT NULL REFERENCES stripe_deposits(id),body TEXT NOT NULL);`);
-  }
+  ) {}
   status(): StripeFundingStatus {
     const reason = !this.settings.enabled
       ? "Stripe test deposits are not enabled on this server."
@@ -177,22 +170,25 @@ export class StripeFundingService {
         "Stripe test verification is not configured. No credits were added.",
       );
   }
-  get(id: string): StripeDeposit {
-    const row = this.funding.store.db
+  async get(id: string): Promise<StripeDeposit> {
+    const row = await this.funding.store.db
       .prepare("SELECT body FROM stripe_deposits WHERE id=?")
       .get(id);
     if (!row) throw new FundingError(404, "Card deposit not found.");
     return JSON.parse(row.body as string);
   }
-  list(): StripeDeposit[] {
-    return this.funding.store.db
-      .prepare("SELECT body FROM stripe_deposits ORDER BY rowid DESC LIMIT 100")
-      .all()
-      .map((r) => JSON.parse(r.body as string));
+  async list(): Promise<StripeDeposit[]> {
+    return (
+      await this.funding.store.db
+        .prepare(
+          "SELECT body FROM stripe_deposits ORDER BY rowid DESC LIMIT 100",
+        )
+        .all()
+    ).map((r) => JSON.parse(r.body as string));
   }
-  private save(value: StripeDeposit, event: string) {
+  private async save(value: StripeDeposit, event: string) {
     value.updatedAt = new Date(this.now()).toISOString();
-    this.funding.store.db
+    await this.funding.store.db
       .prepare(
         "UPDATE stripe_deposits SET session_id=?,payment_intent_id=?,charge_id=?,body=? WHERE id=?",
       )
@@ -203,7 +199,7 @@ export class StripeFundingService {
         JSON.stringify(value),
         value.id,
       );
-    this.funding.store.db
+    await this.funding.store.db
       .prepare(
         "INSERT INTO stripe_deposit_events(deposit_id,body) VALUES (?,?)",
       )
@@ -225,62 +221,71 @@ export class StripeFundingService {
   }
   async create(raw: unknown): Promise<StripeDeposit> {
     const input = stripeDepositInput.parse(raw);
-    const existing = this.funding.store.db
-      .prepare("SELECT id FROM stripe_deposits WHERE request_key=?")
-      .get(input.requestKey);
-    let value: StripeDeposit;
-    if (existing) {
-      value = this.get(existing.id as string);
-      if (value.amountCents !== input.amount)
-        throw new FundingError(
-          409,
-          "This request key was already used with a different amount.",
-        );
-      if (value.checkoutSessionId) return value;
-      if (this.now() - Date.parse(value.createdAt) > 23 * 3600000)
-        throw new FundingError(
-          409,
-          "This checkout needs reconciliation before it can be retried. Its original request key will not be reused with new payment details.",
-        );
-    } else {
-      const status = this.status();
-      if (!status.enabled)
-        throw new FundingError(409, status.unavailableReason!);
-      const at = new Date(this.now()).toISOString();
-      value = {
-        id: randomUUID(),
-        requestKey: input.requestKey,
-        amountCents: input.amount,
-        status: "creating",
-        checkoutSessionId: null,
-        checkoutUrl: null,
-        paymentIntentId: null,
-        chargeId: null,
-        refundedCents: 0,
-        disputed: false,
-        netCreditUnits: 0,
-        createdAt: at,
-        updatedAt: at,
-        lastCheckedAt: null,
-        message: "Preparing Stripe Checkout.",
-      };
-      this.funding.store.transaction(() => {
-        if (
-          Number(
-            this.funding.store.db
-              .prepare("SELECT COUNT(*) AS n FROM stripe_deposits")
-              .get()!.n,
-          ) >= 1000
-        )
-          throw new FundingError(409, "Workspace card deposit limit reached.");
-        this.funding.store.db
-          .prepare("INSERT INTO stripe_deposits VALUES (?,?,NULL,NULL,NULL,?)")
-          .run(value.id, input.requestKey, JSON.stringify(value));
-        this.save(value, "checkout_requested");
-      });
-    }
-    if (!this.status().enabled)
-      throw new FundingError(409, this.status().unavailableReason!);
+    const value = await this.funding.store.transaction(async () => {
+      const existing = await this.funding.store.db
+        .prepare("SELECT id FROM stripe_deposits WHERE request_key=?")
+        .get(input.requestKey);
+      let value: StripeDeposit;
+      if (existing) {
+        value = await this.get(existing.id as string);
+        if (value.amountCents !== input.amount)
+          throw new FundingError(
+            409,
+            "This request key was already used with a different amount.",
+          );
+        if (value.checkoutSessionId) return value;
+        if (this.now() - Date.parse(value.createdAt) > 23 * 3600000)
+          throw new FundingError(
+            409,
+            "This checkout needs reconciliation before it can be retried. Its original request key will not be reused with new payment details.",
+          );
+      } else {
+        const status = this.status();
+        if (!status.enabled)
+          throw new FundingError(409, status.unavailableReason!);
+        const at = new Date(this.now()).toISOString();
+        value = {
+          id: randomUUID(),
+          requestKey: input.requestKey,
+          amountCents: input.amount,
+          status: "creating",
+          checkoutSessionId: null,
+          checkoutUrl: null,
+          paymentIntentId: null,
+          chargeId: null,
+          refundedCents: 0,
+          disputed: false,
+          netCreditUnits: 0,
+          createdAt: at,
+          updatedAt: at,
+          lastCheckedAt: null,
+          message: "Preparing Stripe Checkout.",
+        };
+        {
+          if (
+            Number(
+              (await this.funding.store.db
+                .prepare("SELECT COUNT(*) AS n FROM stripe_deposits")
+                .get())!.n,
+            ) >= 1000
+          )
+            throw new FundingError(
+              409,
+              "Workspace card deposit limit reached.",
+            );
+          await this.funding.store.db
+            .prepare(
+              "INSERT INTO stripe_deposits VALUES (?,?,NULL,NULL,NULL,?)",
+            )
+            .run(value.id, input.requestKey, JSON.stringify(value));
+          await this.save(value, "checkout_requested");
+        }
+      }
+      if (!this.status().enabled)
+        throw new FundingError(409, this.status().unavailableReason!);
+      return value;
+    });
+    if (value.checkoutSessionId) return value;
     const pending = this.creating.get(value.id);
     if (pending) return pending;
     const promise = this.createCheckout(value);
@@ -332,8 +337,8 @@ export class StripeFundingService {
         url.password
       )
         throw new Error("Invalid checkout URL");
-      return this.funding.store.transaction(() => {
-        const current = this.get(value.id);
+      return await this.funding.store.transaction(async () => {
+        const current = await this.get(value.id);
         if (
           current.checkoutSessionId &&
           current.checkoutSessionId !== session.id
@@ -345,16 +350,16 @@ export class StripeFundingService {
         current.checkoutUrl = session.url!;
         current.status = "checkout_ready";
         current.message = "Continue to Stripe to complete the test payment.";
-        return this.save(current, "checkout_created");
+        return await this.save(current, "checkout_created");
       });
     } catch (error) {
-      const current = this.get(value.id);
+      const current = await this.get(value.id);
       if (!current.checkoutSessionId)
-        this.funding.store.transaction(() => {
+        await this.funding.store.transaction(async () => {
           current.status = "failed";
           current.message =
             "Checkout could not be prepared. Retry the same deposit request to recover its original checkout.";
-          this.save(current, "checkout_create_failed");
+          await this.save(current, "checkout_create_failed");
         });
       if (error instanceof FundingError) throw error;
       throw new FundingError(
@@ -382,7 +387,6 @@ export class StripeFundingService {
     this.ensureConfigured();
     const existing = this.active.get(id);
     if (existing) return existing;
-    this.get(id);
     if (manual) {
       const last = this.manualChecks.get(id);
       if (last !== undefined && this.now() - last < 10000)
@@ -401,7 +405,7 @@ export class StripeFundingService {
     }
   }
   private async reconcilePayment(id: string): Promise<StripeDeposit> {
-    const value = this.get(id);
+    const value = await this.get(id);
     if (!value.checkoutSessionId)
       throw new FundingError(
         409,
@@ -412,8 +416,8 @@ export class StripeFundingService {
         await this.gateway.retrieve(value.checkoutSessionId),
         value,
       );
-      return this.funding.store.transaction(() => {
-        const current = this.get(id);
+      return await this.funding.store.transaction(async () => {
+        const current = await this.get(id);
         current.lastCheckedAt = new Date(this.now()).toISOString();
         if (
           session.payment_status !== "paid" ||
@@ -434,7 +438,7 @@ export class StripeFundingService {
             current.status === "expired"
               ? "This checkout expired without a verified payment."
               : "Payment has not been confirmed by Stripe yet.";
-          return this.save(current, "payment_pending");
+          return await this.save(current, "payment_pending");
         }
         const payment = paymentSchema.parse(session.payment_intent);
         const charge = payment.latest_charge;
@@ -461,8 +465,8 @@ export class StripeFundingService {
         const target = current.disputed
           ? 0
           : (current.amountCents - current.refundedCents) * 10000;
-        const old = this.funding.ledger.net("stripe", id);
-        this.funding.ledger.settle(
+        const old = await this.funding.ledger.net("stripe", id);
+        await this.funding.ledger.settle(
           "stripe",
           id,
           target,
@@ -488,7 +492,7 @@ export class StripeFundingService {
           : current.refundedCents
             ? "Stripe reports a refund. The test-credit balance has been adjusted."
             : "Stripe verified the test payment and added the credits once.";
-        return this.save(current, "payment_reconciled");
+        return await this.save(current, "payment_reconciled");
       });
     } catch (error) {
       if (error instanceof FundingError) throw error;
@@ -513,7 +517,7 @@ export class StripeFundingService {
     if (event.livemode || !event.id.startsWith("evt_"))
       throw new FundingError(400, "Only Stripe test-mode events are accepted.");
     if (
-      this.funding.store.db
+      await this.funding.store.db
         .prepare("SELECT id FROM stripe_webhook_receipts WHERE id=?")
         .get(event.id)
     )
@@ -523,7 +527,7 @@ export class StripeFundingService {
     const meta = object.metadata as Record<string, string> | undefined;
     let id = meta?.octolab_deposit_id;
     let row = id
-      ? this.funding.store.db
+      ? await this.funding.store.db
           .prepare("SELECT id FROM stripe_deposits WHERE id=?")
           .get(id)
       : undefined;
@@ -540,7 +544,7 @@ export class StripeFundingService {
           : typeof object.id === "string" && object.id.startsWith("ch_")
             ? object.id
             : "";
-      row = this.funding.store.db
+      row = await this.funding.store.db
         .prepare(
           "SELECT id FROM stripe_deposits WHERE session_id=? OR payment_intent_id=? OR charge_id=?",
         )
@@ -563,7 +567,7 @@ export class StripeFundingService {
           );
         const depositId = payment.metadata?.octolab_deposit_id;
         if (depositId)
-          row = this.funding.store.db
+          row = await this.funding.store.db
             .prepare("SELECT id FROM stripe_deposits WHERE id=?")
             .get(depositId);
       }
@@ -572,14 +576,14 @@ export class StripeFundingService {
     id = String(row.id);
     // Checkout can finish before the create response is saved. Recover only its own signed session identity.
     if (
-      !this.get(id).checkoutSessionId &&
+      !(await this.get(id)).checkoutSessionId &&
       event.type.startsWith("checkout.session.")
     ) {
-      const session = this.validSession(object, this.get(id));
-      this.funding.store.transaction(() => {
-        const current = this.get(id!);
+      const session = this.validSession(object, await this.get(id));
+      await this.funding.store.transaction(async () => {
+        const current = await this.get(id!);
         current.checkoutSessionId = session.id;
-        this.save(current, "checkout_recovered_from_webhook");
+        await this.save(current, "checkout_recovered_from_webhook");
       });
     }
     // A read already in flight may predate this event (for example, a refund).
@@ -594,20 +598,21 @@ export class StripeFundingService {
       }
     }
     await this.reconcile(id);
-    this.funding.store.transaction(() =>
-      this.funding.store.db
-        .prepare(
-          "INSERT OR IGNORE INTO stripe_webhook_receipts VALUES (?,?,?,?)",
-        )
-        .run(event.id, event.type, id, new Date(this.now()).toISOString()),
+    await this.funding.store.transaction(
+      async () =>
+        await this.funding.store.db
+          .prepare(
+            "INSERT OR IGNORE INTO stripe_webhook_receipts VALUES (?,?,?,?)",
+          )
+          .run(event.id, event.type, id, new Date(this.now()).toISOString()),
     );
     return { received: true, replayed: false };
   }
-  summary() {
+  async summary() {
     return {
       stripe: this.status(),
-      stripeIntents: this.list(),
-      entries: this.funding.ledger.entries(),
+      stripeIntents: await this.list(),
+      entries: await this.funding.ledger.entries(),
     };
   }
 }

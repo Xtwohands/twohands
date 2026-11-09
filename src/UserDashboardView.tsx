@@ -45,8 +45,8 @@ import "./workspace.css";
 import { ApiKeysView } from "./ApiKeysView";
 import { FundingView } from "./FundingView";
 
-type Catalog = ReturnType<Observatory["catalog"]>;
-type Preview = ReturnType<Observatory["preview"]>;
+type Catalog = Awaited<ReturnType<Observatory["catalog"]>>;
+type Preview = Awaited<ReturnType<Observatory["preview"]>>;
 type Connection = {
   clients: { clientName: string; clientVersion: string; lastSeenAt: string }[];
   providers: Record<string, boolean>;

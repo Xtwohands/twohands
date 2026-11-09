@@ -9,10 +9,10 @@ const lab = new ProviderLab(store, {
   search: async () => ({ httpStatus: 200, sources: [] }),
   scrape: async () => {
     process.stdout.write(
-      JSON.stringify({ ready: true, id: lab.list()[0].id }) + "\n",
+      JSON.stringify({ ready: true, id: (await lab.list())[0].id }) + "\n",
     );
     await new Promise((resolve) => setTimeout(resolve, 60000));
     return { httpStatus: 200, text: "FIXTURE never settled" };
   },
 });
-lab.start({ requestKey: "crash-fixture", providers: ["firecrawl"] });
+await lab.start({ requestKey: "crash-fixture", providers: ["firecrawl"] });

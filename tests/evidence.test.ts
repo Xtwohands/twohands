@@ -22,8 +22,8 @@ beforeEach(() => {
   config.keys.firecrawl = "";
   config.allowKeylessFirecrawl = false;
 });
-afterEach(() => {
-  store.close();
+afterEach(async () => {
+  await store.close();
   config.allowKeylessFirecrawl = original.allow;
   config.keys.firecrawl = original.key;
   config.keylessMaxRequests = original.max;
@@ -41,9 +41,9 @@ describe("evidence provenance and keyless access", () => {
   it("stores a user supplied URL without pretending a provider returned it or calling a vendor", async () => {
     const fetch = vi.fn();
     vi.stubGlobal("fetch", fetch);
-    const task = createTask(store);
+    const task = await createTask(store);
     task.status = "ready";
-    store.save(task);
+    await store.save(task);
     const s = await source(task.id);
     expect(s).toMatchObject({
       provider: "user",
@@ -52,18 +52,18 @@ describe("evidence provenance and keyless access", () => {
       contentVersion: 1,
     });
     expect(fetch).not.toHaveBeenCalled();
-    expect(store.events(task.id).map((e) => e.type)).toEqual([
+    expect((await store.events(task.id)).map((e) => e.type)).toEqual([
       "evidence_added",
     ]);
   });
   it("normalizes duplicate manual URLs and enforces the task domain policy", async () => {
-    const t = createTask(store, { domains: ["example.com"] });
+    const t = await createTask(store, { domains: ["example.com"] });
     await source(t.id, "https://example.com/evidence#one");
     const duplicate = await request(app)
       .post(`/api/tasks/${t.id}/sources`)
       .send({ url: "https://example.com/evidence#two" });
     expect(duplicate.status).toBe(200);
-    expect(store.get(t.id)?.sources).toHaveLength(1);
+    expect((await store.get(t.id))?.sources).toHaveLength(1);
     expect(
       (
         await request(app)
@@ -73,13 +73,13 @@ describe("evidence provenance and keyless access", () => {
     ).toBe(400);
   });
   it("requires explicit opt-in before keyless extraction is available", async () => {
-    const t = createTask(store);
+    const t = await createTask(store);
     const s = await source(t.id);
     const r = await request(app)
       .post(`/api/tasks/${t.id}/fetch`)
       .send({ sourceId: s.id });
     expect(r.status).toBe(409);
-    expect(store.get(t.id)?.spentMicros).toBe(0);
+    expect((await store.get(t.id))?.spentMicros).toBe(0);
   });
   it("omits Authorization for the documented keyless tier and records zero USD estimates plus provider credit usage", async () => {
     config.allowKeylessFirecrawl = true;
@@ -95,18 +95,20 @@ describe("evidence provenance and keyless access", () => {
       ),
     );
     vi.stubGlobal("fetch", fetch);
-    const t = createTask(store);
+    const t = await createTask(store);
     const s = await source(t.id);
     const r = await request(app)
       .post(`/api/tasks/${t.id}/fetch`)
       .send({ sourceId: s.id });
     expect(r.status).toBe(200);
     expect(fetch.mock.calls[0][1].headers).not.toHaveProperty("Authorization");
-    expect(store.get(t.id)).toMatchObject({
+    expect(await store.get(t.id)).toMatchObject({
       spentMicros: 0,
       reservedMicros: 0,
     });
-    const ledger = store.events(t.id).find((e) => e.type === "budget_settled")!;
+    const ledger = (await store.events(t.id)).find(
+      (e) => e.type === "budget_settled",
+    )!;
     expect(ledger.data).toMatchObject({
       authMode: "keyless",
       chargeType: "free-tier",
@@ -114,8 +116,8 @@ describe("evidence provenance and keyless access", () => {
       estimateMicros: 0,
     });
     expect(
-      store.events(t.id).find((e) => e.type === "provider_response")?.data.usage
-        .credits,
+      (await store.events(t.id)).find((e) => e.type === "provider_response")
+        ?.data.usage.credits,
     ).toBe(1);
   });
   it("stops after a keyless refusal rather than retrying the quota/auth boundary", async () => {
@@ -124,7 +126,7 @@ describe("evidence provenance and keyless access", () => {
       .fn()
       .mockResolvedValue(new Response("{}", { status: 429 }));
     vi.stubGlobal("fetch", fetch);
-    const t = createTask(store);
+    const t = await createTask(store);
     const s = await source(t.id);
     await request(app)
       .post(`/api/tasks/${t.id}/fetch`)
@@ -154,7 +156,7 @@ describe("evidence provenance and keyless access", () => {
         ),
       ),
     );
-    const t = createTask(store);
+    const t = await createTask(store);
     const s = await source(t.id);
     expect(
       (
@@ -214,10 +216,10 @@ describe("evidence provenance and keyless access", () => {
         ),
       ),
     );
-    const t = createTask(store);
+    const t = await createTask(store);
     const first = await source(t.id, "https://example.com/funding");
     const second = await source(t.id, "https://example.com/product");
-    const fresh = store.get(t.id)!;
+    const fresh = (await store.get(t.id))!;
     fresh.assessments = [
       {
         sourceId: first.id,
@@ -232,26 +234,28 @@ describe("evidence provenance and keyless access", () => {
         },
       },
     ];
-    store.save(fresh);
+    await store.save(fresh);
     await request(app)
       .post(`/api/tasks/${t.id}/fetch`)
       .send({ sourceId: second.id });
-    const after = store.get(t.id)!;
+    const after = (await store.get(t.id))!;
     expect(after.assessments[0]).toMatchObject({
       disposition: "pending",
       criteria: { Active: "unknown", Funded: "pass", Relevant: "unknown" },
     });
     expect(after.sources[1].contentVersion).toBe(2);
     expect(
-      store.events(t.id).some((e) => e.type === "assessment_invalidated"),
+      (await store.events(t.id)).some(
+        (e) => e.type === "assessment_invalidated",
+      ),
     ).toBe(true);
   });
   it("rejects stale evidence versions before accepting a company", async () => {
-    const t = createTask(store);
+    const t = await createTask(store);
     const s = await source(t.id);
-    const current = store.get(t.id)!;
+    const current = (await store.get(t.id))!;
     current.sources[0].contentVersion = 2;
-    store.save(current);
+    await store.save(current);
     const payload = {
       sourceId: s.id,
       organization: "Example",

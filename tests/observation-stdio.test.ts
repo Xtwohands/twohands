@@ -61,7 +61,7 @@ afterEach(async () => {
     await new Promise<void>((resolve, reject) =>
       http.close((e) => (e ? reject(e) : resolve())),
     );
-  store.close();
+  await store.close();
   await rm(directory, { recursive: true, force: true });
   config.token = original.token;
   Object.assign(config.keys, original.keys);
@@ -112,7 +112,7 @@ it("bridges stdio to authenticated HTTP and records the client alongside cached 
   );
   expect(cached.cached).toBe(true);
   expect(cached.result.text).toBe("Synthetic public evidence");
-  expect(obs.db.get(s.id)?.spentMicros).toBe(1000);
+  expect((await obs.db.get(s.id))?.spentMicros).toBe(1000);
   const submitted = payload(
     await client.callTool({
       name: "submit_outcome",
@@ -160,12 +160,12 @@ it("bridges stdio to authenticated HTTP and records the client alongside cached 
   );
   expect(state.outcomes).toHaveLength(1);
   expect(state.previousOutputs).toHaveLength(1);
-  const events = obs.db
-    .events(s.id)
-    .filter((e) => e.type === "client_observed");
+  const events = (await obs.db.events(s.id)).filter(
+    (e) => e.type === "client_observed",
+  );
   expect(events).toHaveLength(1);
   expect(events[0].data.clientName).toBe("Codex intégration fixture");
-  expect(obs.db.detail(s.id)?.integrity).toBe(true);
+  expect((await obs.db.detail(s.id))?.integrity).toBe(true);
   const connections = (
     await request(app)
       .get("/api/observations/connection")
@@ -182,7 +182,7 @@ it("returns an auth error through the protocol without leaking the server token"
   });
   expect(result.isError).toBe(true);
   expect(JSON.stringify(result)).not.toContain("stdio-test-token");
-  expect(obs.db.list()).toHaveLength(0);
+  expect(await obs.db.list()).toHaveLength(0);
 });
 it("refuses a non-loopback bridge destination before sending requests", async () => {
   await expect(connect("https://example.com/api")).rejects.toThrow();
@@ -216,7 +216,6 @@ it("explains an unavailable HTTP service and preserves uncertainty about submitt
   expect(JSON.stringify(result)).toContain("reuse the same request key");
   expect(JSON.stringify(result)).not.toContain("stdio-test-token");
 });
-
 it("deduplicates concurrent operations from two independent MCP hosts", async () => {
   await connect();
   const peerTransport = new StdioClientTransport({
@@ -287,26 +286,25 @@ it("deduplicates concurrent operations from two independent MCP hosts", async ()
       peer.callTool({ name: "submit_outcome", arguments: final }),
     ]);
     expect(payload(outputs[0]).outcomeId).toBe(payload(outputs[1]).outcomeId);
-    expect(obs.require(s.id)).toMatchObject({
+    expect(await obs.require(s.id)).toMatchObject({
       spentMicros: 1000,
       reservedMicros: 0,
     });
-    expect(obs.require(s.id).outcomes).toHaveLength(1);
-    expect(obs.db.calls(s.id)).toHaveLength(1);
+    expect((await obs.require(s.id)).outcomes).toHaveLength(1);
+    expect(await obs.db.calls(s.id)).toHaveLength(1);
     expect(
-      obs.db.events(s.id).filter((e) => e.type === "client_observed"),
+      (await obs.db.events(s.id)).filter((e) => e.type === "client_observed"),
     ).toHaveLength(2);
-    expect(obs.db.detail(s.id)?.integrity).toBe(true);
+    expect((await obs.db.detail(s.id))?.integrity).toBe(true);
   } finally {
     release();
     await peer.close();
     await peerTransport.close();
   }
 });
-
 it("uses a scoped bridge key ahead of the owner token and enforces its lifetime cap and revocation", async () => {
   config.token = "owner-stdio-fixture-token-00000001";
-  const issued = obs.db.apiKeys.create({
+  const issued = await obs.db.apiKeys.create({
     name: "Scoped stdio fixture",
     requestKey: crypto.randomUUID(),
     scopes: [
@@ -356,7 +354,7 @@ it("uses a scoped bridge key ahead of the owner token and enforces its lifetime 
   });
   expect(blocked.isError).toBe(true);
   expect(invoked).toBe(1);
-  obs.db.apiKeys.revoke(issued.key.id, { revision: 0 });
+  await obs.db.apiKeys.revoke(issued.key.id, { revision: 0 });
   expect(
     (
       await client.callTool({
@@ -365,7 +363,7 @@ it("uses a scoped bridge key ahead of the owner token and enforces its lifetime 
       })
     ).isError,
   ).toBe(true);
-  expect(obs.db.apiKeys.get(issued.key.id)).toMatchObject({
+  expect(await obs.db.apiKeys.get(issued.key.id)).toMatchObject({
     spentMicros: 1000,
     reservedMicros: 0,
   });

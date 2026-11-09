@@ -58,18 +58,18 @@ export function fundingRoutes(
     };
   app.get(
     "/api/workspace/funding",
-    route((_req, res) => {
-      const summary = service.summary();
+    route(async (_req, res) => {
+      const summary = await service.summary();
       const stripeDeposits = Number(
-        service.store.db
+        (await service.store.db
           .prepare(
             "SELECT COUNT(*) AS n FROM stripe_deposits WHERE payment_intent_id IS NOT NULL",
           )
-          .get()!.n,
+          .get())!.n,
       );
       res.json({
         ...summary,
-        ...stripe.summary(),
+        ...(await stripe.summary()),
         stripeDeposits,
         totalDeposits: summary.totalDeposits + stripeDeposits,
       });
@@ -77,7 +77,9 @@ export function fundingRoutes(
   );
   app.post(
     "/api/workspace/funding/deposits",
-    route((req, res) => res.status(201).json(service.create(req.body))),
+    route(async (req, res) =>
+      res.status(201).json(await service.create(req.body)),
+    ),
   );
   app.post(
     "/api/workspace/funding/stripe",
@@ -87,7 +89,9 @@ export function fundingRoutes(
   );
   app.get(
     "/api/workspace/funding/stripe/:id",
-    route((req, res) => res.json(stripe.get(z.uuid().parse(req.params.id)))),
+    route(async (req, res) =>
+      res.json(await stripe.get(z.uuid().parse(req.params.id))),
+    ),
   );
   app.post(
     "/api/workspace/funding/stripe/:id/reconcile",
@@ -98,7 +102,9 @@ export function fundingRoutes(
   );
   app.get(
     "/api/workspace/funding/deposits/:id",
-    route((req, res) => res.json(service.get(z.uuid().parse(req.params.id)))),
+    route(async (req, res) =>
+      res.json(await service.get(z.uuid().parse(req.params.id))),
+    ),
   );
   app.post(
     "/api/workspace/funding/deposits/:id/verify",

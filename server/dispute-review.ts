@@ -69,16 +69,12 @@ export class DisputeReviewService {
   constructor(
     public stripe: StripeFundingService,
     private now = () => new Date().toISOString(),
-  ) {
-    stripe.funding.store.db
-      .exec(`CREATE TABLE IF NOT EXISTS funding_dispute_reviews(deposit_id TEXT PRIMARY KEY REFERENCES stripe_deposits(id),body TEXT NOT NULL);
-      CREATE TABLE IF NOT EXISTS funding_dispute_review_events(id TEXT PRIMARY KEY,deposit_id TEXT NOT NULL REFERENCES stripe_deposits(id),request_key TEXT NOT NULL UNIQUE,input_hash TEXT NOT NULL,body TEXT NOT NULL);`);
-  }
-  get(id: string): DisputeReviewCase {
-    const payment = this.stripe.get(id);
+  ) {}
+  async get(id: string): Promise<DisputeReviewCase> {
+    const payment = await this.stripe.get(id);
     if (!payment.disputed)
       throw new FundingError(404, "No dispute review exists for this payment.");
-    const row = this.stripe.funding.store.db
+    const row = await this.stripe.funding.store.db
       .prepare("SELECT body FROM funding_dispute_reviews WHERE deposit_id=?")
       .get(id);
     const saved = row
@@ -101,23 +97,31 @@ export class DisputeReviewService {
       holdRetained: true,
     };
   }
-  detail(id: string): DisputeReviewDetail {
-    const item = this.get(id);
-    const history = this.stripe.funding.store.db
-      .prepare(
-        "SELECT body FROM funding_dispute_review_events WHERE deposit_id=? ORDER BY rowid DESC LIMIT 100",
-      )
-      .all(id)
-      .map((r) => JSON.parse(String(r.body)) as DisputeReviewEvent);
+  async detail(id: string): Promise<DisputeReviewDetail> {
+    const item = await this.get(id);
+    const history = (
+      await this.stripe.funding.store.db
+        .prepare(
+          "SELECT body FROM funding_dispute_review_events WHERE deposit_id=? ORDER BY rowid DESC LIMIT 100",
+        )
+        .all(id)
+    ).map((r) => JSON.parse(String(r.body)) as DisputeReviewEvent);
     return { item, history };
   }
-  list(status = "all", query = "", page = 1): DisputeReviewQueue {
-    const cases = this.stripe.funding.store.db
-      .prepare(
-        "SELECT id FROM stripe_deposits WHERE json_extract(body,'$.disputed')=1 ORDER BY rowid DESC",
-      )
-      .all()
-      .map((r) => this.get(String(r.id)));
+  async list(
+    status = "all",
+    query = "",
+    page = 1,
+  ): Promise<DisputeReviewQueue> {
+    const cases = await Promise.all(
+      (
+        await this.stripe.funding.store.db
+          .prepare(
+            "SELECT id FROM stripe_deposits WHERE json_extract(body,'$.disputed')=1 ORDER BY rowid DESC",
+          )
+          .all()
+      ).map(async (r) => await this.get(String(r.id))),
+    );
     const counts = { needs_review: 0, in_review: 0, reviewed: 0 };
     for (const item of cases) counts[item.reviewStatus]++;
     const q = query.toLowerCase();
@@ -137,11 +141,15 @@ export class DisputeReviewService {
       counts,
     };
   }
-  review(id: string, raw: unknown, actor: string): DisputeReviewDetail {
+  async review(
+    id: string,
+    raw: unknown,
+    actor: string,
+  ): Promise<DisputeReviewDetail> {
     const input = reviewInput.parse(raw);
     const inputHash = hash({ id, input, actor });
-    return this.stripe.funding.store.transaction(() => {
-      const previousRequest = this.stripe.funding.store.db
+    return await this.stripe.funding.store.transaction(async () => {
+      const previousRequest = await this.stripe.funding.store.db
         .prepare(
           "SELECT input_hash FROM funding_dispute_review_events WHERE request_key=?",
         )
@@ -152,9 +160,9 @@ export class DisputeReviewService {
             409,
             "This review request key was already used with different details.",
           );
-        return this.detail(id);
+        return await this.detail(id);
       }
-      const current = this.get(id);
+      const current = await this.get(id);
       if (
         input.revision !== current.revision ||
         input.evidenceFingerprint !== current.evidenceFingerprint
@@ -184,15 +192,15 @@ export class DisputeReviewService {
         evidenceFingerprint: current.evidenceFingerprint,
         evidence: current.payment,
       };
-      this.stripe.funding.store.db
+      await this.stripe.funding.store.db
         .prepare(
           "INSERT INTO funding_dispute_reviews VALUES (?,?) ON CONFLICT(deposit_id) DO UPDATE SET body=excluded.body",
         )
         .run(id, JSON.stringify(updated));
-      this.stripe.funding.store.db
+      await this.stripe.funding.store.db
         .prepare("INSERT INTO funding_dispute_review_events VALUES (?,?,?,?,?)")
         .run(event.id, id, input.requestKey, inputHash, JSON.stringify(event));
-      return this.detail(id);
+      return await this.detail(id);
     });
   }
 }

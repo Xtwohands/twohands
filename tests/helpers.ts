@@ -12,10 +12,10 @@ export const intent: Intent = {
   preference: "balanced",
   consent: false,
 };
-export function createTask(
+export async function createTask(
   store: Store,
   overrides: Partial<Intent> = {},
-): Task {
+): Promise<Task> {
   const t: Task = {
     id: randomUUID(),
     intent: { ...intent, ...overrides },
@@ -27,7 +27,7 @@ export function createTask(
     sources: [],
     assessments: [],
   };
-  store.save(t);
+  await store.save(t);
   return t;
 }
 export function providerResults(provider: "exa" | "tavily", count = 3) {

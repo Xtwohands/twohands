@@ -1,14 +1,20 @@
 import { config } from "./config.js";
 import type { Store } from "./store.js";
 import type { Candidate, TraceEvent } from "./types.js";
-export function analytics(store: Store) {
-  const tasks = store.tasks().filter((t) => t.intent.consent);
+export async function analytics(store: Store) {
+  const tasks = (await store.tasks()).filter((t) => t.intent.consent);
   const minimum = config.minCohort;
   const base = { cohortSize: tasks.length, minCohort: minimum };
   if (tasks.length < minimum) return { suppressed: true as const, ...base };
-  const histories = tasks.map((t) => ({ task: t, events: store.events(t.id) }));
+  const histories = await Promise.all(
+    tasks.map(async (t) => ({ task: t, events: await store.events(t.id) })),
+  );
   const events = histories.flatMap((h) => h.events);
-  const protectedCount = (items: { taskId: string }[]) =>
+  const protectedCount = (
+    items: {
+      taskId: string;
+    }[],
+  ) =>
     !items.length
       ? 0
       : new Set(items.map((e) => e.taskId)).size < minimum
@@ -186,4 +192,4 @@ export function analytics(store: Store) {
     note: "Initial-route opportunities are counted once per tool invocation; fallback checks do not inflate conversion. Coverage is not company verification. Costs are estimates. Small task, provider, and metric subcohorts are withheld; a dash means withheld or not applicable.",
   };
 }
-export type Analytics = ReturnType<typeof analytics>;
+export type Analytics = Awaited<ReturnType<typeof analytics>>;

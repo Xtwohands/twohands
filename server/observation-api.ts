@@ -16,7 +16,6 @@ import {
   outcomeInput,
   evaluationInput,
 } from "./observation.js";
-
 export function observationRoutes(app: Express, obs: Observatory) {
   const route =
     (fn: (req: Request, res: Response) => unknown) =>
@@ -34,7 +33,7 @@ export function observationRoutes(app: Express, obs: Observatory) {
           } catch {
             throw new ObservationError(400, "Invalid MCP client identity.");
           }
-          recordConnection(
+          await recordConnection(
             obs.db,
             clientIdentity.parse(parsed),
             req.params.id ? String(req.params.id) : undefined,
@@ -58,8 +57,8 @@ export function observationRoutes(app: Express, obs: Observatory) {
     };
   app.get(
     "/api/observations/connection",
-    route((_req, res) => {
-      const clients = connections(obs.db);
+    route(async (_req, res) => {
+      const clients = await connections(obs.db);
       res.json({
         ...clients[0],
         lastSeenAt: clients[0]?.lastSeenAt ?? null,
@@ -71,41 +70,47 @@ export function observationRoutes(app: Express, obs: Observatory) {
   );
   app.post(
     "/api/observations/connection",
-    route((req, res) =>
-      res.json(recordConnection(obs.db, clientIdentity.parse(req.body))),
+    route(async (req, res) =>
+      res.json(await recordConnection(obs.db, clientIdentity.parse(req.body))),
     ),
   );
   app.get(
     "/api/observations",
-    route((_req, res) => res.json(obs.db.list().map(observationListItem))),
+    route(async (_req, res) =>
+      res.json((await obs.db.list()).map(observationListItem)),
+    ),
   );
   app.get(
     "/api/observations/summary",
-    route((_req, res) => res.json(obs.summary())),
+    route(async (_req, res) => res.json(await obs.summary())),
   );
   app.get(
     "/api/observations/catalog",
-    route((_req, res) => res.json(obs.catalog(res.locals.apiKeyId))),
+    route(async (_req, res) =>
+      res.json(await obs.catalog(res.locals.apiKeyId)),
+    ),
   );
   app.get(
     "/api/observations/aggregate",
-    route((_req, res) => res.json(obs.commercialAggregate())),
+    route(async (_req, res) => res.json(await obs.commercialAggregate())),
   );
   app.post(
     "/api/observations",
-    route((req, res) =>
+    route(async (req, res) =>
       res
         .status(201)
-        .json(obs.create(sessionInput.parse(req.body), "operator_entered")),
+        .json(
+          await obs.create(sessionInput.parse(req.body), "operator_entered"),
+        ),
     ),
   );
   app.post(
     "/api/observations/agent-sessions",
-    route((req, res) =>
+    route(async (req, res) =>
       res
         .status(201)
         .json(
-          obs.createAgentSession(
+          await obs.createAgentSession(
             agentSessionInput.parse(req.body),
             res.locals.apiKeyId,
           ),
@@ -114,27 +119,27 @@ export function observationRoutes(app: Express, obs: Observatory) {
   );
   app.post(
     "/api/observations/proposals",
-    route((req, res) =>
+    route(async (req, res) =>
       res
         .status(201)
-        .json(obs.create(sessionInput.parse(req.body), "agent_reported")),
+        .json(await obs.create(sessionInput.parse(req.body), "agent_reported")),
     ),
   );
   app.get(
     "/api/observations/:id",
-    route((req, res) => {
-      const s = obs.db.detail(String(req.params.id));
+    route(async (req, res) => {
+      const s = await obs.db.detail(String(req.params.id));
       if (!s) throw new ObservationError(404, "Session not found.");
       res.json(s);
     }),
   );
   app.get(
     "/api/observations/:id/calls/:callId",
-    route((req, res) => {
-      obs.require(String(req.params.id));
-      const call = obs.db
-        .calls(String(req.params.id))
-        .find((c) => c.id === req.params.callId);
+    route(async (req, res) => {
+      await obs.require(String(req.params.id));
+      const call = (await obs.db.calls(String(req.params.id))).find(
+        (c) => c.id === req.params.callId,
+      );
       if (!call)
         throw new ObservationError(404, "Tool call not found in this session.");
       res.json({ ...call, cached: true });
@@ -142,20 +147,20 @@ export function observationRoutes(app: Express, obs: Observatory) {
   );
   app.post(
     "/api/observations/:id/approve",
-    route((req, res) => {
+    route(async (req, res) => {
       const input = z
         .object({ intentHash: z.string().length(64) })
         .strict()
         .parse(req.body);
-      res.json(obs.approve(String(req.params.id), input.intentHash));
+      res.json(await obs.approve(String(req.params.id), input.intentHash));
     }),
   );
   app.post(
     "/api/observations/:id/discover",
-    route((req, res) => {
+    route(async (req, res) => {
       const input = discoveryInput.parse(req.body);
       res.json(
-        obs.discover(
+        await obs.discover(
           String(req.params.id),
           input,
           undefined,
@@ -174,33 +179,36 @@ export function observationRoutes(app: Express, obs: Observatory) {
   );
   app.post(
     "/api/observations/:id/outcome",
-    route((req, res) =>
+    route(async (req, res) =>
       res.json(
-        obs.outcome(String(req.params.id), outcomeInput.parse(req.body)),
+        await obs.outcome(String(req.params.id), outcomeInput.parse(req.body)),
       ),
     ),
   );
   app.post(
     "/api/observations/:id/evaluate",
-    route((req, res) =>
+    route(async (req, res) =>
       res.json(
-        obs.evaluate(String(req.params.id), evaluationInput.parse(req.body)),
+        await obs.evaluate(
+          String(req.params.id),
+          evaluationInput.parse(req.body),
+        ),
       ),
     ),
   );
   app.post(
     "/api/observations/:id/consent",
-    route((req, res) => {
+    route(async (req, res) => {
       const { consent } = z
         .object({ consent: z.boolean() })
         .strict()
         .parse(req.body);
-      res.json(obs.consent(String(req.params.id), consent));
+      res.json(await obs.consent(String(req.params.id), consent));
     }),
   );
   app.post(
     "/api/observations/:id/cases",
-    route((req, res) => {
+    route(async (req, res) => {
       const input = z
         .object({
           evaluationId: z.string().uuid(),
@@ -209,13 +217,17 @@ export function observationRoutes(app: Express, obs: Observatory) {
         .strict()
         .parse(req.body);
       res.json(
-        obs.openCase(String(req.params.id), input.evaluationId, input.reason),
+        await obs.openCase(
+          String(req.params.id),
+          input.evaluationId,
+          input.reason,
+        ),
       );
     }),
   );
   app.post(
     "/api/observations/:id/cases/:caseId",
-    route((req, res) => {
+    route(async (req, res) => {
       const input = z
         .object({
           status: z.enum(["resolved", "dismissed"]),
@@ -224,7 +236,7 @@ export function observationRoutes(app: Express, obs: Observatory) {
         .strict()
         .parse(req.body);
       res.json(
-        obs.resolveCase(
+        await obs.resolveCase(
           String(req.params.id),
           String(req.params.caseId),
           input.status,
@@ -235,8 +247,8 @@ export function observationRoutes(app: Express, obs: Observatory) {
   );
   app.get(
     "/api/observations/:id/export",
-    route((req, res) => {
-      const s = obs.db.detail(String(req.params.id));
+    route(async (req, res) => {
+      const s = await obs.db.detail(String(req.params.id));
       if (!s) throw new ObservationError(404, "Session not found.");
       res.json({
         version: "observation-summary-v1",
@@ -295,16 +307,16 @@ export function observationRoutes(app: Express, obs: Observatory) {
   );
   app.post(
     "/api/observations/:id/delete",
-    route((req, res) => {
-      const s = obs.require(String(req.params.id));
+    route(async (req, res) => {
+      const s = await obs.require(String(req.params.id));
       if (req.body?.confirmSessionId !== s.id)
         throw new ObservationError(
           400,
           "Confirm this session ID to delete its local records.",
         );
-      if (obs.db.calls(s.id).some((c) => c.status === "running"))
+      if ((await obs.db.calls(s.id)).some((c) => c.status === "running"))
         throw new ObservationError(409, "Wait for active calls to finish.");
-      obs.db.remove(s.id);
+      await obs.db.remove(s.id);
       res.json({ ok: true });
     }),
   );

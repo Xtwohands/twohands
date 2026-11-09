@@ -6,9 +6,10 @@ import { join } from "node:path";
 import { once } from "node:events";
 import { Store } from "../server/store";
 import { intent } from "./helpers";
-async function start(
-  path: string,
-): Promise<{ child: ChildProcess; port: number }> {
+async function start(path: string): Promise<{
+  child: ChildProcess;
+  port: number;
+}> {
   const child = spawn(
     process.execPath,
     ["--import", "tsx", "tests/fixtures/crash-server.ts"],
@@ -69,25 +70,31 @@ describe("real process interruption recovery", () => {
       await kill(child);
       child = undefined;
       const store = new Store(path);
-      store.recover();
-      store.recover();
-      const recovered = store.get(task.id)!;
+      await store.recover();
+      await store.recover();
+      const recovered = (await store.get(task.id))!;
       expect(recovered).toMatchObject({
         status: "partial",
         spentMicros: inFlight.reservedMicros,
         reservedMicros: 0,
       });
       expect(
-        store.events(task.id).filter((e) => e.type === "budget_settled"),
+        (await store.events(task.id)).filter(
+          (e) => e.type === "budget_settled",
+        ),
       ).toHaveLength(1);
       expect(
-        store.events(task.id).some((e) => e.type === "provider_interrupted"),
+        (await store.events(task.id)).some(
+          (e) => e.type === "provider_interrupted",
+        ),
       ).toBe(true);
-      expect(store.receipt(task.id, "research.search", key)).toMatchObject({
+      expect(
+        await store.receipt(task.id, "research.search", key),
+      ).toMatchObject({
         state: "interrupted",
         status: 409,
       });
-      store.close();
+      await store.close();
       instance = await start(path);
       child = instance.child;
       const retry = await fetch(

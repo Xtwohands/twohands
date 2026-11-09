@@ -62,38 +62,40 @@ beforeEach(() => {
   keys = obs.db.apiKeys;
   app = createApp(store, undefined, obs);
 });
-afterEach(() => {
-  store.close();
+afterEach(async () => {
+  await store.close();
   config.token = original.token;
   Object.assign(config.keys, original.keys);
   Object.assign(config.prices, original.prices);
   config.rpm = original.rpm;
 });
-const create = () => obs.createAgentSession(intent);
+const create = async () => await obs.createAgentSession(intent);
 describe("scoped workspace API keys", () => {
-  it("shows secrets once, persists only hashes, and replays creation without recovering the secret", () => {
+  it("shows secrets once, persists only hashes, and replays creation without recovering the secret", async () => {
     const body = settings(),
-      result = keys.create(body);
+      result = await keys.create(body);
     expect(result.secret).toMatch(/^oct_key_[A-Za-z0-9_-]{43}$/);
-    const row = store.db.prepare("SELECT * FROM workspace_api_keys").get()!;
+    const row = (await store.db
+      .prepare("SELECT * FROM workspace_api_keys")
+      .get())!;
     expect(row.secret_hash).toMatch(/^[a-f0-9]{64}$/);
     expect(JSON.stringify(row)).not.toContain(result.secret!);
-    expect(JSON.stringify(keys.events(result.key.id))).not.toContain(
+    expect(JSON.stringify(await keys.events(result.key.id))).not.toContain(
       result.secret!,
     );
-    expect(keys.create(body)).toMatchObject({
+    expect(await keys.create(body)).toMatchObject({
       secret: null,
       replayed: true,
       key: { id: result.key.id },
     });
-    expect(keys.list()).toHaveLength(1);
-    expect(keys.events(result.key.id)).toHaveLength(1);
-    expect(() => keys.create({ ...body, name: "different" })).toThrow(
-      /different/,
-    );
-    expect(new ApiKeyService(store).authenticate(result.secret!).id).toBe(
-      result.key.id,
-    );
+    expect(await keys.list()).toHaveLength(1);
+    expect(await keys.events(result.key.id)).toHaveLength(1);
+    await expect(
+      (async () => await keys.create({ ...body, name: "different" }))(),
+    ).rejects.toThrow(/different/);
+    expect(
+      (await new ApiKeyService(store).authenticate(result.secret!)).id,
+    ).toBe(result.key.id);
   });
   it("requires owner access for issuance and never treats an invalid scoped key as local owner", async () => {
     expect(
@@ -148,11 +150,11 @@ describe("scoped workspace API keys", () => {
         ).status,
       ).toBe(503);
     } finally {
-      emptyStore.close();
+      await emptyStore.close();
     }
   });
   it("denies owner, funding, legacy and operator routes even to a key with every scope", async () => {
-    const { secret } = keys.create(settings());
+    const { secret } = await keys.create(settings());
     for (const [method, path] of [
       ["get", "/api/provider-lab"],
       ["get", "/api/workspace/funding"],
@@ -183,7 +185,9 @@ describe("scoped workspace API keys", () => {
     expect(search).not.toHaveBeenCalled();
   });
   it("authorizes exact scopes and refuses alternate methods and unknown paths by default", async () => {
-    const { secret } = keys.create(settings({ scopes: ["tools:discover"] }));
+    const { secret } = await keys.create(
+      settings({ scopes: ["tools:discover"] }),
+    );
     expect(
       (await request(app).get("/api/observations/catalog").set(auth(secret!)))
         .status,
@@ -217,10 +221,10 @@ describe("scoped workspace API keys", () => {
     ).toBe(403);
   });
   it("restricts discovery/preview and execution to the key's allowed tools", async () => {
-    const { key, secret } = keys.create(
+    const { key, secret } = await keys.create(
       settings({ allowedTools: ["tavily_search"] }),
     );
-    const session = create();
+    const session = await create();
     const result = await request(app)
       .post(`/api/observations/${session.id}/discover`)
       .set(auth(secret!))
@@ -244,10 +248,10 @@ describe("scoped workspace API keys", () => {
       .send(call());
     expect(denied.status).toBe(403);
     expect(search).not.toHaveBeenCalled();
-    expect(keys.get(key.id).spentMicros).toBe(0);
+    expect((await keys.get(key.id)).spentMicros).toBe(0);
   });
   it("attributes tool calls to the authenticated key and charges an idempotent call only once", async () => {
-    const { key, secret } = keys.create(settings());
+    const { key, secret } = await keys.create(settings());
     const created = await request(app)
       .post("/api/observations/agent-sessions")
       .set(auth(secret!))
@@ -265,7 +269,7 @@ describe("scoped workspace API keys", () => {
       .set(auth(secret!))
       .send(call());
     expect(replay.body.replayed).toBe(true);
-    expect(keys.get(key.id)).toMatchObject({
+    expect(await keys.get(key.id)).toMatchObject({
       spentMicros: 7000,
       reservedMicros: 0,
       remainingMicros: 13000,
@@ -279,24 +283,24 @@ describe("scoped workspace API keys", () => {
           .send({ ...call(), apiKeyId: randomUUID() })
       ).status,
     ).toBe(400);
-    expect(JSON.stringify(obs.db.detail(created.body.id))).not.toContain(
+    expect(JSON.stringify(await obs.db.detail(created.body.id))).not.toContain(
       secret!,
     );
   });
   it("cannot reset a key's cap by creating another research session", async () => {
-    const { key } = keys.create(settings({ limitUsd: "0.01" }));
-    const a = create(),
-      b = create();
+    const { key } = await keys.create(settings({ limitUsd: "0.01" }));
+    const a = await create(),
+      b = await create();
     await obs.execute(a.id, call(), key.id);
     await expect(obs.execute(b.id, call(), key.id)).rejects.toThrow(
       /API key's total/,
     );
     expect(search).toHaveBeenCalledTimes(1);
-    expect(obs.db.calls(b.id)).toHaveLength(0);
-    expect(obs.require(b.id).reservedMicros).toBe(0);
+    expect(await obs.db.calls(b.id)).toHaveLength(0);
+    expect((await obs.require(b.id)).reservedMicros).toBe(0);
   });
   it("reserves before network work and prevents concurrent calls from overspending", async () => {
-    const { key } = keys.create(settings({ limitUsd: "0.01" }));
+    const { key } = await keys.create(settings({ limitUsd: "0.01" }));
     let release!: () => void;
     const gate = new Promise<void>((r) => {
       release = r;
@@ -305,10 +309,11 @@ describe("scoped workspace API keys", () => {
       await gate;
       return { sources: [], httpStatus: 200 };
     });
-    const a = create(),
-      b = create();
+    const a = await create(),
+      b = await create();
     const pending = obs.execute(a.id, call(), key.id);
-    expect(keys.get(key.id)).toMatchObject({
+    await vi.waitFor(() => expect(search).toHaveBeenCalled());
+    expect(await keys.get(key.id)).toMatchObject({
       spentMicros: 0,
       reservedMicros: 7000,
     });
@@ -318,13 +323,13 @@ describe("scoped workspace API keys", () => {
     expect(search).toHaveBeenCalledTimes(1);
     release();
     await pending;
-    expect(keys.get(key.id)).toMatchObject({
+    expect(await keys.get(key.id)).toMatchObject({
       spentMicros: 7000,
       reservedMicros: 0,
     });
   });
   it("revokes new access immediately while settling previously admitted calls", async () => {
-    const { key, secret } = keys.create(settings());
+    const { key, secret } = await keys.create(settings());
     let release!: () => void;
     const gate = new Promise<void>((r) => {
       release = r;
@@ -333,39 +338,44 @@ describe("scoped workspace API keys", () => {
       await gate;
       return { sources: [], httpStatus: 200 };
     });
-    const s = create();
+    const s = await create();
     const pending = obs.execute(s.id, call(), key.id);
-    keys.revoke(key.id, { revision: 0 });
-    expect(() => keys.authenticate(secret!)).toThrow(/revoked/);
+    await vi.waitFor(() => expect(search).toHaveBeenCalled());
+    await keys.revoke(key.id, { revision: 0 });
+    await expect(
+      (async () => await keys.authenticate(secret!))(),
+    ).rejects.toThrow(/revoked/);
     await expect(obs.execute(s.id, call("second"), key.id)).rejects.toThrow(
       /revoked/,
     );
     release();
     await pending;
-    expect(keys.get(key.id)).toMatchObject({
+    expect(await keys.get(key.id)).toMatchObject({
       status: "revoked",
       spentMicros: 7000,
       reservedMicros: 0,
     });
-    expect(keys.revoke(key.id, { revision: 0 }).revokedAt).toBeTruthy();
+    expect((await keys.revoke(key.id, { revision: 0 })).revokedAt).toBeTruthy();
     expect(
-      keys.events(key.id).filter((e) => e.type === "revoked"),
+      (await keys.events(key.id)).filter((e) => e.type === "revoked"),
     ).toHaveLength(1);
   });
   it("checks expiry at both authentication and provider admission", async () => {
     let now = Date.now();
     const service = new ApiKeyService(store, () => now);
-    const issued = service.create(settings({ expiresInDays: 7 }));
-    expect(service.authenticate(issued.secret!).id).toBe(issued.key.id);
+    const issued = await service.create(settings({ expiresInDays: 7 }));
+    expect((await service.authenticate(issued.secret!)).id).toBe(issued.key.id);
     now += 7 * 86400000;
-    expect(service.get(issued.key.id).status).toBe("expired");
-    expect(() => service.authenticate(issued.secret!)).toThrow(/expired/);
-    expect(() => service.toolAccess(issued.key.id, "exa_search")).toThrow(
-      /expired/,
-    );
+    expect((await service.get(issued.key.id)).status).toBe("expired");
+    await expect(
+      (async () => await service.authenticate(issued.secret!))(),
+    ).rejects.toThrow(/expired/);
+    await expect(
+      (async () => await service.toolAccess(issued.key.id, "exa_search"))(),
+    ).rejects.toThrow(/expired/);
     let rejected: unknown;
     try {
-      service.update(issued.key.id, {
+      await service.update(issued.key.id, {
         name: issued.key.name,
         scopes: issued.key.scopes,
         allowedTools: issued.key.allowedTools,
@@ -378,8 +388,8 @@ describe("scoped workspace API keys", () => {
     expect(rejected).toMatchObject({ status: 409 });
   });
   it("rejects stale edits and limits below existing spend/reservations", async () => {
-    const { key } = keys.create(settings());
-    await obs.execute(create().id, call(), key.id);
+    const { key } = await keys.create(settings());
+    await obs.execute((await create()).id, call(), key.id);
     const update = {
       name: key.name,
       scopes: key.scopes,
@@ -387,60 +397,68 @@ describe("scoped workspace API keys", () => {
       limitUsd: "0.005",
       revision: 0,
     };
-    expect(() => keys.update(key.id, update)).toThrow(/lower/);
-    const next = keys.update(key.id, {
+    await expect(
+      (async () => await keys.update(key.id, update))(),
+    ).rejects.toThrow(/lower/);
+    const next = await keys.update(key.id, {
       ...update,
       limitUsd: "0.03",
       scopes: ["tools:discover"],
     });
     expect(next.revision).toBe(1);
-    expect(() => keys.update(key.id, { ...update, limitUsd: "0.03" })).toThrow(
-      /changed/,
-    );
-    expect(() => keys.revoke(key.id, { revision: 0 })).toThrow(/changed/);
-    await expect(obs.execute(create().id, call(), key.id)).rejects.toThrow(
-      /cannot execute/,
-    );
-    expect(keys.events(key.id).map((e) => e.type)).toEqual([
+    await expect(
+      (async () =>
+        await keys.update(key.id, { ...update, limitUsd: "0.03" }))(),
+    ).rejects.toThrow(/changed/);
+    await expect(
+      (async () => await keys.revoke(key.id, { revision: 0 }))(),
+    ).rejects.toThrow(/changed/);
+    await expect(
+      obs.execute((await create()).id, call(), key.id),
+    ).rejects.toThrow(/cannot execute/);
+    expect((await keys.events(key.id)).map((e) => e.type)).toEqual([
       "updated",
       "created",
     ]);
   });
   it("retains conservative estimates on provider failure without double charging retries", async () => {
-    const { key } = keys.create(settings());
+    const { key } = await keys.create(settings());
     search.mockRejectedValueOnce(new Error("Unknown provider outcome"));
-    const s = create();
+    const s = await create();
     expect((await obs.execute(s.id, call(), key.id)).status).toBe("failed");
     await obs.execute(s.id, call(), key.id);
-    expect(keys.get(key.id)).toMatchObject({
+    expect(await keys.get(key.id)).toMatchObject({
       spentMicros: 7000,
       reservedMicros: 0,
     });
     expect(search).toHaveBeenCalledTimes(1);
   });
   it("rolls back key reservation when the enclosing call transaction fails", async () => {
-    const { key } = keys.create(settings());
-    store.db.exec(
+    const { key } = await keys.create(settings());
+    await store.db.exec(
       "CREATE TRIGGER reject_key_call BEFORE INSERT ON observation_calls BEGIN SELECT RAISE(ABORT,'fixture rollback'); END;",
     );
-    await expect(obs.execute(create().id, call(), key.id)).rejects.toThrow();
-    expect(keys.get(key.id)).toMatchObject({
+    await expect(
+      obs.execute((await create()).id, call(), key.id),
+    ).rejects.toThrow();
+    expect(await keys.get(key.id)).toMatchObject({
       spentMicros: 0,
       reservedMicros: 0,
     });
     expect(search).not.toHaveBeenCalled();
     expect(
-      store.db.prepare("SELECT COUNT(*) AS n FROM api_key_spend").get()!.n,
+      (await store.db.prepare("SELECT COUNT(*) AS n FROM api_key_spend").get())!
+        .n,
     ).toBe(0);
   });
   it("keeps key spend charged after research retention and permits free operations at a zero cap", async () => {
-    const { key, secret } = keys.create(settings({ limitUsd: "0" }));
-    expect(keys.authenticate(secret!).status).toBe("at_limit");
+    const { key, secret } = await keys.create(settings({ limitUsd: "0" }));
+    expect((await keys.authenticate(secret!)).status).toBe("at_limit");
     expect(
       (await request(app).get("/api/observations/catalog").set(auth(secret!)))
         .status,
     ).toBe(200);
-    const preview = obs.preview(
+    const preview = await obs.preview(
       {
         need: "fixture",
         operations: [{ operation: "search", query: "fixture" }],
@@ -449,18 +467,18 @@ describe("scoped workspace API keys", () => {
     );
     expect(preview.budgetMicros).toBe(0);
     expect(preview.candidateTools).toEqual([]);
-    await expect(obs.execute(create().id, call(), key.id)).rejects.toThrow(
-      /API key's total/,
-    );
-    const paid = keys.create(settings());
-    const s = create();
+    await expect(
+      obs.execute((await create()).id, call(), key.id),
+    ).rejects.toThrow(/API key's total/);
+    const paid = await keys.create(settings());
+    const s = await create();
     await obs.execute(s.id, call(), paid.key.id);
-    obs.db.remove(s.id);
-    expect(keys.get(paid.key.id).spentMicros).toBe(7000);
+    await obs.db.remove(s.id);
+    expect((await keys.get(paid.key.id)).spentMicros).toBe(7000);
   });
-  it("parses exact decimal limits and rejects extra privilege/counter fields", () => {
+  it("parses exact decimal limits and rejects extra privilege/counter fields", async () => {
     expect(
-      keys.create(settings({ limitUsd: "0.000001" })).key.limitMicros,
+      (await keys.create(settings({ limitUsd: "0.000001" }))).key.limitMicros,
     ).toBe(1);
     for (const extra of [
       { limitUsd: "1e3" },
@@ -472,6 +490,8 @@ describe("scoped workspace API keys", () => {
       { spentMicros: -1 },
       { workspaceId: randomUUID() },
     ])
-      expect(() => keys.create(settings(extra))).toThrow();
+      await expect(
+        (async () => await keys.create(settings(extra)))(),
+      ).rejects.toThrow();
   });
 });

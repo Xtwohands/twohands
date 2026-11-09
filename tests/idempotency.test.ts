@@ -18,8 +18,8 @@ beforeEach(() => {
     firecrawl: true,
   });
 });
-afterEach(() => {
-  store.close();
+afterEach(async () => {
+  await store.close();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
@@ -38,7 +38,7 @@ describe("paid-operation request receipts", () => {
         ),
     );
     vi.stubGlobal("fetch", fetch);
-    const t = createTask(store);
+    const t = await createTask(store);
     const first = await request(app)
       .post(`/api/tasks/${t.id}/run`)
       .set("Idempotency-Key", key)
@@ -66,7 +66,7 @@ describe("paid-operation request receipts", () => {
           }),
       ),
     );
-    const t = createTask(store);
+    const t = await createTask(store);
     expect(
       (
         await request(app)
@@ -83,7 +83,7 @@ describe("paid-operation request receipts", () => {
     release(new Response(JSON.stringify(providerResults(calledProvider))));
     await wait();
     expect(
-      store.events(t.id).filter((e) => e.type === "provider_request"),
+      (await store.events(t.id)).filter((e) => e.type === "provider_request"),
     ).toHaveLength(1);
   });
   it("rejects reuse of a key with different normalized search arguments", async () => {
@@ -93,7 +93,7 @@ describe("paid-operation request receipts", () => {
         async () => new Response(JSON.stringify(providerResults("tavily"))),
       ),
     );
-    const t = createTask(store);
+    const t = await createTask(store);
     await request(app)
       .post(`/api/tasks/${t.id}/run`)
       .set("Idempotency-Key", key)
@@ -117,7 +117,7 @@ describe("paid-operation request receipts", () => {
         ),
     );
     vi.stubGlobal("fetch", fetch);
-    const t = createTask(store);
+    const t = await createTask(store);
     const source = await request(app)
       .post(`/api/tasks/${t.id}/sources`)
       .send({ url: "https://example.com" });
@@ -132,12 +132,12 @@ describe("paid-operation request receipts", () => {
       .send({ sourceId: source.body.id });
     expect(again.body).toMatchObject({ ok: true, replayed: true });
     expect(fetch).toHaveBeenCalledTimes(1);
-    expect(store.get(t.id)?.spentMicros).toBe(config.prices.firecrawl);
+    expect((await store.get(t.id))?.spentMicros).toBe(config.prices.firecrawl);
   });
   it("replays a failed extraction without a second charge or vendor request", async () => {
     const fetch = vi.fn(async () => new Response("{}", { status: 500 }));
     vi.stubGlobal("fetch", fetch);
-    const task = createTask(store);
+    const task = await createTask(store);
     const source = await request(app)
       .post(`/api/tasks/${task.id}/sources`)
       .send({ url: "https://example.com" });
@@ -157,20 +157,22 @@ describe("paid-operation request receipts", () => {
     expect(retry.status).toBe(400);
     expect(retry.body.replayed).toBe(true);
     expect(fetch).toHaveBeenCalledTimes(1);
-    expect(store.get(task.id)?.spentMicros).toBe(config.prices.firecrawl);
+    expect((await store.get(task.id))?.spentMicros).toBe(
+      config.prices.firecrawl,
+    );
   });
-  it("does not resume an interrupted receipt after recovery", () => {
-    const t = createTask(store);
-    store.beginReceipt(t.id, "research.search", key, "args-hash");
-    store.recover();
-    expect(store.receipt(t.id, "research.search", key)).toMatchObject({
+  it("does not resume an interrupted receipt after recovery", async () => {
+    const t = await createTask(store);
+    await store.beginReceipt(t.id, "research.search", key, "args-hash");
+    await store.recover();
+    expect(await store.receipt(t.id, "research.search", key)).toMatchObject({
       state: "interrupted",
       status: 409,
     });
     expect(engine.active.size).toBe(0);
   });
   it("rolls back a receipt and leaves no active job when persisting the operation fails", async () => {
-    const t = createTask(store);
+    const t = await createTask(store);
     const fetch = vi.fn();
     vi.stubGlobal("fetch", fetch);
     vi.spyOn(store, "save").mockImplementationOnce(() => {
@@ -181,17 +183,17 @@ describe("paid-operation request receipts", () => {
       .set("Idempotency-Key", key)
       .send({});
     expect(r.status).toBe(500);
-    expect(store.receipt(t.id, "research.search", key)).toBeUndefined();
+    expect(await store.receipt(t.id, "research.search", key)).toBeUndefined();
     expect(engine.active.size).toBe(0);
     expect(fetch).not.toHaveBeenCalled();
   });
   it("validates identifier format before beginning any provider operation", async () => {
-    const t = createTask(store);
+    const t = await createTask(store);
     const r = await request(app)
       .post(`/api/tasks/${t.id}/run`)
       .set("Idempotency-Key", "short")
       .send({});
     expect(r.status).toBe(400);
-    expect(store.events(t.id)).toHaveLength(0);
+    expect(await store.events(t.id)).toHaveLength(0);
   });
 });

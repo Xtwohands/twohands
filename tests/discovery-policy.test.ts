@@ -7,7 +7,6 @@ import { createApp } from "../server/app";
 import { digest } from "../server/observation-store";
 import { SHARING_POLICY } from "../server/sharing-policy";
 import { verifyPrivateEvidence } from "../server/evidence-verification";
-
 let store: Store, obs: Observatory;
 const original = {
   keys: { ...config.keys },
@@ -20,8 +19,8 @@ const scrape = vi.fn(async () => ({
   httpStatus: 200,
   pageStatus: 200,
 }));
-function session() {
-  return obs.createAgentSession({
+async function session() {
+  return await obs.createAgentSession({
     title: "Discovery fixture",
     objective: "Find reliable public evidence for the requested answer.",
     criteria: [{ text: "Cites a source", weight: 1 }],
@@ -50,17 +49,16 @@ beforeEach(() => {
   search.mockClear();
   scrape.mockClear();
 });
-afterEach(() => {
-  store.close();
+afterEach(async () => {
+  await store.close();
   Object.assign(config.keys, original.keys);
   config.token = original.token;
   config.agentSessionBudgetMicros = original.budget;
 });
-
 describe("server-owned candidate discovery", () => {
-  it("finds both search alternatives from a provider-neutral request and preserves context without spending", () => {
-    const s = session();
-    const offered = obs.discover(s.id, {
+  it("finds both search alternatives from a provider-neutral request and preserves context without spending", async () => {
+    const s = await session();
+    const offered = await obs.discover(s.id, {
       need: "Locate a primary source",
       context: {
         requirements: "Prefer official documentation",
@@ -96,19 +94,19 @@ describe("server-owned candidate discovery", () => {
       searchDepth: "basic",
     });
     expect(offered.tools[2].discoveryMatches[0].status).toBe("incompatible");
-    expect(obs.db.events(s.id).at(-1)?.data.catalogVersion).toBe(
+    expect((await obs.db.events(s.id)).at(-1)?.data.catalogVersion).toBe(
       offered.catalogVersion,
     );
-    expect(obs.db.calls(s.id)).toEqual([]);
+    expect(await obs.db.calls(s.id)).toEqual([]);
     expect(search).not.toHaveBeenCalled();
     expect(scrape).not.toHaveBeenCalled();
-    expect(obs.require(s.id)).toMatchObject({
+    expect(await obs.require(s.id)).toMatchObject({
       spentMicros: 0,
       reservedMicros: 0,
     });
   });
-  it("expands a legacy single-provider request and makes depth differences explicit", () => {
-    const offer = obs.discover(session().id, "Need sources", [
+  it("expands a legacy single-provider request and makes depth differences explicit", async () => {
+    const offer = await obs.discover((await session()).id, "Need sources", [
       {
         tool: "tavily_search",
         query: "fixture",
@@ -127,9 +125,9 @@ describe("server-owned candidate discovery", () => {
       "equal retrieval depth or quality is not claimed",
     );
   });
-  it("matches URL extraction and rejects unsafe or mixed operations without recording an offer", () => {
-    const s = session();
-    const offer = obs.discover(s.id, {
+  it("matches URL extraction and rejects unsafe or mixed operations without recording an offer", async () => {
+    const s = await session();
+    const offer = await obs.discover(s.id, {
       need: "Read source",
       operations: [{ operation: "extract", url: "https://example.com" }],
     });
@@ -137,33 +135,36 @@ describe("server-owned candidate discovery", () => {
     expect(offer.tools[2].requestEstimates[0].request.url).toBe(
       "https://example.com/",
     );
-    const eventCount = obs.db.events(s.id).length;
-    expect(() =>
-      obs.discover(s.id, {
-        need: "Read source",
-        operations: [{ operation: "extract", url: "https://127.0.0.1" }],
-      }),
-    ).toThrow();
-    expect(() =>
-      obs.discover(s.id, {
-        need: "Read source",
-        operations: [
-          { operation: "extract", url: "https://example.com", maxResults: 5 },
-        ],
-      }),
-    ).toThrow();
-    expect(() =>
-      obs.discover(s.id, {
-        need: "Read source",
-        operations: [{ operation: "search" }],
-        requests: [{ tool: "exa_search", query: "fixture" }],
-      }),
-    ).toThrow(/not both/);
-    expect(obs.db.events(s.id)).toHaveLength(eventCount);
+    const eventCount = (await obs.db.events(s.id)).length;
+    await expect(
+      (async () =>
+        await obs.discover(s.id, {
+          need: "Read source",
+          operations: [{ operation: "extract", url: "https://127.0.0.1" }],
+        }))(),
+    ).rejects.toThrow();
+    await expect(
+      (async () =>
+        await obs.discover(s.id, {
+          need: "Read source",
+          operations: [
+            { operation: "extract", url: "https://example.com", maxResults: 5 },
+          ],
+        }))(),
+    ).rejects.toThrow();
+    await expect(
+      (async () =>
+        await obs.discover(s.id, {
+          need: "Read source",
+          operations: [{ operation: "search" }],
+          requests: [{ tool: "exa_search", query: "fixture" }],
+        }))(),
+    ).rejects.toThrow(/not both/);
+    expect(await obs.db.events(s.id)).toHaveLength(eventCount);
   });
-  it("reports incomplete and unsupported requirements instead of fabricating quotes", () => {
-    const s = session();
-    const missing = obs.discover(s.id, {
+  it("reports incomplete and unsupported requirements instead of fabricating quotes", async () => {
+    const s = await session();
+    const missing = await obs.discover(s.id, {
       need: "Find something",
       operations: [{ operation: "search" }],
     });
@@ -171,7 +172,7 @@ describe("server-owned candidate discovery", () => {
       "needs_parameters",
     );
     expect(missing.tools.flatMap((t) => t.requestEstimates)).toHaveLength(0);
-    const unsupported = obs.discover(s.id, {
+    const unsupported = await obs.discover(s.id, {
       need: "Complete page required",
       operations: [
         {
@@ -185,7 +186,7 @@ describe("server-owned candidate discovery", () => {
     expect(unsupported.tools[2].discoveryMatches[0].reason).toContain(
       "cannot guarantee",
     );
-    const partialText = obs.discover(s.id, {
+    const partialText = await obs.discover(s.id, {
       need: "Source text",
       operations: [
         { operation: "search", query: "fixture", content: "page_text" },
@@ -193,10 +194,10 @@ describe("server-owned candidate discovery", () => {
     });
     expect(partialText.candidateTools).toEqual(["exa_search"]);
   });
-  it("keeps relevant but unavailable and over-budget alternatives visible with explicit reasons", () => {
+  it("keeps relevant but unavailable and over-budget alternatives visible with explicit reasons", async () => {
     config.keys.exa = "";
     config.agentSessionBudgetMicros = 0;
-    const offer = obs.discover(session().id, {
+    const offer = await obs.discover((await session()).id, {
       need: "Find source",
       operations: [{ operation: "search", query: "fixture" }],
     });
@@ -207,7 +208,7 @@ describe("server-owned candidate discovery", () => {
   });
   it("returns the same provider-neutral contract through HTTP", async () => {
     const app = createApp(store, undefined, obs);
-    const s = session();
+    const s = await session();
     const response = await request(app)
       .post(`/api/observations/${s.id}/discover`)
       .send({
@@ -221,39 +222,39 @@ describe("server-owned candidate discovery", () => {
     ]);
   });
 });
-
 describe("required decision summaries", () => {
   it.each([undefined, "", "  \n\t "])(
     "rejects a new call without a meaningful explanation: %s",
     async (statedReason) => {
-      const s = session();
+      const s = await session();
       const app = createApp(store, undefined, obs);
       await request(app)
         .post(`/api/observations/${s.id}/call`)
         .send({ ...searchCall(), statedReason })
         .expect(400);
       expect(search).not.toHaveBeenCalled();
-      expect(obs.db.calls(s.id)).toHaveLength(0);
-      expect(obs.require(s.id)).toMatchObject({
+      expect(await obs.db.calls(s.id)).toHaveLength(0);
+      expect(await obs.require(s.id)).toMatchObject({
         spentMicros: 0,
         reservedMicros: 0,
       });
     },
   );
   it("trims explanations and replays without duplicate spending", async () => {
-    const s = session();
+    const s = await session();
     const args = { ...searchCall(), statedReason: "  Need source text.  " };
     const first = await obs.execute(s.id, args);
     expect(first.statedReason).toBe("Need source text.");
     expect((await obs.execute(s.id, args)).id).toBe(first.id);
     expect(search).toHaveBeenCalledTimes(1);
     expect(
-      obs.db.events(s.id).find((e) => e.type === "selection_explanation")
-        ?.provenance,
+      (await obs.db.events(s.id)).find(
+        (e) => e.type === "selection_explanation",
+      )?.provenance,
     ).toBe("agent_reported");
   });
   it("replays a historical blank-reason receipt but never allows it to create new work", async () => {
-    const s = session();
+    const s = await session();
     const args = { ...searchCall(), statedReason: "" };
     // An isolated historical fixture, not a new provider call.
     const historical = {
@@ -268,7 +269,7 @@ describe("required decision summaries", () => {
       startedAt: new Date().toISOString(),
       estimateMicros: 7000,
     };
-    obs.db.saveCall(historical, digest(args));
+    await obs.db.saveCall(historical, digest(args));
     const app = createApp(store, undefined, obs);
     const response = await request(app)
       .post(`/api/observations/${s.id}/call`)
@@ -286,35 +287,34 @@ describe("required decision summaries", () => {
     expect(search).not.toHaveBeenCalled();
   });
 });
-
-it("migrates sharing once, preserves historical events and timestamps, and verifies the resulting audit chain", () => {
-  const s = session();
+it("migrates sharing once, preserves historical events and timestamps, and verifies the resulting audit chain", async () => {
+  const s = await session();
   // Reconstruct a pre-policy record in an isolated database.
-  store.db
+  await store.db
     .prepare(
       "DELETE FROM observation_events WHERE session_id=? AND json_extract(body,'$.type')='sharing_policy_applied'",
     )
     .run(s.id);
-  const historic = obs.db.get(s.id)!;
+  const historic = (await obs.db.get(s.id))!;
   historic.commercialConsent = false;
   delete historic.sharingPolicy;
-  store.db
+  await store.db
     .prepare("UPDATE observation_sessions SET body=? WHERE id=?")
     .run(JSON.stringify(historic), s.id);
   // Rechain the remaining fixture events after removing the synthetic policy event.
   let previousHash = "genesis";
-  for (const e of obs.db.events(s.id)) {
+  for (const e of await obs.db.events(s.id)) {
     const { id, hash: _hash, ...payload } = e;
     payload.previousHash = previousHash;
     const hash = digest(payload);
     previousHash = hash;
-    store.db
+    await store.db
       .prepare("UPDATE observation_events SET body=? WHERE id=?")
       .run(JSON.stringify({ ...payload, hash }), id);
   }
-  const before = obs.db.events(s.id);
+  const before = await obs.db.events(s.id);
   const reopened = new Observatory(store, { search, scrape });
-  const after = reopened.db.detail(s.id)!;
+  const after = (await reopened.db.detail(s.id))!;
   expect(after.commercialConsent).toBe(true);
   expect(after.sharingPolicy).toBe(SHARING_POLICY);
   expect(after.updatedAt).toBe(historic.updatedAt);
@@ -337,19 +337,18 @@ it("migrates sharing once, preserves historical events and timestamps, and verif
       session: after,
     }).valid,
   ).toBe(true);
-  reopened.db.applySharingPolicy();
-  expect(reopened.db.events(s.id)).toHaveLength(before.length + 1);
+  await reopened.db.applySharingPolicy();
+  expect(await reopened.db.events(s.id)).toHaveLength(before.length + 1);
 });
-
 it("keeps execution, linked answer reviews, and controlled samples separate", async () => {
-  const s = session();
+  const s = await session();
   const call = await obs.execute(s.id, searchCall());
-  const output = obs.outcome(s.id, {
+  const output = await obs.outcome(s.id, {
     requestKey: "answer",
     text: "Fixture answer",
     evidenceCallIds: [call.id],
   });
-  obs.evaluate(s.id, {
+  await obs.evaluate(s.id, {
     outcomeId: output.outcomes[0].id,
     reviewer: { kind: "assistant_reported" },
     criteria: [
@@ -361,7 +360,7 @@ it("keeps execution, linked answer reviews, and controlled samples separate", as
       },
     ],
   });
-  const exa = obs.catalog()[0];
+  const exa = (await obs.catalog())[0];
   expect(exa.reputation.organic).toMatchObject({
     sampleCount: 1,
     succeeded: 1,
@@ -374,5 +373,7 @@ it("keeps execution, linked answer reviews, and controlled samples separate", as
   });
   expect(exa.reputation.controlled).toBeNull();
   expect(exa.quality).toBeNull();
-  expect(obs.catalog()[1].reputation.outcomeEvidence.reviewedSessions).toBe(0);
+  expect(
+    (await obs.catalog())[1].reputation.outcomeEvidence.reviewedSessions,
+  ).toBe(0);
 });

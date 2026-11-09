@@ -126,8 +126,8 @@ type Summary = {
     published: boolean;
   };
 };
-type Catalog = ReturnType<
-  import("../server/observation").Observatory["catalog"]
+type Catalog = Awaited<
+  ReturnType<import("../server/observation").Observatory["catalog"]>
 >;
 
 const pages = [
