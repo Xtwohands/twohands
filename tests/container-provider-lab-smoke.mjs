@@ -7,6 +7,13 @@ const headers = {
   "Content-Type": "application/json",
 };
 const record = "/app/data/provider-lab-smoke.json";
+const emptyOrganic = {
+  offeredSessions: 0,
+  selectedSessions: 0,
+  calls: 0,
+  successfulCalls: 0,
+  referencedCalls: 0,
+};
 const request = async (path, body) => {
   const r = await fetch(base + path, {
     headers,
@@ -25,9 +32,9 @@ if (process.argv[2] === "persist") {
     lab.experiments.find((p) => p.id === saved.id)?.title,
     "Container provider test plan",
   );
-  assert.equal(
+  assert.deepEqual(
     (await request("/company-insights/exa?source=local")).organic,
-    null,
+    emptyOrganic,
   );
   console.log(
     "Packaged provider test plan survived restart; demo metrics did not enter live history.",
@@ -41,7 +48,7 @@ if (process.argv[2] === "persist") {
   assert.equal(demo.source, "demo");
   assert.equal(demo.organic.offeredSessions, 240);
   const local = await request("/company-insights/exa?source=local");
-  assert.equal(local.organic, null);
+  assert.deepEqual(local.organic, emptyOrganic);
   assert.equal(local.usage, null);
   const denied = await fetch(base + "/provider-lab/runs", {
     method: "POST",
@@ -65,6 +72,6 @@ if (process.argv[2] === "persist") {
   assert.equal((await request("/provider-lab")).runs.length, 0);
   await writeFile(record, JSON.stringify({ id: plan.id }), { mode: 0o600 });
   console.log(
-    "Packaged company demo, private-data suppression, backend missing-key guard, and plan persistence: passed.",
+    "Packaged company demo isolation, honest zero usage, backend missing-key guard, and plan persistence: passed.",
   );
 }
