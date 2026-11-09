@@ -295,6 +295,9 @@
   height: 19px;
   object-fit: contain;
 }
+.ws-provider-tavily img {
+  filter: brightness(0) invert(0.9);
+}
 .ws-provider-exa {
   font-family: Georgia, serif;
   font-size: 25px;
