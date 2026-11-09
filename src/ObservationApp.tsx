@@ -2,7 +2,10 @@ import {
   CompanyPortal,
   AdminCompanyReview,
   AccountSettings,
+  PortalShell,
 } from "./RolePortals";
+import { AdminNavigation } from "./AdminNavigation";
+import { ToolAccessView, OperatorAllowanceNotice } from "./ToolAccessView";
 import { AccountControls, useAccount } from "./AccountGate";
 import { DisputeReviewView } from "./DisputeReviewView";
 import { ToolOptions } from "./components/ToolOptions";
@@ -97,6 +100,7 @@ import {
 
 type Page =
   | "admin"
+  | "tool-access"
   | "home"
   | "dashboard"
   | "sessions"
@@ -158,6 +162,7 @@ function readRoute() {
   return {
     page: ([
       "admin",
+      "tool-access",
       "home",
       "dashboard",
       "sessions",
@@ -190,6 +195,8 @@ function readRoute() {
       "insights",
       "activity",
       "team",
+      "details",
+      "integration",
     ].includes(section)
       ? section
       : "overview",
@@ -352,11 +359,14 @@ export function ObservationApp() {
     account.enabled &&
     (route.page === "company" ||
       route.page === "admin" ||
+      route.page === "tool-access" ||
       !account.workspaceId);
   const operatorArea =
     !account.enabled ||
     (!!account.profile?.isAdmin &&
-      !["dashboard", "company", "home", "admin"].includes(route.page));
+      !["dashboard", "company", "home", "admin", "tool-access"].includes(
+        route.page,
+      ));
   const refresh = useCallback(async () => {
     if (independentArea || route.page === "home") return true;
     const current = ++generation.current;
@@ -423,12 +433,12 @@ export function ObservationApp() {
     detailGeneration.current++;
     setSelected(undefined);
     setDetailError("");
-    if (!route.id || route.page !== "sessions") return;
+    if (independentArea || !route.id || route.page !== "sessions") return;
     setDetailLoading(true);
     void reloadDetail(route.id);
     const timer = setInterval(() => void reloadDetail(route.id!), 3000);
     return () => clearInterval(timer);
-  }, [route.id, route.page, reloadDetail]);
+  }, [route.id, route.page, reloadDetail, independentArea]);
   async function mutate(path: string, body: unknown, message: string) {
     setBusy(true);
     setNotice("");
@@ -480,7 +490,9 @@ export function ObservationApp() {
           ? "Tool company"
           : route.page === "settings"
             ? "Connections & settings"
-            : pages.find((p) => p.id === route.page)?.label || "Sessions";
+            : route.page === "tool-access"
+              ? "Tool access"
+              : pages.find((p) => p.id === route.page)?.label || "Sessions";
   if (route.page === "home") return <LandingView />;
   if (account.enabled && route.page === "settings") return <AccountSettings />;
   if (account.enabled && route.page === "company")
@@ -491,11 +503,7 @@ export function ObservationApp() {
         section={route.section}
       />
     );
-  if (
-    account.enabled &&
-    account.profile?.isAdmin &&
-    (route.page === "admin" || !account.workspaceId)
-  )
+  if (account.enabled && account.profile?.isAdmin && route.page === "admin")
     return <AdminCompanyReview />;
   const ownerAccess =
     !account.enabled ||
@@ -539,6 +547,48 @@ export function ObservationApp() {
         </section>
       </main>
     );
+  if (
+    account.enabled &&
+    account.profile?.isAdmin &&
+    route.page === "tool-access"
+  )
+    return (
+      <PortalShell
+        area="admin"
+        title="Tool access"
+        links={[]}
+        adminPage="tool-access"
+      >
+        <ToolAccessView />
+      </PortalShell>
+    );
+  if (account.enabled && account.profile?.isAdmin && !account.workspaceId)
+    return (
+      <PortalShell
+        area="admin"
+        title={currentTitle}
+        links={[]}
+        adminPage={route.page}
+      >
+        <Panel title="Select a workspace">
+          <p>
+            Workspace operations, payment disputes, and provider tests are
+            scoped to a workspace. Select one to open this page.
+          </p>
+          {account.profile.workspaces.length ? (
+            <AccountControls showIdentity={false} />
+          ) : (
+            <>
+              <p>
+                No workspaces are available yet. Company reviews and Tool access
+                remain available.
+              </p>
+              <Button onClick={account.create}>Create workspace</Button>
+            </>
+          )}
+        </Panel>
+      </PortalShell>
+    );
   const surface =
     route.page === "dashboard"
       ? "user"
@@ -564,7 +614,9 @@ export function ObservationApp() {
             ? "User navigation"
             : surface === "business"
               ? "Tool company navigation"
-              : "Operator navigation"
+              : account.enabled
+                ? "Admin navigation"
+                : "Operator navigation"
         }
       >
         {surface === "user" ? (
@@ -675,6 +727,11 @@ export function ObservationApp() {
               {p.label}
             </a>
           ))
+        ) : account.enabled && account.profile?.isAdmin ? (
+          <AdminNavigation
+            page={route.page}
+            onNavigate={() => setMenuOpen(false)}
+          />
         ) : (
           pages.map((p) => (
             <a
@@ -813,6 +870,9 @@ export function ObservationApp() {
               providerFilter={route.labProvider}
               evidenceFilter={route.labFinding}
             />
+          )}
+          {route.page === "dashboard" && account.enabled && (
+            <OperatorAllowanceNotice />
           )}
           {route.page === "dashboard" && (
             <UserDashboardView

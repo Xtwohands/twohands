@@ -243,7 +243,7 @@ async function mockAuth(
   });
   const company = {
     id: "00000000-0000-4000-8000-000000000051",
-    name: "Fixture tools",
+    name: "Fixture tools dashboard",
     website: "https://tools.fixture.invalid",
     toolName: "Fixture search",
     description: "Search integration for fixture evidence.",
@@ -348,8 +348,8 @@ async function mockAuth(
   });
   return state;
 }
-async function login(page: Page) {
-  await page.goto("/#dashboard/activity");
+async function login(page: Page, destination = "/#dashboard/activity") {
+  await page.goto(destination);
   await expect(
     page.getByRole("heading", { name: "Sign in to octolab" }),
   ).toBeVisible();
@@ -504,7 +504,7 @@ test("tool company registration never forces a customer workspace or exposes the
     .fill("Search integration for fixture evidence.");
   await page.getByRole("button", { name: "Submit for review" }).click();
   await expect(
-    page.getByRole("heading", { name: "Fixture tools" }),
+    page.getByRole("heading", { name: "Fixture tools dashboard" }),
   ).toBeVisible();
   await expect(page.getByText("Under review", { exact: true })).toBeVisible();
   await captureJourney(page, "company-pending");
@@ -515,11 +515,9 @@ test("tool company registration never forces a customer workspace or exposes the
   await expect(
     page.getByRole("link", { name: "API keys", exact: true }),
   ).toHaveCount(0);
-  await page.getByRole("link", { name: "Tool insights", exact: true }).click();
+  await page.getByRole("link", { name: "Live usage", exact: true }).click();
   await expect(
-    page.getByText(
-      "Insights will become available after your company and integration are approved.",
-    ),
+    page.getByRole("heading", { name: "No usage available yet", exact: true }),
   ).toBeVisible();
   await openNav(page);
   await page.getByRole("link", { name: "Company team", exact: true }).click();
@@ -537,7 +535,7 @@ test("tool company registration never forces a customer workspace or exposes the
     page.getByText("teammate@fixture.invalid", { exact: true }),
   ).toHaveCount(0);
   await openNav(page);
-  await page.getByRole("link", { name: "Tool insights", exact: true }).click();
+  await page.getByRole("link", { name: "Live usage", exact: true }).click();
   state.companies[0] = {
     ...state.companies[0],
     status: "approved",
@@ -545,11 +543,13 @@ test("tool company registration never forces a customer workspace or exposes the
     insightsEnabled: true,
   };
   await page.reload();
-  await expect(page.getByText(/No report available yet/)).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "No usage available yet", exact: true }),
+  ).toBeVisible();
   await captureJourney(page, "company-approved-no-cohort");
   state.companies[0].status = "rejected";
   state.companies[0].revision = 1;
-  await page.goto("/#company/" + state.companies[0].id + "/overview");
+  await page.goto("/#company/" + state.companies[0].id + "/details");
   await page
     .getByRole("button", { name: "Update registration", exact: true })
     .click();
@@ -564,9 +564,7 @@ test("tool company registration never forces a customer workspace or exposes the
   await page.goto("/#company/" + state.companies[0].id + "/insights");
   await page.reload();
   await expect(
-    page.getByText(
-      "Insights will become available after your company and integration are approved.",
-    ),
+    page.getByRole("heading", { name: "No usage available yet", exact: true }),
   ).toBeVisible();
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
 });
@@ -574,7 +572,7 @@ test("admin company reviews work without creating a customer workspace", async (
   page,
 }) => {
   const state = await mockAuth(page, true, "admin");
-  await login(page);
+  await login(page, "/#admin");
   await expect(
     page.getByRole("heading", { name: "Company reviews" }),
   ).toBeVisible();
@@ -621,7 +619,7 @@ test("administrator previews standard roles from settings and can always return"
   page,
 }) => {
   await mockAuth(page, true, "admin");
-  await login(page);
+  await login(page, "/#admin");
   await expect(
     page.getByRole("heading", { name: "Company reviews" }),
   ).toBeVisible();
@@ -631,14 +629,16 @@ test("administrator previews standard roles from settings and can always return"
   await page.getByLabel("Company to preview").selectOption("provider:exa");
   await page.getByRole("button", { name: "Open company preview" }).click();
   await expect(
-    page.getByRole("heading", { name: "Exa tool insights" }),
+    page.getByRole("heading", { name: "Exa dashboard" }),
   ).toBeVisible();
   await expect(
     page.getByText("Previewing company", { exact: true }),
   ).toBeVisible();
-  await expect(page.getByText("Unregistered", { exact: true })).toBeVisible();
   await expect(
-    page.getByText(/At least 5 independent workspaces/),
+    page.getByText("Provider preview", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "No usage available yet", exact: true }),
   ).toBeVisible();
   await expect(page.getByText("Your areas", { exact: true })).toHaveCount(0);
   await captureJourney(page, "role-preview-company");
@@ -736,9 +736,7 @@ test("admin switches selected companies, drops late reports, and retains return 
   release();
   await expect(page.getByText("987654", { exact: true })).toHaveCount(0);
   await expect(
-    page.getByText(
-      "Insights will become available after your company and integration are approved.",
-    ),
+    page.getByRole("heading", { name: "No usage available yet", exact: true }),
   ).toBeVisible();
   await page.goto(`/#company/${b.id}/overview`);
   await expect(
@@ -756,10 +754,10 @@ test("admin switches selected companies, drops late reports, and retains return 
     .getByLabel("Preview company", { exact: true })
     .selectOption("provider:tavily");
   await expect(
-    page.getByRole("heading", { name: "Tavily tool insights" }),
+    page.getByRole("heading", { name: "Tavily dashboard" }),
   ).toBeVisible();
   await expect(
-    page.getByText(/At least 5 independent workspaces/),
+    page.getByRole("heading", { name: "No usage available yet", exact: true }),
   ).toBeVisible();
   await captureJourney(page, "company-preview-provider");
   await expect(page.locator("body")).not.toContainText("987654");
@@ -861,4 +859,310 @@ test("signed-in workspace owner can create the first key and proceed to agent se
   );
   expect(page.url()).not.toContain(secret);
   await captureJourney(page, "owner-agent-setup");
+});
+
+test("admin navigation persists across company reviews and workspace operations", async ({
+  page,
+}, testInfo) => {
+  const state = await mockAuth(page, false, "admin");
+  state.workspaces = [
+    { id: first, name: "Admin workspace fixture", role: "platform_admin" },
+  ];
+  await login(page);
+  await page.goto("/#admin");
+  await expect(
+    page.getByRole("heading", { name: "Company reviews", exact: true }),
+  ).toBeVisible();
+  await openNav(page);
+  const before = await page
+    .getByRole("navigation")
+    .first()
+    .getByRole("link")
+    .allTextContents();
+  await page
+    .getByRole("link", { name: "Workspace operations", exact: true })
+    .click();
+  await expect(
+    page.getByRole("heading", { name: "Sessions", exact: true }),
+  ).toBeVisible();
+  await openNav(page);
+  const after = await page
+    .getByRole("navigation")
+    .last()
+    .getByRole("link")
+    .allTextContents();
+  console.log(
+    JSON.stringify({ route: new URL(page.url()).hash, before, after }),
+  );
+  await page.screenshot({
+    path: testInfo.outputPath("admin-operations-navigation.png"),
+    fullPage: true,
+  });
+  await expect(
+    page.getByRole("link", { name: "Company reviews", exact: true }),
+  ).toBeVisible();
+});
+
+test("admin direct workspace route never silently renders company reviews without a workspace", async ({
+  page,
+}, testInfo) => {
+  await mockAuth(page, true, "admin");
+  await login(page);
+  await page.goto("/#sessions");
+  console.log(
+    JSON.stringify({
+      route: new URL(page.url()).hash,
+      headings: await page.getByRole("heading").allTextContents(),
+    }),
+  );
+  await page.screenshot({
+    path: testInfo.outputPath("admin-no-workspace-route.png"),
+    fullPage: true,
+  });
+  await expect(
+    page.getByRole("heading", { name: "Select a workspace", exact: true }),
+  ).toBeVisible();
+  await openNav(page);
+  await expect(
+    page.getByRole("link", { name: "Company reviews", exact: true }),
+  ).toBeVisible();
+});
+
+test("admin destinations preserve navigation, active links, refresh, and browser history", async ({
+  page,
+}) => {
+  const state = await mockAuth(page, false, "admin");
+  state.workspaces = [
+    { id: first, name: "Admin workspace fixture", role: "platform_admin" },
+  ];
+  await login(page);
+  await page.goto("/#admin");
+  const destinations = [
+    { label: "Workspace operations", hash: "#sessions", heading: "Sessions" },
+    {
+      label: "Payment disputes",
+      hash: "#disputes",
+      heading: "Payment disputes",
+    },
+    { label: "Provider lab", hash: "#lab", heading: "Provider lab" },
+    { label: "Company reviews", hash: "#admin", heading: "Company reviews" },
+  ];
+  for (const destination of destinations) {
+    await openNav(page);
+    await page
+      .getByRole("link", { name: destination.label, exact: true })
+      .click();
+    await expect(page).toHaveURL(new RegExp(destination.hash + "$"));
+    await expect(
+      page.getByRole("heading", { name: destination.heading, exact: true }),
+    ).toBeVisible();
+    await page.reload();
+    await expect(
+      page.getByRole("heading", { name: destination.heading, exact: true }),
+    ).toBeVisible();
+    await openNav(page);
+    const nav = page
+      .getByRole("navigation", { name: "Admin navigation" })
+      .last();
+    for (const item of destinations)
+      await expect(
+        nav.getByRole("link", { name: item.label, exact: true }),
+      ).toBeVisible();
+    await expect(nav.locator('[aria-current="page"]')).toHaveText(
+      destination.label,
+    );
+    if (test.info().project.name === "mobile") {
+      if (await page.getByRole("dialog").isVisible())
+        await page.keyboard.press("Escape");
+      else await page.getByRole("button", { name: "Close navigation" }).click();
+    }
+  }
+  await page.goBack();
+  await expect(page).toHaveURL(/#lab$/);
+  await expect(
+    page.getByRole("heading", { name: "Provider lab", exact: true }),
+  ).toBeVisible();
+  await page.goForward();
+  await expect(page).toHaveURL(/#admin$/);
+  await expect(
+    page.getByRole("heading", { name: "Company reviews", exact: true }),
+  ).toBeVisible();
+});
+
+test("admin without a workspace retains route and navigation without workspace requests", async ({
+  page,
+}) => {
+  await mockAuth(page, true, "admin");
+  let workspaceRequests = 0;
+  page.on("request", (request) => {
+    if (
+      /\/api\/(observations|tasks|provider-lab|admin\/funding)/.test(
+        new URL(request.url()).pathname,
+      )
+    )
+      workspaceRequests++;
+  });
+  await login(page);
+  for (const hash of [
+    "#sessions",
+    "#sessions/00000000-0000-4000-8000-000000000099",
+    "#disputes",
+    "#lab",
+  ]) {
+    await page.goto("/" + hash);
+    await expect(
+      page.getByRole("heading", { name: "Select a workspace", exact: true }),
+    ).toBeVisible();
+    await expect(page).toHaveURL(new RegExp(hash + "$"));
+    await openNav(page);
+    await expect(
+      page.getByRole("link", { name: "Company reviews", exact: true }),
+    ).toBeVisible();
+  }
+  expect(workspaceRequests).toBe(0);
+});
+
+test("admin tool access requires an explicit audited save, preserves retry key, and pauses without resetting spend", async ({
+  page,
+}) => {
+  await mockAuth(page, true, "admin");
+  const allowance = {
+    enforced: true,
+    state: "unconfigured",
+    limitMicros: 0,
+    spentMicros: 0,
+    reservedMicros: 0,
+    remainingMicros: 0,
+    revision: 0,
+    basis: "estimated_provider_spend_since_activation",
+  };
+  let value = { ...allowance };
+  const writes: any[] = [];
+  await page.route("**/api/admin/workspace-allowances", (route) =>
+    route.fulfill({
+      json: {
+        items: [
+          {
+            workspaceId: first,
+            name: "Beta workspace",
+            operatorAllowance: value,
+          },
+        ],
+        nextCursor: null,
+      },
+    }),
+  );
+  await page.route("**/api/admin/workspace-allowances/*", async (route) => {
+    const body = route.request().postDataJSON();
+    writes.push(body);
+    value = {
+      ...value,
+      limitMicros: body.limitMicros,
+      spentMicros: 7000,
+      remainingMicros: body.limitMicros - 7000,
+      state: body.paused ? "paused" : "available",
+      revision: body.revision + 1,
+    };
+    if (writes.length === 1) {
+      await route.fulfill({
+        status: 503,
+        json: {
+          error: "Fixture response interrupted. Retry the unchanged request.",
+        },
+      });
+      return;
+    }
+    await route.fulfill({
+      json: { operatorAllowance: value, replayed: writes.length === 2 },
+    });
+  });
+  await login(page);
+  await page.goto("/#tool-access");
+  await expect(
+    page.getByRole("heading", { name: "Tool access", exact: true }),
+  ).toBeVisible();
+  expect(writes).toHaveLength(0);
+  await page.getByRole("button", { name: /Beta workspace/ }).click();
+  await page
+    .getByLabel("Estimated lifetime limit (USD)", { exact: true })
+    .fill("0.014");
+  await page.getByLabel("Reason for change").fill("Fixture beta authorization");
+  await page
+    .getByRole("button", { name: "Save tool access", exact: true })
+    .click();
+  await expect(page.getByRole("alert")).toContainText(
+    "Fixture response interrupted",
+  );
+  await page
+    .getByRole("button", { name: "Save tool access", exact: true })
+    .click();
+  await expect(page.getByRole("status")).toContainText(
+    "Saved request confirmed",
+  );
+  expect(writes).toHaveLength(2);
+  expect(writes[0]).toEqual(writes[1]);
+  expect(writes[0]).toMatchObject({
+    revision: 0,
+    limitMicros: 14000,
+    paused: false,
+    reason: "Fixture beta authorization",
+  });
+  await page
+    .getByLabel("Estimated lifetime limit (USD)", { exact: true })
+    .fill("0");
+  await page.getByLabel("Reason for change").fill("Fixture invalid shrink");
+  await page
+    .getByRole("button", { name: "Save tool access", exact: true })
+    .click();
+  await expect(page.getByRole("alert")).toContainText(
+    "below spent and reserved",
+  );
+  expect(writes).toHaveLength(2);
+  await page
+    .getByLabel("Estimated lifetime limit (USD)", { exact: true })
+    .fill("0.014");
+  await page.getByLabel("Pause new provider calls").check();
+  await page.getByLabel("Reason for change").fill("Fixture pause");
+  await page
+    .getByRole("button", { name: "Save tool access", exact: true })
+    .click();
+  await expect(page.getByRole("status")).toContainText("Tool access saved");
+  expect(writes[2]).toMatchObject({
+    revision: 1,
+    limitMicros: 14000,
+    paused: true,
+  });
+  await expect(page.locator("dl")).toContainText("$0.007");
+  expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+});
+
+test("ordinary accounts cannot open admin tool access and see honest workspace access status", async ({
+  page,
+}) => {
+  await mockAuth(page);
+  await page.route("**/api/workspace/operator-allowance", (route) =>
+    route.fulfill({
+      json: {
+        enforced: true,
+        state: "unconfigured",
+        limitMicros: 0,
+        spentMicros: 0,
+        reservedMicros: 0,
+        remainingMicros: 0,
+        revision: 0,
+        basis: "estimated_provider_spend_since_activation",
+      },
+    }),
+  );
+  await login(page);
+  await expect(page.getByRole("status")).toContainText(
+    "Tool access has not been enabled",
+  );
+  await page.goto("/#tool-access");
+  await expect(
+    page.getByRole("heading", { name: "Administrator access required" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Save tool access" }),
+  ).toHaveCount(0);
 });
