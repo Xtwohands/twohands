@@ -2,7 +2,7 @@
 
 octolab uses Supabase Auth for browser identity and PostgreSQL for workspace ownership. The backend verifies identities with Supabase Auth, checks live Auth session/user records, and reads workspace membership on every request. User-editable metadata never grants membership or administrator access.
 
-The public landing page stays public. The account interface supports email/password signup, email confirmation, sign-in, password reset/recovery, session persistence, workspace creation/selection, and sign-out. Password requests go directly to the configured Supabase Auth origin; octolab never stores passwords. The pinned browser SDK uses PKCE and manages session refresh/storage.
+The public landing page stays public. The account interface supports email/password signup, email confirmation, sign-in, password reset/recovery, session persistence, workspace creation/selection, and sign-out. Signup and recovery preserve the chosen user, company, or administration area. Password requests go directly to the configured Supabase Auth origin; octolab never stores passwords. The pinned browser SDK uses PKCE and manages session refresh/storage. See [the three role journeys](ROLE_JOURNEYS.md) for entry points, company registration, and administrator review.
 
 ## Configuration
 
@@ -24,7 +24,7 @@ No dashboard password, personal access token, legacy JWT signing secret, or serv
 
 Use the same Supabase project for Auth and PostgreSQL. The backend database account must read Auth session/user records and private membership metadata and assume the private runtime role. Business queries use that non-login, non-bypass role with forced workspace RLS. An unexpectedly privileged/inheriting runtime role is rejected.
 
-In Supabase Auth, enable email/password sign-in and email confirmation. Set the Site URL and allow only actual development/production callback URLs (/?auth_callback=1#dashboard at the app origin). Configure production email delivery before relying on confirmations or password resets for customers. SMTP secrets stay outside frontend configuration.
+In Supabase Auth, enable email/password sign-in and email confirmation. Set the Site URL and allow only actual development/production callback URLs at the app origin. The callback uses /?auth_callback=1 with #dashboard, #company, or #admin to preserve the intended area. Configure production email delivery before relying on confirmations or password resets for customers. SMTP secrets stay outside frontend configuration.
 
 ## Initial migration and account bootstrap
 
@@ -38,16 +38,17 @@ The source is never edited by the importer. Consent events, content, key hashes,
 
 ## Roles and machine access
 
-| Principal              | Allowed access                                                                                                                           |
-| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| Workspace owner        | Own research, routing settings, API-key management, and test-funding controls.                                                           |
-| Workspace member       | Research/tool operations and usage reads; no key management, funding controls, or owner settings.                                        |
-| Platform administrator | Explicit operator access across registered workspaces, including controlled diagnostics, manual approval/evaluation, and dispute review. |
-| Scoped API key         | Explicit route/scope/tool allowlist for its owning workspace, within spend/expiry/revocation checks.                                     |
+| Principal              | Allowed access                                                                                                                                                                                                                |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Workspace owner        | Own research, routing settings, API-key management, and test-funding controls.                                                                                                                                                |
+| Workspace member       | Research/tool operations and usage reads; no key management, funding controls, or owner settings.                                                                                                                             |
+| Platform administrator | Explicit operator access across registered workspaces, company ownership/access review, controlled diagnostics, manual approval/evaluation, and dispute review.                                                               |
+| Tool company owner     | Own registration and feedback; approved, separately released aggregate metrics for the provider assigned by an administrator. No customer workspace, raw evidence, or provider-lab access is granted by company registration. |
+| Scoped API key         | Explicit route/scope/tool allowlist for its owning workspace, within spend/expiry/revocation checks.                                                                                                                          |
 
 Platform roles come from the server UUID allowlist. Workspace roles come from the membership table. There is no first-signup administrator rule or editable JWT metadata shortcut. Authorization normalizes URL casing, trailing slashes, and encoded parameters to match Express routing.
 
-The UI covers accounts and workspace selection. Invitations, membership editing, OAuth/SSO setup, and MFA enrollment UI remain separate work. Trusted operators can manage memberships; removal or role changes take effect on the next backend request.
+User workspace creation, company registration, and platform administration are separate flows. A company owner or administrator can enter their area without creating a customer workspace. Invitations, company team membership, workspace membership editing, OAuth/SSO setup, and MFA enrollment UI remain separate work. Trusted operators can manage workspace memberships; removal or role changes take effect on the next backend request.
 
 In PostgreSQL account mode, API_TOKEN and ADMIN_API_TOKEN do not replace account authentication. They retain their previous behavior only in explicit SQLite/local mode. For Claude, Codex, and other MCP hosts, issue a scoped workspace key and configure APILAYER_API_KEY. The consumer's conversation stays in its MCP host; it does not visit the dashboard or approve backend research spending.
 
@@ -58,10 +59,12 @@ Signing out ends the current browser session. Machine keys remain separate works
 | Method | Route                  | Behavior                                                                                                                      |
 | ------ | ---------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
 | GET    | `/api/auth/config`     | Public `{enabled:false}` in SQLite mode, or validated public Auth URL/key in account mode.                                    |
-| GET    | `/api/auth/me`         | Authenticated account ID/email, accessible workspaces/roles, and platform-admin status.                                       |
+| GET    | `/api/auth/me`         | Authenticated account ID/email, accessible workspaces/roles, owned company records, and platform-admin status.                |
 | POST   | `/api/auth/workspaces` | Create a workspace with `{name, requestKey}` and owner membership. Requires a verified account, JSON, and same-origin writes. |
+| POST   | `/api/auth/companies`  | Register a tool company for ownership/integration review; no existing customer workspace is required.                         |
+| GET    | `/api/public/catalog`  | Public tool descriptions, provider availability, and configured estimates; no private activity or credentials.                |
 
-Protected browser requests send `Authorization: Bearer <Supabase access token>` and `X-Octolab-Workspace: <workspace ID>`. Omitting the workspace header selects the first accessible workspace; an inaccessible requested ID returns `403`. `/api/auth/me` and workspace creation do not require an existing workspace. Login, signup, confirmation, refresh, recovery, and sign-out use the browser Auth SDK directly.
+Protected browser requests send `Authorization: Bearer <Supabase access token>` and `X-Octolab-Workspace: <workspace ID>`. Omitting the workspace header selects the first accessible workspace; an inaccessible requested ID returns `403`. `/api/auth/me`, workspace creation, company registration, company-owner routes, and the global company-review queue do not require an existing workspace. Company and admin routes verify account identity independently of customer workspace headers; see [their API reference](ROLE_JOURNEYS.md#company-and-review-api). Login, signup, confirmation, refresh, recovery, and sign-out use the browser Auth SDK directly.
 
 Workspace names are 2–80 characters. Creation accepts a UUID request key and refuses a new workspace when the account already has ten memberships. An identical retry returns the saved workspace; changed names under the same key return `409`, and a removed membership cannot be recovered by replay. Account/database verification failures return `503`; ended, expired, or invalid sessions return `401`.
 
@@ -87,8 +90,8 @@ OCTOLAB_TEST_POSTGRES_URL=postgresql://... npm test -- tests/accounts.test.ts te
 
 These fixtures create a minimal synthetic Auth schema. Never point them at production Supabase.
 
-The checkpoint validation recorded 267 passing normal unit/integration tests, 16 passing disposable PostgreSQL tests, and 153 passing desktop/mobile browser scenarios with one intentional skip. These are fixture results, not hosted Auth, provider performance, or payment results.
+The role checkpoint recorded 267 passing normal unit/integration tests and 18 passing disposable PostgreSQL tests. The full browser pass recorded 159 passing scenarios with one intentional skip; after review corrections, all 14 focused account/role browser cases passed again. These are fixture results, separate from hosted-account checks, provider performance, and payments.
 
-Separately from fixture testing, the connected Supabase project now has all four checked-in schema migrations installed with matching application checksums. Public Auth settings are populated in the original ignored `.env`; the private `DATABASE_URL` is still required before runtime cutover. See the [hosted rollout checkpoint](SUPABASE_ROLLOUT.md). No application records have been imported.
+Separately from fixture testing, the connected Supabase project has all five checked-in schema migrations installed with matching application checksums. The actual session-pooler database connection succeeds with certificate and hostname verification. A confirmed account exists and its explicitly requested platform-admin allowlist entry is configured. The account runtime starts on port 3008; the original runtime still uses SQLite, and no historical application records have been imported. See the [hosted rollout checkpoint](SUPABASE_ROLLOUT.md).
 
-Before hosted cutover, complete actual project/redirect/email configuration, sign in as the intended owner, verify imported audit chains and balances, and check logout/reset behavior against that project. Fixture validation itself performed no hosted migration, email delivery, provider call, or payment. Actual hosted login and email flows remain unvalidated.
+Before completing cutover, assign the legacy owner explicitly, import and verify historical audit chains and balances, and check recovery/login/logout and role transitions against the hosted project. The confirmed account establishes confirmation for that account; it does not establish production SMTP delivery or complete end-to-end recovery coverage. Fixture tests themselves made no hosted writes, provider calls, or payments.

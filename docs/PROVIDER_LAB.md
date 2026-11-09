@@ -1,6 +1,6 @@
 # Provider lab and tool company demo
 
-The sidebar switches between the operator workspace and a tool company preview. Open [Tool company](http://127.0.0.1:3001/#company/exa) to explore Exa, Tavily, and Firecrawl. No separate company account is implemented. The API uses the selected authorized workspace; PostgreSQL provider-lab operations require an explicitly allowlisted platform administrator account.
+This guide describes operator tools. In SQLite/local mode, [Tool company preview](http://127.0.0.1:3001/#company/exa) explores Exa, Tavily, and Firecrawl with demo or private local-lab data. PostgreSQL accounts instead enter the separate [company-owner portal](ROLE_JOURNEYS.md) at #company; registration does not grant access to this lab or its raw receipts. Every PostgreSQL provider-lab and legacy company-insights route requires an explicitly allowlisted platform administrator and an authorized customer workspace.
 
 ## Two sources, visibly separate
 
