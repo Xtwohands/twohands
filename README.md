@@ -30,6 +30,8 @@ For development, `npm run dev` runs the API on port 3001 and Vite on port 5173.
 
 SQLite remains the default local backend. PostgreSQL mode uses [Supabase Auth accounts and workspace membership](docs/AUTH.md), with signup, email confirmation, sign-in, password recovery, workspace selection, and sign-out. Follow the [PostgreSQL migration guide](docs/POSTGRES_MIGRATION.md) for schema setup, account bootstrap, explicit legacy-owner assignment, verified import, and rollback. `DATABASE_URL` alone does not switch storage. The PostgreSQL runtime can start for signup before importing history; signup never claims existing records. `API_TOKEN` and `ADMIN_API_TOKEN` apply only to SQLite/local mode.
 
+The connected Supabase project now has the four checked-in schema migrations installed, with matching application checksums. Runtime cutover and data import remain pending the private `DATABASE_URL` and explicit owner setup. See the [hosted rollout checkpoint](docs/SUPABASE_ROLLOUT.md) for completed checks and remaining steps.
+
 ## Tool workspace
 
 The user sidebar groups **Tool catalog**, **Routing**, **Activity**, **Usage**, **Credits**, **API keys**, and **Connections** under `#dashboard`. Tool switches are persisted on the server, affect discovery eligibility, and block new calls to paused tools. Existing receipts can still be read and replayed. A free route preview shows compatible tools and request estimates without starting a session or calling providers.

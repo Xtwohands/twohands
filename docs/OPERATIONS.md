@@ -10,6 +10,8 @@ PostgreSQL accounts select only workspaces granted by live membership; explicit 
 
 [Scoped API keys](API_KEYS.md) restrict machine permissions, tools, expiry, and cumulative configured estimates. PostgreSQL key-policy audit events record the authenticated account UUID; SQLite records an owner-credential identifier. SQLite retains its shared local workspace and requires an owner `API_TOKEN` of at least 24 characters before key issuance. Removing or shortening it after issuance makes general `/api` requests return `503`; revoking all keys does not restore anonymous access.
 
+The [hosted rollout checkpoint](SUPABASE_ROLLOUT.md) records separately applied schema migrations, checksum/RLS/runtime-role checks, and the remaining cutover steps. It does not establish a deployed application or imported customer data.
+
 ## Local data
 
 The default backend is SQLite at `data/apilayer.sqlite`; its directory is created with owner-only permissions. Normal operations append events and replace materialized session/task state. Observation events have a local SHA-256 chain; this checks internal chain consistency, not independent attestation or immutable external custody. WAL sidecars are part of SQLite's operational storage. Protect the directory and any backups as sensitive workspace data.

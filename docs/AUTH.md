@@ -89,4 +89,6 @@ These fixtures create a minimal synthetic Auth schema. Never point them at produ
 
 The checkpoint validation recorded 267 passing normal unit/integration tests, 16 passing disposable PostgreSQL tests, and 153 passing desktop/mobile browser scenarios with one intentional skip. These are fixture results, not hosted Auth, provider performance, or payment results.
 
-Before hosted cutover, complete actual project/redirect/email configuration, sign in as the intended owner, verify imported audit chains and balances, and check logout/reset behavior against that project. Fixture validation performed no hosted migration, email delivery, provider call, or payment.
+Separately from fixture testing, the connected Supabase project now has all four checked-in schema migrations installed with matching application checksums. Public Auth settings are populated in the original ignored `.env`; the private `DATABASE_URL` is still required before runtime cutover. See the [hosted rollout checkpoint](SUPABASE_ROLLOUT.md). No application records have been imported.
+
+Before hosted cutover, complete actual project/redirect/email configuration, sign in as the intended owner, verify imported audit chains and balances, and check logout/reset behavior against that project. Fixture validation itself performed no hosted migration, email delivery, provider call, or payment. Actual hosted login and email flows remain unvalidated.
