@@ -18,6 +18,8 @@ The host must support:
 - Private environment variables, optional read-only CA certificate mounts, health checks, application logs and recoverable storage for encrypted backups.
 - A domain and HTTPS routing that preserve `/api`, browser routes and agent connections. Update the Auth confirmation/recovery redirects to the final origin and test actual email delivery.
 
+Keep hosted database connections within the selected pooler limit. The current hosted limit is 15 connections and the API pool can use 10; avoid parallel maintenance commands or extra application pools while it runs. Stop the API for the offline migration/backup steps below, run one maintenance action at a time, and close each connection before the next. Disposable CI recovery tests use their own local database and do not consume hosted connections.
+
 These requirements work with an OCI/container host or a managed Linux server using the supplied Compose file. Pricing, domain choice and target-host configuration remain owner decisions.
 
 ## Configuration and launch review
