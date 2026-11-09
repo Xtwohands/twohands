@@ -1,6 +1,8 @@
 /** Explicitly invoked paid acceptance check. Never runs in CI or on server startup. */
 import { randomUUID } from "node:crypto";
 import { config } from "./config.js";
+import { PostgresDatabase } from "./database.js";
+import { claimRuntime } from "./migration.js";
 import { Store } from "./store.js";
 import { Engine } from "./engine.js";
 import type { Task } from "./types.js";
@@ -19,7 +21,17 @@ if (
   throw new Error(
     `Set LIVE_VALIDATION_BUDGET_USD to an explicit cap of at least ${(estimate / 1e6).toFixed(3)} and at most 5 before invoking paid validation. No requests were made.`,
   );
-const store = new Store(config.dbPath);
+if (config.storageBackend === "postgres" && !config.databaseUrl)
+  throw new Error("Set DATABASE_URL before running Postgres validation.");
+const store = new Store(
+  config.dbPath,
+  config.storageBackend === "postgres" ? config.databaseUrl : undefined,
+  config.legacyWorkspaceId,
+);
+const release =
+  store.db instanceof PostgresDatabase
+    ? await claimRuntime(store.db)
+    : undefined;
 await store.recover();
 const engine = new Engine(store);
 const now = new Date().toISOString();
@@ -98,5 +110,6 @@ try {
   );
   if (Object.values(counts).some((c) => c.successes < 10)) process.exitCode = 1;
 } finally {
+  await release?.();
   await store.close();
 }

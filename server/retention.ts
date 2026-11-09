@@ -7,6 +7,8 @@ import { ProviderLab } from "./provider-lab.js";
 const days = Number(process.env.RETENTION_DAYS ?? 30);
 if (!Number.isInteger(days) || days < 1)
   throw new Error("RETENTION_DAYS must be a positive integer");
+if (config.storageBackend === "postgres" && !config.databaseUrl)
+  throw new Error("Set DATABASE_URL before Postgres maintenance.");
 const store = new Store(
   config.dbPath,
   config.storageBackend === "postgres" ? config.databaseUrl : undefined,

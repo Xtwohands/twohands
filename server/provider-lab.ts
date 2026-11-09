@@ -285,20 +285,22 @@ export class ProviderLab {
     void this.execute(run.id)
       .catch(async () => {
         try {
-          const failed = await this.get(run.id);
-          failed.status = "interrupted";
-          failed.finishedAt = new Date().toISOString();
-          for (const c of failed.calls) {
-            if (c.status === "running") {
-              c.status = "interrupted";
-              c.finishedAt = new Date().toISOString();
-              c.error =
-                "Execution stopped before settlement could be saved. No automatic retry.";
-              failed.spentMicros += c.estimateMicros;
-            } else if (c.status === "pending") c.status = "skipped";
-          }
-          failed.reservedMicros = 0;
-          await this.save(failed);
+          await this.store.db.atomic(async () => {
+            const failed = await this.get(run.id);
+            failed.status = "interrupted";
+            failed.finishedAt = new Date().toISOString();
+            for (const c of failed.calls) {
+              if (c.status === "running") {
+                c.status = "interrupted";
+                c.finishedAt = new Date().toISOString();
+                c.error =
+                  "Execution stopped before settlement could be saved. No automatic retry.";
+                failed.spentMicros += c.estimateMicros;
+              } else if (c.status === "pending") c.status = "skipped";
+            }
+            failed.reservedMicros = 0;
+            await this.save(failed);
+          });
         } catch {
           // Preserve the durable reservation for startup recovery if storage is unavailable.
           console.error(
@@ -311,36 +313,46 @@ export class ProviderLab {
   }
   private async execute(id: string) {
     for (const planned of (await this.get(id)).calls) {
-      let run = await this.get(id);
-      if (run.cancelRequested) break;
-      const call = run.calls.find((c) => c.id === planned.id)!;
-      const now = Date.now();
-      this.timestamps.set(
-        call.provider,
-        (this.timestamps.get(call.provider) || []).filter(
-          (t) => now - t < 60000,
-        ),
-      );
-      if (this.timestamps.get(call.provider)!.length >= config.rpm) {
-        call.status = "skipped";
-        call.error = "Shared provider rate limit reached. Not retried.";
+      const admission = await this.store.db.atomic(async () => {
+        const run = await this.get(id);
+        if (run.cancelRequested) return { cancelled: true } as const;
+        const call = run.calls.find((c) => c.id === planned.id)!;
+        if (call.status !== "pending") return { skipped: true } as const;
+        const now = Date.now();
+        this.timestamps.set(
+          call.provider,
+          (this.timestamps.get(call.provider) || []).filter(
+            (t) => now - t < 60000,
+          ),
+        );
+        if (this.timestamps.get(call.provider)!.length >= config.rpm) {
+          call.status = "skipped";
+          call.error = "Shared provider rate limit reached. Not retried.";
+          await this.save(run);
+          return { skipped: true } as const;
+        }
+        if (
+          run.spentMicros + run.reservedMicros + call.estimateMicros >
+          run.budgetMicros
+        )
+          throw new Error("Test ledger would exceed its cap");
+        call.status = "running";
+        call.startedAt = new Date().toISOString();
+        run.reservedMicros += call.estimateMicros;
         await this.save(run);
-        continue;
-      }
-      if (
-        run.spentMicros + run.reservedMicros + call.estimateMicros >
-        run.budgetMicros
-      )
-        throw new Error("Test ledger would exceed its cap");
-      call.status = "running";
-      call.startedAt = new Date().toISOString();
-      run.reservedMicros += call.estimateMicros;
-      await this.save(run);
-      this.timestamps.get(call.provider)!.push(now);
-      const test = run.cases.find((c) => c.id === call.caseId)!;
-      let result: Record<string, unknown> | undefined;
-      let error: string | undefined;
-      let httpStatus: number | undefined;
+        this.timestamps.get(call.provider)!.push(now);
+        return {
+          call: { ...call },
+          test: run.cases.find((c) => c.id === call.caseId)!,
+          now,
+        };
+      });
+      if ("cancelled" in admission) break;
+      if ("skipped" in admission) continue;
+      const { call, test, now } = admission;
+      let result: Record<string, unknown> | undefined,
+        error: string | undefined,
+        httpStatus: number | undefined;
       try {
         result = (call.provider === "firecrawl"
           ? await this.adapters.scrape(test.input)
@@ -356,47 +368,57 @@ export class ProviderLab {
           e instanceof ProviderError ? e.message : "Provider request failed.";
         httpStatus = e instanceof ProviderError ? e.httpStatus : undefined;
       }
-      run = await this.get(id);
-      const settled = run.calls.find((c) => c.id === call.id)!;
-      Object.assign(settled, {
-        status: error ? "failed" : "succeeded",
-        finishedAt: new Date().toISOString(),
-        latencyMs: Date.now() - now,
-        error,
-        httpStatus,
-        ...(result ? { result, measurements: measure(test, result) } : {}),
+      await this.store.db.atomic(async () => {
+        const run = await this.get(id),
+          settled = run.calls.find((c) => c.id === call.id)!;
+        if (settled.status !== "running") return;
+        Object.assign(settled, {
+          status: error ? "failed" : "succeeded",
+          finishedAt: new Date().toISOString(),
+          latencyMs: Date.now() - now,
+          error,
+          httpStatus,
+          ...(result ? { result, measurements: measure(test, result) } : {}),
+        });
+        run.reservedMicros -= call.estimateMicros;
+        run.spentMicros += call.estimateMicros;
+        await this.save(run);
       });
-      run.reservedMicros -= call.estimateMicros;
-      run.spentMicros += call.estimateMicros;
-      await this.save(run);
     }
-    const run = await this.get(id);
-    for (const c of run.calls) if (c.status === "pending") c.status = "skipped";
-    run.status = run.cancelRequested ? "cancelled" : "completed";
-    run.finishedAt = new Date().toISOString();
-    await this.save(run);
+    await this.store.db.atomic(async () => {
+      const run = await this.get(id);
+      for (const c of run.calls)
+        if (c.status === "pending") c.status = "skipped";
+      run.status = run.cancelRequested ? "cancelled" : "completed";
+      run.finishedAt = new Date().toISOString();
+      await this.save(run);
+    });
   }
   async cancel(id: string) {
-    const run = await this.get(id);
-    if (run.status === "running") {
-      run.cancelRequested = true;
-      await this.save(run);
-    }
-    return run;
+    return this.store.db.atomic(async () => {
+      const run = await this.get(id);
+      if (run.status === "running") {
+        run.cancelRequested = true;
+        await this.save(run);
+      }
+      return run;
+    });
   }
   async review(id: string, callId: string, raw: unknown) {
-    const input = labReviewInput.parse(raw);
-    const run = await this.get(id);
-    const call = run.calls.find((c) => c.id === callId);
-    if (!call) throw new ObservationError(404, "Test receipt not found.");
-    if (["pending", "running", "skipped"].includes(call.status))
-      throw new ObservationError(
-        409,
-        "This call has no settled receipt to review.",
-      );
-    call.reviews.push({ ...input, at: new Date().toISOString() });
-    await this.save(run);
-    return run;
+    return this.store.db.atomic(async () => {
+      const input = labReviewInput.parse(raw);
+      const run = await this.get(id);
+      const call = run.calls.find((c) => c.id === callId);
+      if (!call) throw new ObservationError(404, "Test receipt not found.");
+      if (["pending", "running", "skipped"].includes(call.status))
+        throw new ObservationError(
+          409,
+          "This call has no settled receipt to review.",
+        );
+      call.reviews.push({ ...input, at: new Date().toISOString() });
+      await this.save(run);
+      return run;
+    });
   }
   async experiments(): Promise<Experiment[]> {
     return (

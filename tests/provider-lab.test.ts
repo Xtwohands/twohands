@@ -704,3 +704,46 @@ it("does not count incompatible tools as offered candidates in new discovery eve
       ?.offeredSessions,
   ).toBe(0);
 });
+
+it("preserves cancellation and review during concurrent provider settlement", async () => {
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const defaultSearch = search.getMockImplementation()!;
+  search
+    .mockImplementationOnce(defaultSearch)
+    .mockImplementationOnce(async () => {
+      await gate;
+      return { httpStatus: 200, sources: [] };
+    });
+  const run = await lab.start({
+    requestKey: "concurrent-cancel-review",
+    providers: ["exa"],
+  });
+  try {
+    await vi.waitFor(() => expect(search).toHaveBeenCalledTimes(2));
+    const settled = (await lab.get(run.id)).calls.find(
+      (c) => c.status === "succeeded",
+    )!;
+    await Promise.all([
+      lab.cancel(run.id),
+      lab.review(run.id, settled.id, {
+        verdict: "useful",
+        note: "Fixture receipt reviewed while the next call is running.",
+        author: "human_reported",
+      }),
+    ]);
+    release();
+    const result = await finish(run);
+    expect(result.cancelRequested).toBe(true);
+    expect(result.status).toBe("cancelled");
+    expect(result.calls.find((c) => c.id === settled.id)!.reviews).toHaveLength(
+      1,
+    );
+    expect(search).toHaveBeenCalledTimes(2);
+    expect(result.reservedMicros).toBe(0);
+  } finally {
+    release();
+  }
+});
