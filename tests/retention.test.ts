@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { randomUUID } from "node:crypto";
 import { Store } from "../server/store";
 import { PostgresDatabase } from "../server/database";
@@ -32,15 +32,25 @@ async function seed(store: Store) {
         .prepare(`INSERT INTO ${table}(id,body) VALUES(?,?)`)
         .run(value.id, JSON.stringify(value));
   };
-  const sessions = ["expired", "active", "held", "reserved", "recent"].map(
-    (id) => ({
-      id,
-      status: "active",
-      updatedAt: id === "recent" ? "2025-01-01T00:00:00Z" : old,
-      reservedMicros: id === "reserved" ? 1 : 0,
-      cases: id === "held" ? [{ status: "open" }] : [],
-    }),
-  );
+  const sessions = [
+    "expired",
+    "active",
+    "held",
+    "reserved",
+    "recent",
+    "boundary",
+  ].map((id) => ({
+    id,
+    status: "active",
+    updatedAt:
+      id === "recent"
+        ? "2025-01-01T00:00:00Z"
+        : id === "boundary"
+          ? cutoff
+          : old,
+    reservedMicros: id === "reserved" ? 1 : 0,
+    cases: id === "held" ? [{ status: "open" }] : [],
+  }));
   for (const s of sessions) await insert("observation_sessions", s);
   await insert("observation_calls", {
     id: "active-call",
@@ -110,6 +120,29 @@ async function scenario(store: Store) {
         .get("expired-task")
     )?.id,
   ).toBe("expired-task");
+  const prepare = store.db.prepare.bind(store.db);
+  const fault = vi.spyOn(store.db, "prepare").mockImplementation((sql) => {
+    if (sql === "DELETE FROM observation_sessions WHERE id=?")
+      throw new Error("Fixture maintenance interruption");
+    return prepare(sql);
+  });
+  try {
+    await expect(applyRetention(store, cutoff, plan.digest)).rejects.toThrow(
+      "Fixture maintenance interruption",
+    );
+  } finally {
+    fault.mockRestore();
+  }
+  expect(
+    await store.db
+      .prepare("SELECT id FROM tasks WHERE id=?")
+      .get("expired-task"),
+  ).toBeDefined();
+  expect(
+    await store.db
+      .prepare("SELECT id FROM observation_sessions WHERE id=?")
+      .get("boundary"),
+  ).toBeDefined();
   await applyRetention(store, cutoff, plan.digest);
   expect(
     await store.db

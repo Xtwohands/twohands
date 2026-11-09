@@ -182,6 +182,23 @@ it("retention deletes old evidence but retains open cases and recent sessions", 
       .run("2000-01-01T00:00:00Z", id);
   await store.close();
   try {
+    const preview = await execute(
+      process.execPath,
+      ["--import", "tsx", resolve("server/retention.ts")],
+      { env: { ...process.env, DB_PATH: path, RETENTION_DAYS: "30" } },
+    );
+    expect(JSON.parse(preview.stdout)).toMatchObject({
+      mode: "dry_run",
+      backend: "sqlite",
+      counts: { sessions: 1 },
+    });
+    store = new Store(path);
+    expect(
+      await store.db
+        .prepare("SELECT id FROM observation_sessions WHERE id=?")
+        .get(old.id),
+    ).toBeDefined();
+    await store.close();
     const result = await execute(
       process.execPath,
       ["--import", "tsx", resolve("server/retention.ts"), "--apply"],
