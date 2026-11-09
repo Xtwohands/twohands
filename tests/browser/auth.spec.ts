@@ -838,6 +838,26 @@ test("administrator previews standard roles from settings and can always return"
   ).toBeVisible();
 });
 
+test("user preview has no floating bar and can return through account settings", async ({
+  page,
+}) => {
+  const state = await mockAuth(page, false, "admin");
+  state.workspaces = [{ id: first, name: "Personal account", role: "owner" }];
+  await login(page, "/#admin");
+  await openSettings(page);
+  await page.getByLabel("Preview as").selectOption("user");
+  await expect(
+    page.getByRole("heading", { name: "My dashboard", exact: true }),
+  ).toBeVisible();
+  await expect(page.locator(".preview-notice")).toHaveCount(0);
+  await openSettings(page);
+  await expect(page.getByLabel("Preview as")).toHaveValue("user");
+  await page.getByLabel("Preview as").selectOption("admin");
+  await expect(
+    page.getByRole("heading", { name: "Company reviews", exact: true }),
+  ).toBeVisible();
+});
+
 test("admin switches selected companies, drops late reports, and retains return access", async ({
   page,
 }) => {

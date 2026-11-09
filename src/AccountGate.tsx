@@ -640,7 +640,7 @@ export function AccountGate({ children }: { children: ReactNode }) {
           className="account-workspace"
         >
           {children}
-          {previewRole && (
+          {previewRole === "company" && (
             <PreviewNotice
               role={previewRole}
               target={previewTarget}
@@ -669,7 +669,12 @@ export function AccountGate({ children }: { children: ReactNode }) {
         octolab
       </a>
       <section className="account-card">
-        {previewRole && (
+        {previewRole === "user" && (
+          <Button variant="outline" onClick={() => void context.preview(null)}>
+            Return to admin
+          </Button>
+        )}
+        {previewRole === "company" && (
           <PreviewNotice
             role={previewRole}
             target={previewTarget}
