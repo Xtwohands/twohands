@@ -125,6 +125,8 @@ SIGTERM/SIGINT stops accepting connections, asks active legacy plans and control
 
 `GET /healthz` tests the database connection and returns only `{ "ok": true }`. It does not verify vendor credentials or prove an external provider is healthy. `/api/health` requires account workspace access in PostgreSQL mode or the configured workspace token in SQLite mode and provides connection configuration, not vendor uptime.
 
+Database clients retain an error handler while checked out of the pool. A dropped ordinary connection fails its request and rolls back uncommitted writes; later requests can obtain a fresh connection. The application does not automatically replay the interrupted operation. Losing the dedicated database ownership connection still stops the process to prevent overlapping runtimes. The isolated disconnect regression tests exercise both behaviors and never terminate a hosted database session.
+
 ## Deployment artifact
 
 Use the [release and recovery checklist](RELEASE_CHECKLIST.md) for the packaged application/recovery images, compiled migration commands, exact-revision CI evidence, encrypted backup ownership/retention and tested fresh-destination restore procedure. The offline application archive excludes hosted Auth identities and object storage; those need their own recovery arrangements. No hosted backup, restore, data cutover or deployment is implied by a passing isolated drill.
