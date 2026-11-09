@@ -2,7 +2,7 @@
 
 The user sidebar has **API keys** at `#dashboard/keys`. Create separate credentials for agents/applications, restrict permissions and tools, set expiry and a lifetime estimated-spend limit, inspect usage, edit policy, or permanently revoke a key.
 
-This checkpoint uses the current single shared workspace. It adds machine credentials and durable limits, not hosted user accounts or customer isolation. Supabase auth/database migration remains separate work. Every key has a persistent application-owned workspace UUID for that later migration.
+This checkpoint uses the current single shared workspace. It adds machine credentials and durable limits; hosted user accounts remain separate work. Every key has a persistent application-owned workspace UUID preserved by the [verified PostgreSQL import](POSTGRES_MIGRATION.md). PostgreSQL storage adds database workspace isolation, while this runtime still selects one workspace and authenticates its owner with `API_TOKEN`.
 
 ## Owner protection is required
 
@@ -64,7 +64,7 @@ All management routes require the workspace owner credential once protection is 
 | POST   | `/api/workspace/api-keys/:id`        | Full editable policy `{revision,name,scopes,allowedTools,limitUsd}`.                             |
 | POST   | `/api/workspace/api-keys/:id/revoke` | `{revision}`; repeated revocation returns the saved revoked state.                               |
 
-Scoped callers send `Authorization: Bearer <scoped key>` to permitted observation/usage endpoints. Management supports at most 1,000 saved keys and 100 unexpired/unrevoked credentials. Secret digests, key-spend receipts, and policy audit records remain outside provider/model statistics and commercial aggregate exports. Existing single-process SQLite ownership and process-local rate limits still apply.
+Scoped callers send `Authorization: Bearer <scoped key>` to permitted observation/usage endpoints. Management supports at most 1,000 saved keys and 100 unexpired/unrevoked credentials. Secret digests, key-spend receipts, and policy audit records remain outside provider/model statistics and commercial aggregate exports. Single-server database ownership and process-local rate limits still apply with either backend.
 
 ## Validation
 

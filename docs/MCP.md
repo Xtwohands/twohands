@@ -80,7 +80,7 @@ For ordinary use, keep the host’s interactive prompts. Do not use a blanket sa
 - `APILAYER_URL` defaults to `http://127.0.0.1:3001/api`. Override it in the bridge environment for another local port. Only loopback HTTP addresses without URL credentials, query strings, or fragments are accepted.
 - `APILAYER_API_KEY` supplies a scoped bridge credential and takes precedence over legacy `API_TOKEN`. A rejected key never falls back to the owner token. Issue a key from API keys after configuring a server owner `API_TOKEN` of at least 24 characters; see [API key setup](API_KEYS.md).
 - Without `APILAYER_API_KEY`, the bridge uses `API_TOKEN`, which must match the HTTP server when authentication is enabled. The browser’s owner token stays in tab memory; the bridge reads its server-side environment.
-- Keep `npm start` running. The stdio bridge does not independently open the SQLite database or start the HTTP server.
+- Keep `npm start` running. The stdio bridge does not independently open either storage backend or start the HTTP server.
 - Provider keys may be configured while expired or invalid. Only actual execution verifies access.
 - Host tool timeouts should allow the configured provider timeout plus transport overhead. Codex supports `mcp_servers.apilayer.tool_timeout_sec`; 150 seconds covers APILayer’s maximum configurable provider deadline.
 - After changing MCP tools, rebuild and restart the client’s MCP process. An already-running client can keep an earlier catalog until restarted.

@@ -13,7 +13,7 @@ flowchart LR
   API <-->|Explicit selected call| Providers[Exa / Tavily / Firecrawl]
 ```
 
-The bridge never opens the database. A single HTTP process owns SQLite and provider admission. Existing research remains under `/research/`, with its earlier deterministic routing clearly separated from external-agent decisions.
+The diagram shows the default SQLite path. The bridge never opens the database. A single HTTP process owns the selected database and provider admission. Asynchronous storage supports SQLite and an explicitly selected PostgreSQL backend; the latter uses a private schema, workspace-scoped constraints, forced row-level security, and a session advisory runtime lock. Account login is separate work, so owner access still uses `API_TOKEN`. See [PostgreSQL migration and boundaries](POSTGRES_MIGRATION.md). Existing research remains under `/research/`, with its earlier deterministic routing clearly separated from external-agent decisions.
 
 ## Record lifecycle
 

@@ -54,7 +54,7 @@ Discovery exposes a separately labeled `controlledTestSample` with its source, s
 
 ## Receipts and recovery
 
-The lab stores runs and plans in separate SQLite tables, `provider_lab_runs` and `provider_experiments`. Each run snapshots cases, suite version and hash, adapter settings, the rate card, backend authorization, and estimated budget. Requests reserve their estimate before network I/O. Failures retain a conservative estimate because billing status may be uncertain.
+The lab stores runs and plans in separate tables, `provider_lab_runs` and `provider_experiments`, on the selected SQLite or PostgreSQL backend. Each run snapshots cases, suite version and hash, adapter settings, the rate card, backend authorization, and estimated budget. Requests reserve their estimate before network I/O. Short database transactions serialize admission, reservations, and saved run mutations; provider requests execute outside those transactions. Failures retain a conservative estimate because billing status may be uncertain.
 
 Run creation is idempotent by `requestKey` and normalized provider selection. Exact replays return the original run; changed arguments with the same key are rejected. Stop requests allow the current call to settle and skip remaining calls. Graceful shutdown stops new work and drains the current request. After a process kill, startup marks the outstanding call interrupted, consumes its reserved estimate once, and never silently repeats it.
 

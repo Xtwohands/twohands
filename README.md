@@ -28,6 +28,8 @@ Open [the user dashboard](http://127.0.0.1:3001/#dashboard), or [the operator co
 
 For development, `npm run dev` runs the API on port 3001 and Vite on port 5173.
 
+SQLite remains the default storage backend. PostgreSQL on Supabase is available through an explicit, verified cutover: follow the [PostgreSQL migration guide](docs/POSTGRES_MIGRATION.md) for inspection, migrations, import, verification, and rollback. `DATABASE_URL` alone does not switch storage; select `STORAGE_BACKEND=postgres` only after import verification. This checkpoint keeps `API_TOKEN` owner access; Supabase account login is separate work.
+
 ## Tool workspace
 
 The user sidebar groups **Tool catalog**, **Routing**, **Activity**, **Usage**, **Credits**, **API keys**, and **Connections** under `#dashboard`. Tool switches are persisted on the server, affect discovery eligibility, and block new calls to paused tools. Existing receipts can still be read and replayed. A free route preview shows compatible tools and request estimates without starting a session or calling providers.
@@ -88,7 +90,7 @@ MCP exposes actions and supplied explanations, **not private internal reasoning 
 
 Calls reserve integer USD micro-units transactionally against configured estimates. Exact request-key retries reuse receipts, including across restarts; uncertain interrupted calls are retained and conservatively settled without automatically repeating provider work. Output retries return the original output version’s receipt. Provider billing and model-host subscription/token costs are not reconciled by this ledger.
 
-The workspace is single-user and local by default. Set a long `API_TOKEN` before binding beyond loopback; use HTTPS and trusted access controls for any remote deployment. The MCP bridge intentionally accepts only loopback HTTP destinations. Run one server per SQLite database. See [privacy and operations](docs/OPERATIONS.md).
+The workspace is single-user and local by default. Set a long `API_TOKEN` before binding beyond loopback; use HTTPS and trusted access controls for any remote deployment. The MCP bridge intentionally accepts only loopback HTTP destinations. Run one API server per database with either storage backend; PostgreSQL uses a session advisory ownership lock and requires a direct connection or session pooler. See [privacy and operations](docs/OPERATIONS.md).
 
 Earlier deterministic routing runs remain available at [Research tools](http://127.0.0.1:3001/research/#workspace). Their original data and workflows are preserved and explicitly distinguished from external-agent decisions. See [the earlier research workflow](docs/RESEARCH_WORKFLOW.md).
 
@@ -102,6 +104,8 @@ npm run format:check
 ```
 
 Tests use isolated fixtures and temporary databases. They cover protocol transport, authentication, approval boundaries, budgets, idempotency, real process interruption, retained evidence, output/review versions, cases, sharing policy, exports, mobile navigation, accessibility, and safe Markdown rendering.
+
+Real PostgreSQL integration tests are separate and require a disposable database through `OCTOLAB_TEST_POSTGRES_URL`; see [migration validation](docs/POSTGRES_MIGRATION.md#validation). Never point fixture tests at the production database.
 
 During development, pass a test file to run a focused check:
 
