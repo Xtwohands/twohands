@@ -174,6 +174,10 @@ export async function backupDatabase(
     );
     cipher.setAAD(header);
     await mkdir(dirname(output), { recursive: true, mode: 0o700 });
+    if (((await stat(dirname(output))).mode & 0o022) !== 0)
+      throw new BackupError(
+        "The backup directory must not be writable by other users.",
+      );
     const handle = await open(output, "wx", 0o600);
     created = true;
     await handle.close();

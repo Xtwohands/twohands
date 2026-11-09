@@ -44,12 +44,12 @@ The tool below is an offline application backup: the API and maintenance process
 
 Use the separate recovery image for container backups, or a host build with compatible PostgreSQL clients installed. Supply these variables through a private environment/secret store, not command-line values or a committed file:
 
-| Variable              | Meaning                                                                                                       |
-| --------------------- | ------------------------------------------------------------------------------------------------------------- |
-| `BACKUP_DATABASE_URL` | Explicit privileged source connection. There is no automatic `DATABASE_URL` fallback.                         |
-| `BACKUP_FILE`         | New output path. Existing files are never overwritten.                                                        |
-| `BACKUP_PASSPHRASE`   | Separate generated recovery secret, 24–1,024 characters.                                                      |
-| `PGSSLROOTCERT`       | Trusted public CA file for a remote PostgreSQL backup client, where required. TLS verification stays enabled. |
+| Variable              | Meaning                                                                                                                            |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `BACKUP_DATABASE_URL` | Explicit privileged source connection. There is no automatic `DATABASE_URL` fallback.                                              |
+| `BACKUP_FILE`         | New output path in a protected directory. The directory must not be writable by other users; existing files are never overwritten. |
+| `BACKUP_PASSPHRASE`   | Separate generated recovery secret, 24–1,024 characters.                                                                           |
+| `PGSSLROOTCERT`       | Trusted public CA file for a remote PostgreSQL backup client, where required. TLS verification stays enabled.                      |
 
 Run `npm run db:backup`, or run the recovery image with the `backup` command and a protected backup-directory mount. It refuses an active API/maintenance owner, uses one consistent database snapshot, encrypts the manifest and dump with authenticated encryption, and prints a content-free receipt with encrypted-file checksum and verification counts. A forcibly killed command can leave an incomplete file; without a completed success receipt it is not a verified backup. Restore authentication rejects incomplete or changed files.
 
