@@ -10,7 +10,7 @@ The local MCP server works with Claude desktop and Codex CLI. Both have complete
 
 The [product direction](docs/PRODUCT_DIRECTION.md) connects this evidence to future model evaluation, refund review, and aggregate tool-company feedback, and identifies what still needs to be established for each.
 
-PostgreSQL accounts have separate **User workspace**, **Tool company**, and **Administration** areas. Users connect agents and manage their usage; tool company owners register for review and see only approved aggregate insights; allowlisted administrators review companies and operate the service. See [role journeys and company access](docs/ROLE_JOURNEYS.md). The illustrative company demo and controlled [provider lab](docs/PROVIDER_LAB.md) remain operator tooling, separate from the company-owner portal.
+PostgreSQL accounts have separate **User workspace**, **Tool company**, and **Administration** areas. Users connect agents and manage their usage; tool company owners register for review, manage analyst access, and see only approved aggregate insights; allowlisted administrators review companies and operate the service. See [role journeys and company access](docs/ROLE_JOURNEYS.md). The illustrative company demo and controlled [provider lab](docs/PROVIDER_LAB.md) remain operator tooling, separate from the company-owner portal.
 
 ## Run locally
 
@@ -30,7 +30,7 @@ For development, `npm run dev` runs the API on port 3001 and Vite on port 5173.
 
 SQLite remains the default local backend. PostgreSQL mode uses [Supabase Auth accounts and workspace membership](docs/AUTH.md), with signup, email confirmation, sign-in, password recovery, workspace selection, and sign-out. Follow the [PostgreSQL migration guide](docs/POSTGRES_MIGRATION.md) for schema setup, account bootstrap, explicit legacy-owner assignment, verified import, and rollback. `DATABASE_URL` alone does not switch storage. The PostgreSQL runtime can start for signup before importing history; signup never claims existing records. `API_TOKEN` and `ADMIN_API_TOKEN` apply only to SQLite/local mode.
 
-The connected Supabase project has five checked-in schema migrations installed, with checksums verified through the application database connection. A confirmed account and explicit platform-admin configuration are available, and the PostgreSQL account runtime starts successfully. The original runtime still defaults to SQLite; historical-data import and verification remain pending. See the [hosted rollout checkpoint](docs/SUPABASE_ROLLOUT.md).
+The connected Supabase project has six checked-in schema migrations installed, with checksums verified through the application database connection. A confirmed account and explicit platform-admin configuration are available, and the PostgreSQL account runtime starts successfully. The original runtime still defaults to SQLite; historical-data import and verification remain pending. See the [hosted rollout checkpoint](docs/SUPABASE_ROLLOUT.md).
 
 ## Tool workspace
 

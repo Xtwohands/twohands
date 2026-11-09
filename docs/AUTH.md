@@ -38,17 +38,18 @@ The source is never edited by the importer. Consent events, content, key hashes,
 
 ## Roles and machine access
 
-| Principal              | Allowed access                                                                                                                                                                                                                |
-| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Workspace owner        | Own research, routing settings, API-key management, and test-funding controls.                                                                                                                                                |
-| Workspace member       | Research/tool operations and usage reads; no key management, funding controls, or owner settings.                                                                                                                             |
-| Platform administrator | Explicit operator access across registered workspaces, company ownership/access review, controlled diagnostics, manual approval/evaluation, and dispute review.                                                               |
-| Tool company owner     | Own registration and feedback; approved, separately released aggregate metrics for the provider assigned by an administrator. No customer workspace, raw evidence, or provider-lab access is granted by company registration. |
-| Scoped API key         | Explicit route/scope/tool allowlist for its owning workspace, within spend/expiry/revocation checks.                                                                                                                          |
+| Principal              | Allowed access                                                                                                                                                                                                         |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Workspace owner        | Own research, routing settings, API-key management, and test-funding controls.                                                                                                                                         |
+| Workspace member       | Research/tool operations and usage reads; no key management, funding controls, or owner settings.                                                                                                                      |
+| Platform administrator | Explicit operator access across registered workspaces, company ownership/access review, controlled diagnostics, manual approval/evaluation, and dispute review.                                                        |
+| Tool company owner     | Own registration, feedback, team grants/revocation, and access history; approved, separately released aggregate metrics for the assigned provider. Company membership grants no customer workspace or operator access. |
+| Company analyst        | Company profile and approved aggregate insights only; no registration edits, team management, access history, or provider-lab access.                                                                                  |
+| Scoped API key         | Explicit route/scope/tool allowlist for its owning workspace, within spend/expiry/revocation checks.                                                                                                                   |
 
-Platform roles come from the server UUID allowlist. Workspace roles come from the membership table. There is no first-signup administrator rule or editable JWT metadata shortcut. Authorization normalizes URL casing, trailing slashes, and encoded parameters to match Express routing.
+Platform roles come from the server UUID allowlist. Workspace and company roles come from their separate membership tables. There is no first-signup administrator rule or editable JWT metadata shortcut. Settings previews remove admin privileges while retaining actual memberships; they grant neither impersonation nor another account's data. Authorization normalizes URL casing, trailing slashes, and encoded parameters to match Express routing.
 
-User workspace creation, company registration, and platform administration are separate flows. A company owner or administrator can enter their area without creating a customer workspace. Invitations, company team membership, workspace membership editing, OAuth/SSO setup, and MFA enrollment UI remain separate work. Trusted operators can manage workspace memberships; removal or role changes take effect on the next backend request.
+User workspace creation, company registration, and platform administration are separate flows. A company owner or administrator can enter their area without creating a customer workspace. Company owners can grant analyst access to existing confirmed accounts and revoke it in Company team. Emailed invitations, workspace membership editing, OAuth/SSO setup, and MFA enrollment UI remain separate work. Trusted operators can manage workspace memberships; removal or role changes take effect on the next backend request.
 
 In PostgreSQL account mode, API_TOKEN and ADMIN_API_TOKEN do not replace account authentication. They retain their previous behavior only in explicit SQLite/local mode. For Claude, Codex, and other MCP hosts, issue a scoped workspace key and configure APILAYER_API_KEY. The consumer's conversation stays in its MCP host; it does not visit the dashboard or approve backend research spending.
 
@@ -56,13 +57,15 @@ Signing out ends the current browser session. Machine keys remain separate works
 
 ## Account API
 
-| Method | Route                  | Behavior                                                                                                                      |
-| ------ | ---------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| GET    | `/api/auth/config`     | Public `{enabled:false}` in SQLite mode, or validated public Auth URL/key in account mode.                                    |
-| GET    | `/api/auth/me`         | Authenticated account ID/email, accessible workspaces/roles, owned company records, and platform-admin status.                |
-| POST   | `/api/auth/workspaces` | Create a workspace with `{name, requestKey}` and owner membership. Requires a verified account, JSON, and same-origin writes. |
-| POST   | `/api/auth/companies`  | Register a tool company for ownership/integration review; no existing customer workspace is required.                         |
-| GET    | `/api/public/catalog`  | Public tool descriptions, provider availability, and configured estimates; no private activity or credentials.                |
+| Method | Route                  | Behavior                                                                                                                                       |
+| ------ | ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| GET    | `/api/auth/config`     | Public `{enabled:false}` in SQLite mode, or validated public Auth URL/key in account mode.                                                     |
+| GET    | `/api/auth/me`         | Authenticated account ID/email, accessible workspaces/roles, company memberships/roles, platform-admin status, and admin preview availability. |
+| POST   | `/api/auth/workspaces` | Create a workspace with `{name, requestKey}` and owner membership. Requires a verified account, JSON, and same-origin writes.                  |
+| POST   | `/api/auth/companies`  | Register a tool company for ownership/integration review; no existing customer workspace is required.                                          |
+| GET    | `/api/public/catalog`  | Public tool descriptions, provider availability, and configured estimates; no private activity or credentials.                                 |
+
+Company team grant/revocation requests are idempotent by actor, company, and request key. A replay after revocation does not restore a previous grant. Successful aggregate report requests append access status/policy audit events without copying report payloads. See [company team contracts](ROLE_JOURNEYS.md#company-and-review-api).
 
 Protected browser requests send `Authorization: Bearer <Supabase access token>` and `X-Octolab-Workspace: <workspace ID>`. Omitting the workspace header selects the first accessible workspace; an inaccessible requested ID returns `403`. `/api/auth/me`, workspace creation, company registration, company-owner routes, and the global company-review queue do not require an existing workspace. Company and admin routes verify account identity independently of customer workspace headers; see [their API reference](ROLE_JOURNEYS.md#company-and-review-api). Login, signup, confirmation, refresh, recovery, and sign-out use the browser Auth SDK directly.
 
@@ -90,8 +93,8 @@ OCTOLAB_TEST_POSTGRES_URL=postgresql://... npm test -- tests/accounts.test.ts te
 
 These fixtures create a minimal synthetic Auth schema. Never point them at production Supabase.
 
-The role checkpoint recorded 267 passing normal unit/integration tests and 18 passing disposable PostgreSQL tests. The full browser pass recorded 159 passing scenarios with one intentional skip; after review corrections, all 14 focused account/role browser cases passed again. These are fixture results, separate from hosted-account checks, provider performance, and payments.
+The latest combined working-tree validation recorded 272 normal tests and 23 disposable PostgreSQL cases: 12 account/company cases, eight storage cases, and three concurrent retention cases. Those totals include retention work outside this company-access checkpoint. All 16 affected desktop/mobile account/company browser cases passed. The earlier full role browser pass recorded 159 passes and one intentional skip. Fixture results remain separate from hosted-account checks, provider performance, and payments.
 
-Separately from fixture testing, the connected Supabase project has all five checked-in schema migrations installed with matching application checksums. The actual session-pooler database connection succeeds with certificate and hostname verification. A confirmed account exists and its explicitly requested platform-admin allowlist entry is configured. The account runtime starts on port 3008; the original runtime still uses SQLite, and no historical application records have been imported. See the [hosted rollout checkpoint](SUPABASE_ROLLOUT.md).
+Separately from fixture testing, the connected Supabase project has all six checked-in schema migrations installed with matching application checksums. The actual session-pooler database connection succeeds with certificate and hostname verification. A confirmed account exists and its explicitly requested platform-admin allowlist entry is configured. The account runtime starts on port 3008; the original runtime still uses SQLite, and no historical application records have been imported. See the [hosted rollout checkpoint](SUPABASE_ROLLOUT.md).
 
 Before completing cutover, assign the legacy owner explicitly, import and verify historical audit chains and balances, and check recovery/login/logout and role transitions against the hosted project. The confirmed account establishes confirmation for that account; it does not establish production SMTP delivery or complete end-to-end recovery coverage. Fixture tests themselves made no hosted writes, provider calls, or payments.

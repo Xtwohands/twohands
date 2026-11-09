@@ -2,7 +2,7 @@
 
 The production path is PostgreSQL on Supabase. SQLite remains the default until an explicit cutover; fixtures continue to use isolated SQLite databases. Adding `DATABASE_URL` alone does not migrate or switch the app. The earlier storage-only checkpoint retained owner/admin tokens. The current checkpoint adds [Supabase Auth and workspace authorization](AUTH.md): PostgreSQL requires account sessions or scoped workspace keys and ignores `API_TOKEN`/`ADMIN_API_TOKEN`. SQLite retains its local token mode.
 
-The connected project has five checked-in schema migrations applied with matching checksums, including private company-registration/review tables. The actual session-pooler connection and PostgreSQL account runtime work; a confirmed account is available. The original runtime still defaults to SQLite and historical application records have not been imported. Follow the [hosted rollout checkpoint](SUPABASE_ROLLOUT.md) for explicit owner assignment, import, and remaining verification.
+The connected project has six checked-in schema migrations applied with matching checksums, including private company-registration, membership, review, and access-audit tables. The actual session-pooler connection and PostgreSQL account runtime work; a confirmed account is available. The original runtime still defaults to SQLite and historical application records have not been imported. Follow the [hosted rollout checkpoint](SUPABASE_ROLLOUT.md) for explicit owner assignment, import, and remaining verification.
 
 ## What changes
 
