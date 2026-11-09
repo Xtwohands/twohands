@@ -57,13 +57,13 @@ Signing out ends the current browser session. Machine keys remain separate works
 
 ## Account API
 
-| Method | Route                  | Behavior                                                                                                                                       |
-| ------ | ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| GET    | `/api/auth/config`     | Public `{enabled:false}` in SQLite mode, or validated public Auth URL/key in account mode.                                                     |
+| Method | Route                  | Behavior                                                                                                                                                         |
+| ------ | ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GET    | `/api/auth/config`     | Public `{enabled:false}` in SQLite mode, or validated public Auth URL/key in account mode.                                                                       |
 | GET    | `/api/auth/me`         | Authenticated account ID/email, accessible workspaces/roles, company memberships/roles, platform-admin status, MFA verification, and admin preview availability. |
-| POST   | `/api/auth/workspaces` | Create a workspace with `{name, requestKey}` and owner membership. Requires a verified account, JSON, and same-origin writes.                  |
-| POST   | `/api/auth/companies`  | Register a tool company for ownership/integration review; no existing customer workspace is required.                                          |
-| GET    | `/api/public/catalog`  | Public tool descriptions, provider availability, and configured estimates; no private activity or credentials.                                 |
+| POST   | `/api/auth/workspaces` | Create a workspace with `{name, requestKey}` and owner membership. Requires a verified account, JSON, and same-origin writes.                                    |
+| POST   | `/api/auth/companies`  | Register a tool company for ownership/integration review; no existing customer workspace is required.                                                            |
+| GET    | `/api/public/catalog`  | Public tool descriptions, provider availability, and configured estimates; no private activity or credentials.                                                   |
 
 Company team grant/revocation requests are idempotent by actor, company, and request key. A replay after revocation does not restore a previous grant. Successful aggregate report requests append access status/policy audit events without copying report payloads. See [company team contracts](ROLE_JOURNEYS.md#company-and-review-api).
 

@@ -103,7 +103,8 @@ export class Companies {
     ).rows;
   }
   async get(identity: VerifiedIdentity, id: string): Promise<ToolCompany> {
-    if (this.accounts.isAdmin(identity.userId)) this.accounts.assertAdmin(identity);
+    if (this.accounts.isAdmin(identity.userId))
+      this.accounts.assertAdmin(identity);
     const preview = this.accounts.previewsCompany(identity, id);
     if (!z.uuid().safeParse(id).success)
       throw new AccountError(404, "Company not found.");

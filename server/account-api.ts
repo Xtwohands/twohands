@@ -25,14 +25,12 @@ export function sameOriginWrite(req: Request, res: Response): boolean {
 }
 export function accountFailure(error: unknown, res: Response) {
   if (error instanceof AccountError || error instanceof ApiKeyError)
-    res
-      .status(error.status)
-      .json({
-        error: error.message,
-        ...(error instanceof AccountError && error.code
-          ? { code: error.code }
-          : {}),
-      });
+    res.status(error.status).json({
+      error: error.message,
+      ...(error instanceof AccountError && error.code
+        ? { code: error.code }
+        : {}),
+    });
   else if (error instanceof z.ZodError)
     res
       .status(400)

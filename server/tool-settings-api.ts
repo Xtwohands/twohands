@@ -37,18 +37,14 @@ export function toolSettingsRoutes(
         else if (error instanceof SettingsBusyError)
           res.status(409).json({ error: error.message });
         else if (error instanceof z.ZodError)
-          res
-            .status(400)
-            .json({
-              error: "Settings are invalid. Check field values and retry.",
-            });
+          res.status(400).json({
+            error: "Settings are invalid. Check field values and retry.",
+          });
         else
-          res
-            .status(503)
-            .json({
-              error:
-                "Platform settings could not be saved or loaded. Refresh before retrying. No automatic retry was made.",
-            });
+          res.status(503).json({
+            error:
+              "Platform settings could not be saved or loaded. Refresh before retrying. No automatic retry was made.",
+          });
       }
     };
   router.get(
