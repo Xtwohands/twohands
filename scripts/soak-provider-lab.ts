@@ -25,7 +25,7 @@ Object.assign(config.keys, {
   firecrawl: "FIXTURE",
 });
 config.providerTestBudgetMicros = 150000;
-config.providerTestDailyBudgetMicros = 100_000_000;
+config.providerTestDailyBudgetMicros = 100000000;
 config.rpm = 100000;
 let calls = 0,
   cycle = 0,
@@ -71,7 +71,7 @@ let store = new Store(path),
   lab = new ProviderLab(store, adapters),
   obs = new Observatory(store, adapters);
 const connect = () => {
-  obs.controlledSamples = () => lab.controlledSamples();
+  obs.controlledSamples = async () => await lab.controlledSamples();
 };
 connect();
 const started = Date.now(),
@@ -98,59 +98,61 @@ try {
       providers: ["exa", "tavily", "firecrawl"],
     };
     const before = calls;
-    const run = lab.start(input);
-    assert.equal(lab.start(input).id, run.id);
-    if (cycle % 11 === 0) lab.cancel(run.id);
+    const run = await lab.start(input);
+    assert.equal((await lab.start(input)).id, run.id);
+    if (cycle % 11 === 0) await lab.cancel(run.id);
     while (lab.active.size) await new Promise((r) => setTimeout(r, 5));
-    const settled = lab.get(run.id);
+    const settled = await lab.get(run.id);
     assert.equal(settled.reservedMicros, 0);
     assert(settled.spentMicros <= settled.budgetMicros);
     assert.equal(calls - before, cycle % 11 === 0 ? 1 : 15);
-    assert.equal(lab.start(input).id, run.id);
+    assert.equal((await lab.start(input)).id, run.id);
     assert.equal(calls - before, cycle % 11 === 0 ? 1 : 15);
     const first = settled.calls.find((c) =>
       ["succeeded", "failed"].includes(c.status),
     )!;
-    lab.review(run.id, first.id, {
+    await lab.review(run.id, first.id, {
       verdict: "partial",
       note: "Synthetic fixture review, not measured provider quality.",
       author: "assistant_reported",
     });
     if (cycle % 3 === 0)
-      lab.review(run.id, first.id, {
+      await lab.review(run.id, first.id, {
         verdict: "unknown",
         note: "Revised synthetic judgment preserves uncertainty.",
         author: "assistant_reported",
       });
     const tick = Date.now();
-    const overview = lab.overview();
+    const overview = await lab.overview();
     assert.equal(overview.runs.length, cycle);
     assert(
       overview.runs.every((r) => r.calls.every((c) => c.result === undefined)),
     );
-    assert.equal(obs.db.list().length, 0);
+    assert.equal((await obs.db.list()).length, 0);
     assert(
-      obs.catalog().every((c) => c.sampleCount === 0 && c.quality === null),
+      (await obs.catalog()).every(
+        (c) => c.sampleCount === 0 && c.quality === null,
+      ),
     );
     for (const provider of ["exa", "tavily", "firecrawl"] as const) {
-      const company = companyReport(provider, "local", obs, lab);
+      const company = await companyReport(provider, "local", obs, lab);
       assert.equal(company.organic, null);
     }
-    assert.equal(companyReport("exa", "demo", obs, lab).source, "demo");
+    assert.equal((await companyReport("exa", "demo", obs, lab)).source, "demo");
     peakReadMs = Math.max(peakReadMs, Date.now() - tick);
     if (cycle % 10 === 0) {
-      store.close();
+      await store.close();
       store = new Store(path);
       lab = new ProviderLab(store, adapters);
       obs = new Observatory(store, adapters);
       connect();
-      lab.recover();
-      lab.recover();
+      await lab.recover();
+      await lab.recover();
       restarts++;
-      assert.equal(lab.start(input).id, run.id);
-      assert.equal(lab.get(run.id).spentMicros, settled.spentMicros);
+      assert.equal((await lab.start(input)).id, run.id);
+      assert.equal((await lab.get(run.id)).spentMicros, settled.spentMicros);
       assert.equal(
-        lab.get(run.id).calls[0].reviews.length,
+        (await lab.get(run.id)).calls[0].reviews.length,
         cycle % 3 === 0 ? 2 : 1,
       );
       assert.equal(calls - before, cycle % 11 === 0 ? 1 : 15);
@@ -191,5 +193,5 @@ try {
   );
   throw error;
 } finally {
-  store.close();
+  await store.close();
 }

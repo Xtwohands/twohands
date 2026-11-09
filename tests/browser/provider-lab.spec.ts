@@ -549,6 +549,10 @@ test("company and lab recover immediately after workspace authentication", async
 }) => {
   const token = "SYNTHETIC_PROVIDER_AUTH_TOKEN";
   await page.route("**/api/**", async (route) => {
+    if (new URL(route.request().url()).pathname === "/api/auth/config") {
+      await route.continue();
+      return;
+    }
     if (route.request().headers().authorization === `Bearer ${token}`)
       await route.continue();
     else

@@ -1,4 +1,5 @@
-export type ProviderId = "exa" | "tavily" | "firecrawl";
+export type ProviderId =
+  import("./provider-identifiers.js").RegisteredProviderId;
 export type Verdict = "pass" | "fail" | "unknown";
 export interface Intent {
   prompt: string;

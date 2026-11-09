@@ -1,3 +1,13 @@
+import {
+  CompanyPortal,
+  AdminCompanyReview,
+  AccountSettings,
+  PortalShell,
+} from "./RolePortals";
+import { AdminNavigation } from "./AdminNavigation";
+import { ToolAccessView, OperatorAllowanceNotice } from "./ToolAccessView";
+import { AccountControls, useAccount } from "./AccountGate";
+import { DisputeReviewView } from "./DisputeReviewView";
 import { ToolOptions } from "./components/ToolOptions";
 import { OutcomeContent } from "./components/DeferredOutcomeContent";
 import { CompanyView } from "./CompanyView";
@@ -29,6 +39,7 @@ import {
   Activity,
   GitBranch01,
   CreditCard01,
+  Key01,
 } from "@untitledui/icons";
 import { Button } from "./components/ui/button";
 import { Badge } from "./components/ui/badge";
@@ -68,7 +79,7 @@ import type {
   SessionDetail,
   ObservationEvent,
 } from "../server/observation-types";
-import type { ServerHealth, TaskSummary } from "../server/types";
+import type { TaskSummary } from "../server/types";
 import {
   Panel,
   Empty,
@@ -88,6 +99,8 @@ import {
 } from "./observation-ui";
 
 type Page =
+  | "admin"
+  | "tool-access"
   | "home"
   | "dashboard"
   | "sessions"
@@ -96,7 +109,8 @@ type Page =
   | "cases"
   | "settings"
   | "company"
-  | "lab";
+  | "lab"
+  | "disputes";
 type Summary = {
   sessions: number;
   pendingApproval: number;
@@ -123,8 +137,8 @@ type Summary = {
     published: boolean;
   };
 };
-type Catalog = ReturnType<
-  import("../server/observation").Observatory["catalog"]
+type Catalog = Awaited<
+  ReturnType<import("../server/observation").Observatory["catalog"]>
 >;
 
 const pages = [
@@ -133,6 +147,7 @@ const pages = [
   { id: "tools", label: "Tool activity", icon: Link01 },
   { id: "cases", label: "Review cases", icon: ShieldTick },
   { id: "lab", label: "Provider lab", icon: TerminalSquare },
+  { id: "disputes", label: "Payment disputes", icon: CreditCard01 },
 ] as const;
 function readRoute() {
   const [page, id, section, finding] = location.hash.slice(1).split("/");
@@ -146,6 +161,8 @@ function readRoute() {
     };
   return {
     page: ([
+      "admin",
+      "tool-access",
       "home",
       "dashboard",
       "sessions",
@@ -155,6 +172,7 @@ function readRoute() {
       "settings",
       "company",
       "lab",
+      "disputes",
     ].includes(page)
       ? page
       : "sessions") as Page,
@@ -174,6 +192,11 @@ function readRoute() {
       "record",
       "benchmarks",
       "plans",
+      "insights",
+      "activity",
+      "team",
+      "details",
+      "integration",
     ].includes(section)
       ? section
       : "overview",
@@ -287,11 +310,11 @@ function eventText(e: ObservationEvent) {
 }
 
 export function ObservationApp() {
+  const account = useAccount();
   const [route, setRoute] = useState(readRoute);
   const [sessions, setSessions] = useState<ObservationListItem[]>([]);
   const [summary, setSummary] = useState<Summary>();
   const [catalog, setCatalog] = useState<Catalog>([]);
-  const [health, setHealth] = useState<ServerHealth>();
   const [legacy, setLegacy] = useState<TaskSummary[]>([]);
   const [connection, setConnection] = useState<{
     lastSeenAt: string | null;
@@ -332,22 +355,37 @@ export function ObservationApp() {
       window.removeEventListener("popstate", onRoute);
     };
   }, []);
+  const independentArea =
+    account.enabled &&
+    (route.page === "company" ||
+      route.page === "admin" ||
+      route.page === "tool-access" ||
+      !account.workspaceId);
+  const operatorArea =
+    !account.enabled ||
+    (!!account.profile?.isAdmin &&
+      !["dashboard", "company", "home", "admin", "tool-access"].includes(
+        route.page,
+      ));
   const refresh = useCallback(async () => {
+    if (independentArea || route.page === "home") return true;
     const current = ++generation.current;
     try {
-      const [ss, sm, ct, h, l, c] = await Promise.all([
-        api<ObservationListItem[]>("/observations"),
-        api<Summary>("/observations/summary"),
+      const [ss, sm, ct, l, c] = await Promise.all([
+        operatorArea
+          ? api<ObservationListItem[]>("/observations")
+          : Promise.resolve([]),
+        operatorArea
+          ? api<Summary>("/observations/summary")
+          : Promise.resolve(undefined),
         api<Catalog>("/observations/catalog"),
-        api<ServerHealth>("/health"),
-        api<TaskSummary[]>("/tasks"),
+        operatorArea ? api<TaskSummary[]>("/tasks") : Promise.resolve([]),
         api<typeof connection>("/observations/connection"),
       ]);
       if (current !== generation.current) return;
       setSessions(ss);
       setSummary(sm);
       setCatalog(ct);
-      setHealth(h);
       setLegacy(l);
       setConnection(c);
       setError("");
@@ -355,14 +393,12 @@ export function ObservationApp() {
     } catch (e) {
       if (current === generation.current) {
         setError((e as Error).message);
-        setHealth(undefined);
-        if (e instanceof ApiError && e.status === 401) {
+        if (e instanceof ApiError && (e.status === 401 || e.status === 403)) {
           detailGeneration.current++;
           setSessions([]);
           setSummary(undefined);
           setCatalog([]);
           setLegacy([]);
-          setHealth(undefined);
           setSelected(undefined);
           setConnection({ lastSeenAt: null, clientName: null });
         }
@@ -371,7 +407,7 @@ export function ObservationApp() {
     } finally {
       if (current === generation.current) setLoading(false);
     }
-  }, []);
+  }, [independentArea, operatorArea, route.page]);
   const reloadDetail = useCallback(async (id: string) => {
     const current = ++detailGeneration.current;
     try {
@@ -397,12 +433,12 @@ export function ObservationApp() {
     detailGeneration.current++;
     setSelected(undefined);
     setDetailError("");
-    if (!route.id || route.page !== "sessions") return;
+    if (independentArea || !route.id || route.page !== "sessions") return;
     setDetailLoading(true);
     void reloadDetail(route.id);
     const timer = setInterval(() => void reloadDetail(route.id!), 3000);
     return () => clearInterval(timer);
-  }, [route.id, route.page, reloadDetail]);
+  }, [route.id, route.page, reloadDetail, independentArea]);
   async function mutate(path: string, body: unknown, message: string) {
     setBusy(true);
     setNotice("");
@@ -447,14 +483,112 @@ export function ObservationApp() {
               routing: "Routing",
               connections: "Connections",
               credits: "Credits",
+              keys: "API keys",
             } as Record<string, string>
           )[route.id ?? ""] || "My dashboard"
         : route.page === "company"
           ? "Tool company"
           : route.page === "settings"
             ? "Connections & settings"
-            : pages.find((p) => p.id === route.page)?.label || "Sessions";
+            : route.page === "tool-access"
+              ? "Tool access"
+              : pages.find((p) => p.id === route.page)?.label || "Sessions";
   if (route.page === "home") return <LandingView />;
+  if (account.enabled && route.page === "settings") return <AccountSettings />;
+  if (account.enabled && route.page === "company")
+    return (
+      <CompanyPortal
+        key={route.id === "new" ? "new" : route.id || "company"}
+        id={route.id}
+        section={route.section}
+      />
+    );
+  if (account.enabled && account.profile?.isAdmin && route.page === "admin")
+    return <AdminCompanyReview />;
+  const ownerAccess =
+    !account.enabled ||
+    account.profile?.isAdmin ||
+    account.profile?.workspaces.some(
+      (w) => w.id === account.workspaceId && w.role === "owner",
+    );
+  if (
+    account.enabled &&
+    !ownerAccess &&
+    route.page === "dashboard" &&
+    ["credits", "keys"].includes(route.id || "")
+  )
+    return (
+      <main className="account-page">
+        <section className="account-card">
+          <h1>Workspace owner access required</h1>
+          <p>Ask your workspace owner to manage credits and API keys.</p>
+          <Button asChild>
+            <a href="#dashboard">Back to your workspace</a>
+          </Button>
+        </section>
+      </main>
+    );
+  if (
+    account.enabled &&
+    !account.profile?.isAdmin &&
+    !["dashboard"].includes(route.page)
+  )
+    return (
+      <main className="account-page">
+        <section className="account-card">
+          <h1>Administrator access required</h1>
+          <p>
+            This area is reserved for platform administration. Your user
+            workspace and company portal are separate.
+          </p>
+          <Button asChild>
+            <a href="#dashboard">Open your dashboard</a>
+          </Button>
+        </section>
+      </main>
+    );
+  if (
+    account.enabled &&
+    account.profile?.isAdmin &&
+    route.page === "tool-access"
+  )
+    return (
+      <PortalShell
+        area="admin"
+        title="Tool access"
+        links={[]}
+        adminPage="tool-access"
+      >
+        <ToolAccessView />
+      </PortalShell>
+    );
+  if (account.enabled && account.profile?.isAdmin && !account.workspaceId)
+    return (
+      <PortalShell
+        area="admin"
+        title={currentTitle}
+        links={[]}
+        adminPage={route.page}
+      >
+        <Panel title="Select a workspace">
+          <p>
+            Workspace operations, payment disputes, and provider tests are
+            scoped to a workspace. Select one to open this page.
+          </p>
+          {account.profile.workspaces.length ? (
+            <AccountControls showIdentity={false} />
+          ) : (
+            <>
+              <p>
+                No workspaces are available yet. Company reviews and Tool access
+                remain available.
+              </p>
+              <Button onClick={account.create}>Create workspace</Button>
+            </>
+          )}
+        </Panel>
+      </PortalShell>
+    );
   const surface =
     route.page === "dashboard"
       ? "user"
@@ -467,13 +601,22 @@ export function ObservationApp() {
         <img src="/octolab.svg" alt="" width="32" height="32" />
         octolab
       </a>
+      <div className="portal-area">
+        {surface === "user"
+          ? "Dashboard"
+          : surface === "business"
+            ? "Tool company preview"
+            : "Administration"}
+      </div>
       <nav
         aria-label={
           surface === "user"
             ? "User navigation"
             : surface === "business"
               ? "Tool company navigation"
-              : "Operator navigation"
+              : account.enabled
+                ? "Admin navigation"
+                : "Operator navigation"
         }
       >
         {surface === "user" ? (
@@ -508,7 +651,7 @@ export function ObservationApp() {
               </a>
             </div>
             <div className="ws-nav-group">
-              <span>Workspace</span>
+              <span>Account</span>
               <a
                 href="#dashboard/activity"
                 className={route.id === "activity" ? "selected" : ""}
@@ -526,22 +669,34 @@ export function ObservationApp() {
                 Usage
               </a>
             </div>
-            <div className="ws-nav-group">
-              <span>Funding</span>
-              <a
-                href="#dashboard/credits"
-                className={route.id === "credits" ? "selected" : ""}
-                aria-current={route.id === "credits" ? "page" : undefined}
-              >
-                <CreditCard01 />
-                Credits
-                <Badge variant="outline" className="ws-testnet-nav">
-                  Testnet
-                </Badge>
-              </a>
-            </div>
+            {ownerAccess && (
+              <div className="ws-nav-group">
+                <span>Funding</span>
+                <a
+                  href="#dashboard/credits"
+                  className={route.id === "credits" ? "selected" : ""}
+                  aria-current={route.id === "credits" ? "page" : undefined}
+                >
+                  <CreditCard01 />
+                  Credits
+                  <Badge variant="outline" className="ws-testnet-nav">
+                    Testnet
+                  </Badge>
+                </a>
+              </div>
+            )}
             <div className="ws-nav-group">
               <span>Integration</span>
+              {ownerAccess && (
+                <a
+                  href="#dashboard/keys"
+                  className={route.id === "keys" ? "selected" : ""}
+                  aria-current={route.id === "keys" ? "page" : undefined}
+                >
+                  <Key01 />
+                  API keys
+                </a>
+              )}
               <a
                 href="#dashboard/connections"
                 className={route.id === "connections" ? "selected" : ""}
@@ -555,6 +710,7 @@ export function ObservationApp() {
         ) : surface === "business" ? (
           [
             { id: "overview", label: "Overview", icon: Grid01 },
+            { id: "activity", label: "Live usage", icon: Activity },
             {
               id: "benchmarks",
               label: "Controlled tests",
@@ -571,6 +727,11 @@ export function ObservationApp() {
               {p.label}
             </a>
           ))
+        ) : account.enabled && account.profile?.isAdmin ? (
+          <AdminNavigation
+            page={route.page}
+            onNavigate={() => setMenuOpen(false)}
+          />
         ) : (
           pages.map((p) => (
             <a
@@ -588,38 +749,14 @@ export function ObservationApp() {
         )}
       </nav>
       <div className="sidebar-bottom">
-        <div className="host-card">
-          <span className="host-icon">
-            <TerminalSquare />
-          </span>
-          <div>
-            <strong>
-              {surface === "user"
-                ? "My workspace"
-                : surface === "business"
-                  ? "Tool company preview"
-                  : "Agent workspace"}
-            </strong>
-            <span>
-              {surface === "user"
-                ? "Your tools and sessions"
-                : surface === "business"
-                  ? "Demo & local lab"
-                  : "Local observation"}
-            </span>
-          </div>
-        </div>
         <a
           href="#settings"
           className={route.page === "settings" ? "selected" : ""}
         >
           <Settings01 />
-          Connections & settings
+          Settings
         </a>
-        <div className="workspace-status">
-          <span className={health ? "status-dot online" : "status-dot"} />
-          {health ? "Local server ready" : "Connecting to server"}
-        </div>
+        <AccountControls showWorkspace={false} />
       </div>
     </>
   );
@@ -674,10 +811,6 @@ export function ObservationApp() {
             )}
           </div>
           <div className="topbar-right">
-            <span className="local-label">
-              <span className="status-dot online" />
-              Local workspace
-            </span>
             <Button
               variant="outline"
               size="sm"
@@ -697,8 +830,13 @@ export function ObservationApp() {
         <main id="main-content" tabIndex={-1} className="obs-main">
           <InlineError message={error} />
           {error && (
-            <Button variant="outline" onClick={() => setConnectOpen(true)}>
-              Enter access token
+            <Button
+              variant="outline"
+              onClick={() =>
+                account.enabled ? account.signOut() : setConnectOpen(true)
+              }
+            >
+              {account.enabled ? "Sign out" : "Enter access token"}
             </Button>
           )}
           {notice && (
@@ -724,6 +862,7 @@ export function ObservationApp() {
               section={route.section}
             />
           )}
+          {route.page === "disputes" && <DisputeReviewView />}
           {route.page === "lab" && (
             <ProviderLabView
               key={connectionRevision}
@@ -731,6 +870,9 @@ export function ObservationApp() {
               providerFilter={route.labProvider}
               evidenceFilter={route.labFinding}
             />
+          )}
+          {route.page === "dashboard" && account.enabled && (
+            <OperatorAllowanceNotice />
           )}
           {route.page === "dashboard" && (
             <UserDashboardView
@@ -1165,49 +1307,54 @@ export function ObservationApp() {
                   </p>
                 </div>
               </div>
-              <Panel
-                title="Dashboards"
-                description="Switch surfaces here until dashboard access moves behind sign-in."
-              >
-                <div className="session-list">
-                  <a className="session-row" href="#dashboard">
-                    <div className="session-name">
-                      <span className="session-symbol">
-                        <Grid01 />
-                      </span>
-                      <div>
-                        <strong>My dashboard</strong>
-                        <span>Your tools and usage</span>
+              {!account.enabled && (
+                <Panel
+                  title="Product views"
+                  description="Manage your tools, your company, or platform activity."
+                >
+                  <nav
+                    className="settings-destinations"
+                    aria-label="Product views"
+                  >
+                    <a className="settings-destination" href="#dashboard">
+                      <div className="session-name">
+                        <span className="session-symbol">
+                          <Grid01 />
+                        </span>
+                        <div>
+                          <strong>My dashboard</strong>
+                          <span>Your tools and usage</span>
+                        </div>
                       </div>
-                    </div>
-                    <ArrowUpRight />
-                  </a>
-                  <a className="session-row" href="#sessions">
-                    <div className="session-name">
-                      <span className="session-symbol">
-                        <TerminalSquare />
-                      </span>
-                      <div>
-                        <strong>Operator console</strong>
-                        <span>Sessions, reviews, and workspace settings</span>
+                      <ArrowUpRight />
+                    </a>
+                    <a className="settings-destination" href="#sessions">
+                      <div className="session-name">
+                        <span className="session-symbol">
+                          <TerminalSquare />
+                        </span>
+                        <div>
+                          <strong>Administration</strong>
+                          <span>Sessions, reviews, and platform settings</span>
+                        </div>
                       </div>
-                    </div>
-                    <Badge variant="outline">Current area</Badge>
-                  </a>
-                  <a className="session-row" href="#company/exa">
-                    <div className="session-name">
-                      <span className="session-symbol">
-                        <BarChartSquare02 />
-                      </span>
-                      <div>
-                        <strong>Tool company</strong>
-                        <span>Provider insights and controlled tests</span>
+                      <ArrowUpRight />
+                    </a>
+                    <a className="settings-destination" href="#company/exa">
+                      <div className="session-name">
+                        <span className="session-symbol">
+                          <BarChartSquare02 />
+                        </span>
+                        <div>
+                          <strong>Tool company</strong>
+                          <span>Provider insights and controlled tests</span>
+                        </div>
                       </div>
-                    </div>
-                    <ArrowUpRight />
-                  </a>
-                </div>
-              </Panel>
+                      <ArrowUpRight />
+                    </a>
+                  </nav>
+                </Panel>
+              )}
               <div className="settings-grid">
                 <Panel
                   title="Agent connection"
@@ -1291,9 +1438,11 @@ export function ObservationApp() {
                   </div>
                   <Button
                     variant="outline"
-                    onClick={() => setConnectOpen(true)}
+                    onClick={() =>
+                      account.enabled ? account.signOut() : setConnectOpen(true)
+                    }
                   >
-                    Workspace access token
+                    {account.enabled ? "Sign out" : "Workspace access token"}
                   </Button>
                 </Panel>
               </div>
@@ -1356,7 +1505,10 @@ export function ObservationApp() {
           navigate("sessions", s.id);
         }}
       />
-      <Dialog open={connectOpen} onOpenChange={setConnectOpen}>
+      <Dialog
+        open={!account.enabled && connectOpen}
+        onOpenChange={setConnectOpen}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Workspace access</DialogTitle>

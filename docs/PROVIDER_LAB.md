@@ -1,6 +1,6 @@
 # Provider lab and tool company demo
 
-The sidebar switches between the operator workspace and a tool company preview. Open [Tool company](http://127.0.0.1:3001/#company/exa) to explore Exa, Tavily, and Firecrawl. No company account or additional permission is required for this local demo.
+This guide describes operator tools. In SQLite/local mode, [Tool company preview](http://127.0.0.1:3001/#company/exa) explores Exa, Tavily, and Firecrawl with demo or private local-lab data. PostgreSQL accounts instead enter the separate [company-owner portal](ROLE_JOURNEYS.md) at #company; registration does not grant access to this lab or its raw receipts. Every PostgreSQL provider-lab and legacy company-insights route requires an explicitly allowlisted platform administrator and an authorized customer workspace.
 
 ## Two sources, visibly separate
 
@@ -24,15 +24,19 @@ An **external agent comparison** is a different test type. Forced-provider calls
 
 Open [Provider lab](http://127.0.0.1:3001/#lab), select configured providers, and choose **Run live test**. This is an operator action. Consumers continue to ask normal questions through their external agent; they do not approve test spending or choose research budgets.
 
-The backend runs five fixed cases per selected provider:
+The built-in `public-reference-v1` suite runs five fixed cases per selected provider:
 
 - Exa and Tavily receive identical queries, with alternating execution order across cases and runs. The adapter settings remain provider-specific and are recorded.
 - Firecrawl receives five fixed public URLs for extraction. Extraction and search are different capabilities and are not ranked against one another.
 - The complete suite uses fifteen provider calls. At the current defaults its planning estimate is $0.080; the initial November 1 baseline used the older Exa estimate and recorded $0.130. Historical estimates are never rewritten.
-- `PROVIDER_TEST_BUDGET_MICROS` caps each run, default $0.15. `PROVIDER_TEST_DAILY_BUDGET_MICROS` caps controlled testing per UTC day, default $0.50. The API accepts neither budget overrides nor arbitrary input URLs/queries.
+- `PROVIDER_TEST_BUDGET_MICROS` caps each run, default $0.15. `PROVIDER_TEST_DAILY_BUDGET_MICROS` caps controlled testing per UTC day, default $0.50. Run requests select a saved suite revision; they accept no budget override or inline cases.
 - One controlled run executes at a time. It shares the process-wide per-provider rate limiter with organic research. A blocked call is skipped with a reason and is not charged to the estimate ledger. No background schedule or automatic retry is enabled.
 
 The fixed `public-reference-v1` suite is deliberately small: three API documentation queries and two product specification queries, plus five extraction pages. It is a diagnostic sample, not a representative consumer benchmark or statistically meaningful general ranking. Broader claims require a predeclared, more representative dataset and independent review.
+
+Operators can create or duplicate a suite containing 1–20 search/extraction cases, with immutable revisions and stale-edit checks. Extraction inputs and reference links require public HTTPS URLs; extraction cases need at least one text marker. A run pins its suite revision and snapshots the actual selected cases and estimate. Editing a suite does not rewrite previous runs.
+
+To recheck saved evidence without spending, choose a completed live controlled run and replay against a compatible saved suite revision. Case IDs, operations, and inputs must match; references, labels, and text markers may change. Replay has zero new estimated spending, no provider request, no fresh timing or usage, and no copied usefulness reviews. It cannot measure agent preference or current provider performance. See [workbench readiness and limits](PROVIDER_READINESS.md).
 
 ## Interpret the measurements
 
@@ -54,7 +58,7 @@ Discovery exposes a separately labeled `controlledTestSample` with its source, s
 
 ## Receipts and recovery
 
-The lab stores runs and plans in separate SQLite tables, `provider_lab_runs` and `provider_experiments`. Each run snapshots cases, suite version and hash, adapter settings, the rate card, backend authorization, and estimated budget. Requests reserve their estimate before network I/O. Failures retain a conservative estimate because billing status may be uncertain.
+The lab stores runs, plans, and custom suite revisions in `provider_lab_runs`, `provider_experiments`, and `provider_lab_suites` on the selected SQLite or PostgreSQL backend. Each run snapshots cases, suite version and hash, adapter settings, the rate card, backend authorization, and estimated budget. Requests reserve their estimate before network I/O. Short database transactions serialize admission, reservations, and saved run mutations; provider requests execute outside those transactions. Failures retain a conservative estimate because billing status may be uncertain.
 
 Run creation is idempotent by `requestKey` and normalized provider selection. Exact replays return the original run; changed arguments with the same key are rejected. Stop requests allow the current call to settle and skip remaining calls. Graceful shutdown stops new work and drains the current request. After a process kill, startup marks the outstanding call interrupted, consumes its reserved estimate once, and never silently repeats it.
 
@@ -64,18 +68,21 @@ Recurring dashboard reads omit captured page bodies. Full receipts are loaded on
 
 ## API
 
-These endpoints inherit the workspace token, host validation, and same-origin JSON-write checks. They are operator APIs, not additional MCP tools.
+These endpoints enforce same-origin JSON writes and workspace access. In PostgreSQL account mode, every `/api/provider-lab` route requires a platform administrator from `SUPABASE_ADMIN_USER_IDS`; workspace ownership alone is insufficient. SQLite retains its workspace-token boundary. These are operator APIs, not additional MCP tools.
 
-| Endpoint                                                 | Behavior                                                                              |
-| -------------------------------------------------------- | ------------------------------------------------------------------------------------- |
-| `GET /api/provider-lab`                                  | Suite, backend policy, provider configuration, run summaries, measurements, and plans |
-| `POST /api/provider-lab/runs`                            | Start a fixed test using `{ requestKey, providers }`                                  |
-| `GET /api/provider-lab/runs/:id`                         | Read the full saved run and captured receipts                                         |
-| `POST /api/provider-lab/runs/:id/stop`                   | Stop remaining work after the current request settles                                 |
-| `POST /api/provider-lab/runs/:id/calls/:callId/review`   | Append `{ verdict, note, author }`                                                    |
-| `POST /api/provider-lab/experiments`                     | Create a test plan                                                                    |
-| `POST /api/provider-lab/experiments/:id`                 | Update a test plan                                                                    |
-| `GET /api/company-insights/:provider?source=demo\|local` | Company preview for Exa, Tavily, or Firecrawl                                         |
+| Endpoint                                                 | Behavior                                                                                |
+| -------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| `GET /api/provider-lab`                                  | Suite, backend policy, provider configuration, run summaries, measurements, and plans   |
+| `POST /api/provider-lab/runs`                            | Start a test using `{ requestKey, providers, suiteId?, suiteRevision? }`                |
+| `POST /api/provider-lab/suites`                          | Create a versioned suite with title, description, and cases                             |
+| `POST /api/provider-lab/suites/:id`                      | Append a suite revision with `expectedRevision`; stale writes return `409`              |
+| `POST /api/provider-lab/replays`                         | `{ requestKey, sourceRunId, suiteId, suiteRevision }` rechecks saved compatible results |
+| `GET /api/provider-lab/runs/:id`                         | Read the full saved run and captured receipts                                           |
+| `POST /api/provider-lab/runs/:id/stop`                   | Stop remaining work after the current request settles                                   |
+| `POST /api/provider-lab/runs/:id/calls/:callId/review`   | Append `{ verdict, note, author }`                                                      |
+| `POST /api/provider-lab/experiments`                     | Create a test plan                                                                      |
+| `POST /api/provider-lab/experiments/:id`                 | Update a test plan                                                                      |
+| `GET /api/company-insights/:provider?source=demo\|local` | Company preview for Exa, Tavily, or Firecrawl                                           |
 
 ## Reproduce durability checks
 

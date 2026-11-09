@@ -48,7 +48,10 @@ test("dashboard switching lives in settings", async ({ page }) => {
   await expect(
     page.getByRole("heading", { name: "Connections & settings", exact: true }),
   ).toBeVisible();
-  const panel = page.getByText("Switch surfaces here until");
+  const panel = page.getByRole("navigation", {
+    name: "Product views",
+    exact: true,
+  });
   await expect(panel).toBeVisible();
   await page
     .getByRole("link", { name: /My dashboard/ })

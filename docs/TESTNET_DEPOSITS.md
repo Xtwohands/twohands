@@ -1,6 +1,6 @@
 # Base Sepolia test deposits
 
-The Credits page at `#dashboard/credits` supports a development-only USDC deposit flow on Base Sepolia. It is disabled by default and was deliberately left disabled on the local development server at the user's request. No receiving wallet was configured and no real or testnet transfer was sent during implementation.
+The Credits page at `#dashboard/credits` supports a development-only USDC deposit flow on Base Sepolia alongside [Stripe test deposits](STRIPE_DEPOSITS.md). Both methods share one test-credit balance with separate payment receipts. On-chain deposits are disabled by default and were deliberately left disabled on the local development server at the user's request. No receiving wallet was configured and no real or testnet transfer was sent during implementation.
 
 ## Enable later
 
@@ -44,22 +44,22 @@ Every credited deposit requires:
 
 See [Base chain identity](https://docs.base.org/base-chain/api-reference/ethereum-json-rpc-api/eth_chainId), [Base finalized-head semantics](https://docs.base.org/base-chain/specs/protocol/consensus/derivation), and the [ERC-20 Transfer specification](https://eips.ethereum.org/EIPS/eip-20). Finality is reported by the configured RPC; this is not an independent cryptographic light client.
 
-Amounts use integer six-decimal units. Deposit request creation has a client-generated idempotency key; changing an amount or sender with the same key is rejected. A transaction can credit the workspace only once, enforced by a database uniqueness constraint. Ledger insertion, credited request state, and its audit event commit in one SQLite transaction. Repeated verification of an already credited deposit returns the saved result without further RPC calls.
+Amounts use integer six-decimal units. Deposit request creation has a client-generated idempotency key; changing an amount or sender with the same key is rejected. A transaction can be credited only once, enforced by a database uniqueness constraint that remains global across PostgreSQL workspaces. Ledger insertion, credited request state, and its audit event commit in one database transaction. Repeated verification of an already credited deposit returns the saved result without further RPC calls.
 
-Ledger entries and deposit audit events live in their own tables. They are excluded from provider statistics and commercial observation aggregates. The test-credit balance does not increase backend research budgets or pay actual provider invoices.
+The append-only `funding_ledger` combines on-chain credits and Stripe credit adjustments. Existing on-chain receipts in `funding_credits` are imported once with stable source IDs; historical proof remains intact. One test USDC or one test USD equals one test credit, represented in integer millionths. A Stripe refund or dispute affects only that payment's net credits. Funding ledger entries and deposit audit events are excluded from provider statistics and commercial observation aggregates. The test-credit balance does not increase backend research budgets or pay actual provider invoices.
 
 ## API
 
-All routes inherit the existing workspace bearer-token and cross-origin write protection.
+All routes enforce [workspace access](AUTH.md) and same-origin write protection. PostgreSQL funding access requires a workspace owner or platform administrator account; members and scoped keys are denied. SQLite retains the configured owner bearer-token boundary.
 
-| Method | Route                                        | Behavior                                                                                                                            |
-| ------ | -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| GET    | `/api/workspace/funding`                     | Configuration booleans, public network/address details, aggregate test balance, and latest 100 requests. Never returns the RPC URL. |
-| POST   | `/api/workspace/funding/deposits`            | Create or replay `{requestKey, amount, sender}`. Amount is a decimal string.                                                        |
-| GET    | `/api/workspace/funding/deposits/:id`        | Read one saved request.                                                                                                             |
-| POST   | `/api/workspace/funding/deposits/:id/verify` | Verify `{transactionHash}` using read-only JSON-RPC calls.                                                                          |
+| Method | Route                                        | Behavior                                                                                                                                                                                                |
+| ------ | -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GET    | `/api/workspace/funding`                     | Both method statuses, public network/address details, combined test balance, per-method counts, latest 100 receipts per method, and latest 100 ledger entries. Never returns RPC or Stripe credentials. |
+| POST   | `/api/workspace/funding/deposits`            | Create or replay `{requestKey, amount, sender}`. Amount is a decimal string.                                                                                                                            |
+| GET    | `/api/workspace/funding/deposits/:id`        | Read one saved request.                                                                                                                                                                                 |
+| POST   | `/api/workspace/funding/deposits/:id/verify` | Verify `{transactionHash}` using read-only JSON-RPC calls.                                                                                                                                              |
 
-The local workspace supports at most 1,000 requests. It uses one shared receiver and balance. This is not an authenticated per-customer payment system.
+Each workspace supports at most 1,000 on-chain requests, separately from the Stripe intent limit. The receiver is configured server-wide, while PostgreSQL receipt ownership and test balances are workspace-scoped. Transaction proof remains globally unique across workspaces. This is a test integration, not production customer payment accounting.
 
 ## Tests and remaining activation work
 
@@ -67,4 +67,4 @@ Unit tests exercise exact decimals, idempotency, delayed finality, expiry, missi
 
 Before enabling even test deposits, choose a receiving address you control and configure the server. Then perform an explicitly authorized wallet transfer and compare its real receipt with the saved ledger. That live transfer has not been performed.
 
-Production funds require a separate implementation and review: authenticated account ownership, customer attribution, payment reconciliation, wallet/custody policy, operational monitoring, accounting rules, and an independently reviewed mainnet activation path. Mainnet cannot be enabled by changing a chain ID in the current configuration.
+PostgreSQL account ownership and audit attribution are implemented but require hosted validation. Production funds require a separate implementation and review: customer/payment ownership policy, payment reconciliation, wallet/custody policy, operational monitoring, accounting rules, and an independently reviewed mainnet activation path. Mainnet cannot be enabled by changing a chain ID in the current configuration.

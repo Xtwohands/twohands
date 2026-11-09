@@ -23,7 +23,7 @@ globalThis.fetch = async (input, init) => {
   );
 };
 const store = new Store(config.dbPath);
-store.recover();
+await store.recover();
 const server = createApp(store).listen(0, "127.0.0.1", () => {
   const address = server.address();
   if (address && typeof address !== "string")

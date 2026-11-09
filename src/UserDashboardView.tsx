@@ -1,3 +1,8 @@
+import {
+  ProviderBillingView,
+  ProviderAdaptersView,
+} from "./ProviderBillingView";
+import { useAccount } from "./AccountGate";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
@@ -42,10 +47,12 @@ import type {
 } from "../server/workspace-types";
 import type { Observatory } from "../server/observation";
 import "./workspace.css";
+import { ApiKeysView } from "./ApiKeysView";
 import { FundingView } from "./FundingView";
+import { AgentEnvironment } from "./components/AgentEnvironment";
 
-type Catalog = ReturnType<Observatory["catalog"]>;
-type Preview = ReturnType<Observatory["preview"]>;
+type Catalog = Awaited<ReturnType<Observatory["catalog"]>>;
+type Preview = Awaited<ReturnType<Observatory["preview"]>>;
 type Connection = {
   clients: { clientName: string; clientVersion: string; lastSeenAt: string }[];
   providers: Record<string, boolean>;
@@ -59,7 +66,8 @@ export type DashboardSection =
   | "usage"
   | "routing"
   | "connections"
-  | "credits";
+  | "credits"
+  | "keys";
 export const dashboardSections = [
   "overview",
   "tools",
@@ -68,6 +76,7 @@ export const dashboardSections = [
   "routing",
   "connections",
   "credits",
+  "keys",
 ] as const;
 const labels: Record<DashboardSection, [string, string]> = {
   overview: [
@@ -90,10 +99,11 @@ const labels: Record<DashboardSection, [string, string]> = {
     "Routing",
     "Control which tools are available to agents in this workspace.",
   ],
-  credits: [
-    "Credits",
-    "Test USDC deposits on Base Sepolia, with a verified on-chain receipt.",
+  keys: [
+    "API keys",
+    "Create credentials for your agents and control access and estimated spending.",
   ],
+  credits: ["Credits", "Your test balance and deposit history."],
   connections: [
     "Connections",
     "One MCP connection. Your tools, in the agent you already use.",
@@ -242,6 +252,13 @@ export function UserDashboardView({
   refreshCatalog: () => Promise<unknown>;
   connectionRevision: number;
 }) {
+  const account = useAccount();
+  const canManage =
+    !account.enabled ||
+    account.profile?.isAdmin ||
+    account.profile?.workspaces.some(
+      (w) => w.id === account.workspaceId && w.role === "owner",
+    );
   const [days, setDays] = useState("7");
   const [usage, setUsage] = useState<WorkspaceUsage>();
   const [policy, setPolicy] = useState<RoutingPolicy>();
@@ -355,7 +372,7 @@ export function UserDashboardView({
     refreshTick,
   ]);
   async function toggle(tool: ToolName, enabled: boolean) {
-    if (!policy || saving) return;
+    if (!policy || saving || !canManage) return;
     setSaving(true);
     setNotice("");
     setError("");
@@ -780,7 +797,7 @@ export function UserDashboardView({
                       <Switch
                         aria-label={`${enabled(t.tool) ? "Pause" : "Enable"} ${t.tool}`}
                         checked={enabled(t.tool)}
-                        disabled={!policy || saving}
+                        disabled={!policy || saving || !canManage}
                         onCheckedChange={(value) => void toggle(t.tool, value)}
                       />
                     </div>
@@ -823,9 +840,16 @@ export function UserDashboardView({
               </Section>
             </>
           )}
+          {section === "usage" && canManage && (
+            <ProviderBillingView key={connectionRevision} days={days} />
+          )}
+          {section === "keys" && <ApiKeysView key={connectionRevision} />}
           {section === "credits" && <FundingView key={connectionRevision} />}
           {section === "connections" && (
-            <ConnectionView connection={connection} catalog={catalog} />
+            <>
+              <ConnectionView connection={connection} catalog={catalog} />
+              {canManage && <ProviderAdaptersView key={connectionRevision} />}
+            </>
           )}
         </>
       )}
@@ -852,7 +876,7 @@ export function UserDashboardView({
               }
               enabled={enabled(selectedTool.tool)}
               onToggle={(v) => void toggle(selectedTool.tool, v)}
-              saving={saving || !policy}
+              saving={saving || !policy || !canManage}
             />
           )}
         </DialogContent>
@@ -898,7 +922,7 @@ function Metric({
   );
 }
 function UsageChart({ usage }: { usage: WorkspaceUsage }) {
-  const maximum = Math.max(1, ...usage.series.map((d) => d.requests));
+  const maximum = Math.max(2, ...usage.series.map((d) => d.requests));
   return (
     <div
       className="ws-chart"
@@ -1602,7 +1626,15 @@ function ConnectionView({
   connection?: Connection;
   catalog: Catalog;
 }) {
+  const account = useAccount();
   const [client, setClient] = useState("codex");
+  const canManageKeys =
+    !account.enabled ||
+    account.profile?.isAdmin ||
+    account.profile?.workspaces.some(
+      (workspace) =>
+        workspace.id === account.workspaceId && workspace.role === "owner",
+    );
   const command =
     client === "other"
       ? "npm run mcp:install -- project"
@@ -1634,14 +1666,27 @@ function ConnectionView({
               </button>
             ))}
           </div>
+          <p className="ws-panel-note">
+            {canManageKeys ? (
+              <>
+                Use a separate scoped credential for each agent.{" "}
+                <a href="#dashboard/keys" className="ws-text-link">
+                  Manage API keys
+                </a>{" "}
+                before starting the bridge.
+              </>
+            ) : (
+              "Ask your workspace owner for a scoped API key before starting the bridge."
+            )}
+          </p>
           <ol className="ws-setup-steps">
             <li>
               <span>1</span>
               <div>
-                <strong>Build and run octolab</strong>
+                <strong>Build the local MCP bridge</strong>
                 <p>
-                  In the project folder, build the local MCP bridge. Keep the
-                  server running.
+                  Run this in the octolab project folder. If you run the server
+                  locally, keep it running in a separate terminal.
                 </p>
                 <div className="command-box">
                   <code>npm run build</code>
@@ -1651,6 +1696,18 @@ function ConnectionView({
             </li>
             <li>
               <span>2</span>
+              <div>
+                <strong>Add your connection settings</strong>
+                <p>
+                  Save these in the bridge project’s private .env file. Replace
+                  the placeholder with your API key. The address points to this
+                  octolab server, including its port.
+                </p>
+                <AgentEnvironment />
+              </div>
+            </li>
+            <li>
+              <span>3</span>
               <div>
                 <strong>
                   {client === "other"
@@ -1669,7 +1726,7 @@ function ConnectionView({
               </div>
             </li>
             <li>
-              <span>3</span>
+              <span>4</span>
               <div>
                 <strong>Restart your client and ask your agent</strong>
                 <p>
@@ -1739,8 +1796,10 @@ function ConnectionView({
           ))}
         </div>
         <div className="ws-panel-note">
-          Missing a provider? Set its API key in the server environment, then
-          restart the server.<Go section="routing">Manage routing</Go>
+          {account.enabled && !account.profile?.isAdmin
+            ? "Provider availability is managed by octolab. Your API keys connect agents to this workspace."
+            : "Missing a provider? Set its API key in the server environment, then restart the server."}
+          <Go section="routing">Manage routing</Go>
         </div>
       </Section>
     </>

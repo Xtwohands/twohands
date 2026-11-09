@@ -7,6 +7,7 @@ import {
   Plus,
   RefreshCw01,
 } from "@untitledui/icons";
+import { StripeFundingPanel } from "./StripeFundingPanel";
 import { Button } from "./components/ui/button";
 import { Badge } from "./components/ui/badge";
 import { Input } from "./components/ui/input";
@@ -84,10 +85,15 @@ export function FundingView() {
     <div className="ws-funding">
       <InlineError message={error} />
       <div className="ws-funding-notice">
-        <Badge variant="outline">Testnet only</Badge>
+        <Badge variant="outline">
+          {summary?.enabled || summary?.stripe?.enabled
+            ? "Sandbox only"
+            : "Payments disabled"}
+        </Badge>
         <p>
-          Base Sepolia USDC has no financial value. Test credits do not pay for
-          live tool calls. Mainnet deposits are not supported.
+          {summary?.enabled || summary?.stripe?.enabled
+            ? "Stripe test payments and Base Sepolia USDC add test credits only. Test credits do not pay for live tool calls. No real-money deposits are accepted."
+            : "Payments are disabled. You can connect an agent without making a deposit. Test credits are separate from live tool usage. No real-money deposits are accepted."}
         </p>
       </div>
       {loading ? (
@@ -101,24 +107,12 @@ export function FundingView() {
               <span>Workspace test balance</span>
               <strong>
                 {summary ? testUsdc(summary.balanceUnits) : "—"}
-                <small>test USDC</small>
+                <small>test credits</small>
               </strong>
               <p>
                 {summary?.totalDeposits ?? 0} verified deposits · Separate from
                 estimated tool usage
               </p>
-              <Button
-                disabled={!summary?.enabled}
-                onClick={() => {
-                  key.current = crypto.randomUUID();
-                  setSelectedId(undefined);
-                  setFormError("");
-                  setOpen(true);
-                }}
-              >
-                <Plus />
-                Add test credits
-              </Button>
             </section>
             <section className="ws-panel ws-funding-method">
               <header>
@@ -127,172 +121,252 @@ export function FundingView() {
                   <p>Verified on-chain deposits</p>
                 </div>
                 <Badge variant="outline">
-                  {summary?.enabled ? "Available" : "Setup required"}
+                  {summary?.enabled ? "Available" : "Unavailable"}
                 </Badge>
               </header>
               <div>
                 <p>
-                  Send an exact amount from your wallet, submit the transaction
-                  hash, and check its status. Test credits are added once the
-                  matching transfer reaches the network’s finalized block.
+                  {summary?.enabled
+                    ? "Send an exact amount from your wallet, submit the transaction hash, and check its status. Test credits are added once the matching transfer reaches the network’s finalized block."
+                    : "Test deposits are not enabled for this service. You can continue setting up your agent without adding credits."}
                 </p>
                 {!summary?.enabled && (
                   <div className="ws-funding-setup">
-                    <strong>
-                      {summary?.unavailableReason ||
-                        "Deposit service unavailable"}
-                    </strong>
+                    <strong>On-chain deposits are unavailable</strong>
                     <p>
-                      Configure a receiving address you control and enable
-                      testnet deposits on the server.
+                      No wallet setup or transfer is needed. Deposits will be
+                      available when octolab enables this payment method.
                     </p>
-                    <code>
-                      DEPOSITS_TESTNET_ENABLED=true
-                      <br />
-                      BASE_SEPOLIA_DEPOSIT_ADDRESS=&lt;public address&gt;
-                    </code>
                   </div>
                 )}
-                <a
-                  href="https://faucet.circle.com/"
-                  target="_blank"
-                  rel="noopener noreferrer"
+                <Button
+                  disabled={!summary?.enabled}
+                  onClick={() => {
+                    key.current = crypto.randomUUID();
+                    setSelectedId(undefined);
+                    setFormError("");
+                    setOpen(true);
+                  }}
                 >
-                  Get test USDC
-                  <ArrowUpRight size={14} />
-                </a>
-              </div>
-            </section>
-          </div>
-          <section className="ws-panel">
-            <header>
-              <div>
-                <h2>Deposit history</h2>
-                <p>
-                  Saved requests and verified test credits in this workspace.
-                </p>
-              </div>
-              <Button
-                variant="ghost"
-                size="icon"
-                aria-label="Refresh deposits"
-                onClick={() => void refresh()}
-              >
-                <RefreshCw01 />
-              </Button>
-            </header>
-            {summary?.intents.length ? (
-              <div
-                className="ws-table-scroll"
-                tabIndex={0}
-                role="region"
-                aria-label="Deposit history"
-              >
-                <table className="ws-table">
-                  <thead>
-                    <tr>
-                      <th>Amount</th>
-                      <th>Network</th>
-                      <th>Status</th>
-                      <th>Created</th>
-                      <th>Receipt</th>
-                      <th>
-                        <span className="sr-only">Inspect</span>
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {summary.intents.map((intent) => (
-                      <tr key={intent.id}>
-                        <td>
-                          <strong>{testUsdc(intent.amountUnits)}</strong> test
-                          USDC
-                        </td>
-                        <td>Base Sepolia</td>
-                        <td>
-                          <span
-                            className={`ws-status ws-status-${intent.status === "credited" ? "succeeded" : intent.status === "rejected" ? "failed" : "running"}`}
-                          >
-                            <span />
-                            {statuses[intent.status]}
-                          </span>
-                        </td>
-                        <td>{date(intent.createdAt)}</td>
-                        <td>
-                          {intent.transactionHash ? (
-                            <a
-                              className="ws-text-link"
-                              href={`${instructions?.explorer}/tx/${intent.transactionHash}`}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                            >
-                              {intent.transactionHash.slice(0, 8)}…
-                              {intent.transactionHash.slice(-6)}
-                              <ArrowUpRight size={12} />
-                            </a>
-                          ) : (
-                            "Awaiting transaction"
-                          )}
-                        </td>
-                        <td>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => show(intent)}
-                          >
-                            View deposit
-                            <ArrowRight />
-                          </Button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            ) : (
-              <Empty title="No deposits yet">
-                Create a test deposit request to validate the funding flow on
-                Base Sepolia.
-              </Empty>
-            )}
-            <div className="ws-panel-note">
-              Each on-chain transaction can be credited once. Request retries
-              reuse the original receipt.
-            </div>
-          </section>
-          <section className="ws-panel">
-            <header>
-              <div>
-                <h2>Network details</h2>
-                <p>Only this network and USDC contract are accepted.</p>
-              </div>
-            </header>
-            <div className="ws-funding-details">
-              <div>
-                <span>Network</span>
-                <strong>Base Sepolia · Chain ID {instructions?.chainId}</strong>
-              </div>
-              <div>
-                <span>Token contract</span>
-                <code>{instructions?.tokenAddress}</code>
-                {instructions && (
-                  <CopyButton text={instructions.tokenAddress} />
+                  <Plus />
+                  Add test credits
+                </Button>
+                {summary?.enabled && (
+                  <>
+                    <br />
+                    <a
+                      href="https://faucet.circle.com/"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      Get test USDC
+                      <ArrowUpRight size={14} />
+                    </a>
+                  </>
                 )}
               </div>
-              <div>
-                <span>Receiving address</span>
-                <code>{summary?.recipient ?? "Not configured"}</code>
-                {summary?.recipient && <CopyButton text={summary.recipient} />}
+            </section>
+            <StripeFundingPanel summary={summary} refresh={refresh} />
+          </div>
+          {(summary?.enabled || !!summary?.intents.length) && (
+            <section className="ws-panel">
+              <header>
+                <div>
+                  <h2>On-chain deposit history</h2>
+                  <p>
+                    Saved requests and verified test credits in this workspace.
+                  </p>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  aria-label="Refresh deposits"
+                  onClick={() => void refresh()}
+                >
+                  <RefreshCw01 />
+                </Button>
+              </header>
+              {summary?.intents.length ? (
+                <div
+                  className="ws-table-scroll"
+                  tabIndex={0}
+                  role="region"
+                  aria-label="Deposit history"
+                >
+                  <table className="ws-table">
+                    <thead>
+                      <tr>
+                        <th>Amount</th>
+                        <th>Network</th>
+                        <th>Status</th>
+                        <th>Created</th>
+                        <th>Receipt</th>
+                        <th>
+                          <span className="sr-only">Inspect</span>
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {summary.intents.map((intent) => (
+                        <tr key={intent.id}>
+                          <td>
+                            <strong>{testUsdc(intent.amountUnits)}</strong> test
+                            USDC
+                          </td>
+                          <td>Base Sepolia</td>
+                          <td>
+                            <span
+                              className={`ws-status ws-status-${intent.status === "credited" ? "succeeded" : intent.status === "rejected" ? "failed" : "running"}`}
+                            >
+                              <span />
+                              {statuses[intent.status]}
+                            </span>
+                          </td>
+                          <td>{date(intent.createdAt)}</td>
+                          <td>
+                            {intent.transactionHash ? (
+                              <a
+                                className="ws-text-link"
+                                href={`${instructions?.explorer}/tx/${intent.transactionHash}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                              >
+                                {intent.transactionHash.slice(0, 8)}…
+                                {intent.transactionHash.slice(-6)}
+                                <ArrowUpRight size={12} />
+                              </a>
+                            ) : (
+                              "Awaiting transaction"
+                            )}
+                          </td>
+                          <td>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => show(intent)}
+                            >
+                              View deposit
+                              <ArrowRight />
+                            </Button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <Empty title="No deposits yet">
+                  Create a test deposit request to validate the funding flow on
+                  Base Sepolia.
+                </Empty>
+              )}
+              <div className="ws-panel-note">
+                Each on-chain transaction can be credited once. Request retries
+                reuse the original receipt.
               </div>
-              <div>
-                <span>Verification</span>
-                <strong>
-                  Successful USDC transfer, matching wallet and amount,
-                  canonical block, and network finality
-                </strong>
+            </section>
+          )}
+          {(summary?.enabled ||
+            summary?.stripe?.enabled ||
+            !!summary?.entries?.length) && (
+            <section className="ws-panel">
+              <header>
+                <div>
+                  <h2>Credit ledger</h2>
+                  <p>
+                    Verified deposits, refunds, and dispute holds across both
+                    methods.
+                  </p>
+                </div>
+              </header>
+              {summary?.entries?.length ? (
+                <div
+                  className="ws-table-scroll"
+                  tabIndex={0}
+                  role="region"
+                  aria-label="Credit ledger"
+                >
+                  <table className="ws-table">
+                    <thead>
+                      <tr>
+                        <th>Change</th>
+                        <th>Method</th>
+                        <th>Reason</th>
+                        <th>Recorded</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {summary.entries.map((entry) => (
+                        <tr key={entry.id}>
+                          <td>
+                            <strong>
+                              {entry.deltaUnits > 0 ? "+" : "−"}
+                              {testUsdc(Math.abs(entry.deltaUnits))}
+                            </strong>{" "}
+                            test credits
+                          </td>
+                          <td>
+                            {entry.source === "stripe"
+                              ? "Stripe"
+                              : "USDC on Base Sepolia"}
+                          </td>
+                          <td>{entry.kind.replaceAll("_", " ")}</td>
+                          <td>{date(entry.createdAt)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <Empty title="No credit entries yet">
+                  A verified deposit will create its first credit receipt here.
+                </Empty>
+              )}
+              <div className="ws-panel-note">
+                One test USD or one test USDC equals one test credit. This
+                ledger is separate from provider spending authorization.
               </div>
-            </div>
-          </section>
+            </section>
+          )}
+          {(summary?.enabled || !!summary?.intents.length) && (
+            <section className="ws-panel">
+              <header>
+                <div>
+                  <h2>Network details</h2>
+                  <p>Only this network and USDC contract are accepted.</p>
+                </div>
+              </header>
+              <div className="ws-funding-details">
+                <div>
+                  <span>Network</span>
+                  <strong>
+                    Base Sepolia · Chain ID {instructions?.chainId}
+                  </strong>
+                </div>
+                <div>
+                  <span>Token contract</span>
+                  <code>{instructions?.tokenAddress}</code>
+                  {instructions && (
+                    <CopyButton text={instructions.tokenAddress} />
+                  )}
+                </div>
+                <div>
+                  <span>Receiving address</span>
+                  <code>{summary?.recipient ?? "Not configured"}</code>
+                  {summary?.recipient && (
+                    <CopyButton text={summary.recipient} />
+                  )}
+                </div>
+                <div>
+                  <span>Verification</span>
+                  <strong>
+                    Successful USDC transfer, matching wallet and amount,
+                    canonical block, and network finality
+                  </strong>
+                </div>
+              </div>
+            </section>
+          )}
         </>
       )}
       <Dialog

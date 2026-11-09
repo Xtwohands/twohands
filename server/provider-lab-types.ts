@@ -8,6 +8,16 @@ export interface LabCase {
   referenceUrl: string;
   terms: string[];
 }
+export interface LabSuite {
+  id: string;
+  revision: number;
+  title: string;
+  description: string;
+  cases: LabCase[];
+  hash: string;
+  createdAt: string;
+  builtIn: boolean;
+}
 export interface EvidenceReview {
   verdict: "useful" | "partial" | "not_useful" | "unknown";
   note: string;
@@ -15,7 +25,10 @@ export interface EvidenceReview {
   at: string;
 }
 export interface LabCall {
+  providerAccountReference?: string;
   id: string;
+  sourceCallId?: string;
+  adapter?: import("./observation-types.js").ObservedCall["adapter"];
   caseId: string;
   provider: ProviderId;
   status:
@@ -43,7 +56,10 @@ export interface LabRun {
   requestKey: string;
   signature: string;
   title: string;
-  source: "live_controlled";
+  source: "live_controlled" | "replay";
+  sourceRunId?: string;
+  suiteId?: string;
+  suiteRevision?: number;
   suiteVersion: string;
   suiteHash: string;
   status: "running" | "completed" | "cancelled" | "interrupted";

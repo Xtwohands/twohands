@@ -70,8 +70,7 @@ beforeEach(() => {
     () => now,
   );
 });
-afterEach(() => store.close());
-
+afterEach(async () => await store.close());
 describe("test USDC deposit integrity", () => {
   it("parses exact six-decimal amounts and rejects invalid quantities", () => {
     expect(depositInput.parse(input("1.000001")).amount).toBe(1000001);
@@ -87,43 +86,50 @@ describe("test USDC deposit integrity", () => {
     ])
       expect(() => depositInput.parse(input(amount))).toThrow();
   });
-  it("creates immutable requests idempotently and rejects changed retry details", () => {
+  it("creates immutable requests idempotently and rejects changed retry details", async () => {
     const data = input();
-    const first = service.create(data);
-    expect(service.create(data)).toEqual(first);
-    expect(() => service.create({ ...data, amount: "11" })).toThrow(
-      /different/,
-    );
-    expect(service.summary().balanceUnits).toBe(0);
+    const first = await service.create(data);
+    expect(await service.create(data)).toEqual(first);
+    await expect(
+      (async () => await service.create({ ...data, amount: "11" }))(),
+    ).rejects.toThrow(/different/);
+    expect((await service.summary()).balanceUnits).toBe(0);
     service.settings.enabled = false;
-    expect(() => service.create(input())).toThrow(/not enabled/);
-    expect(service.create(data).id).toBe(first.id);
+    await expect((async () => await service.create(input()))()).rejects.toThrow(
+      /not enabled/,
+    );
+    expect((await service.create(data)).id).toBe(first.id);
   });
   it("credits a finalized exact transfer once and replays without RPC", async () => {
-    const intent = service.create(input());
+    const intent = await service.create(input());
     const result = await service.verify(intent.id, { transactionHash: hash });
     expect(result.status).toBe("credited");
-    expect(service.summary().balanceUnits).toBe(10000000);
-    expect(service.summary().spendableForProviders).toBe(false);
+    expect((await service.summary()).balanceUnits).toBe(10000000);
+    expect((await service.summary()).spendableForProviders).toBe(false);
     const count = rpc.mock.calls.length;
     expect(await service.verify(intent.id, { transactionHash: hash })).toEqual(
       result,
     );
     expect(rpc).toHaveBeenCalledTimes(count);
     expect(
-      new FundingService(store, service.settings, rpc).summary().balanceUnits,
+      (await new FundingService(store, service.settings, rpc).summary())
+        .balanceUnits,
     ).toBe(10000000);
     expect(
-      store.db.prepare("SELECT COUNT(*) AS n FROM funding_credits").get()?.n,
+      (
+        await store.db
+          .prepare("SELECT COUNT(*) AS n FROM funding_credits")
+          .get()
+      )?.n,
     ).toBe(1);
   });
   it("waits for finality and allows later verification after the transfer window", async () => {
-    const intent = service.create(input());
+    const intent = await service.create(input());
     finalized = "0xf";
     expect(
       (await service.verify(intent.id, { transactionHash: hash })).status,
     ).toBe("awaiting_finality");
-    expect(service.summary().balanceUnits).toBe(0);
+    expect((await service.summary()).balanceUnits).toBe(0);
     now += 40 * 60000;
     finalized = "0x20";
     expect(
@@ -131,7 +137,7 @@ describe("test USDC deposit integrity", () => {
     ).toBe("credited");
   });
   it("records missing receipts without credit and rate limits repeated checks", async () => {
-    const intent = service.create(input());
+    const intent = await service.create(input());
     receipt = null;
     expect(
       (await service.verify(intent.id, { transactionHash: hash })).status,
@@ -139,7 +145,7 @@ describe("test USDC deposit integrity", () => {
     await expect(
       service.verify(intent.id, { transactionHash: hash }),
     ).rejects.toMatchObject({ status: 429 });
-    expect(service.summary().balanceUnits).toBe(0);
+    expect((await service.summary()).balanceUnits).toBe(0);
   });
   it.each([
     "token",
@@ -161,16 +167,16 @@ describe("test USDC deposit integrity", () => {
     if (kind === "ambiguous")
       receipt.logs.push({ ...receipt.logs[0], logIndex: "0x1" });
     if (kind === "old") now += 60000;
-    const intent = service.create(input());
+    const intent = await service.create(input());
     expect(
       (await service.verify(intent.id, { transactionHash: hash })).status,
     ).toBe("rejected");
-    expect(service.summary().balanceUnits).toBe(0);
+    expect((await service.summary()).balanceUnits).toBe(0);
   });
   it.each(["chain", "canonical", "receipt", "malformed", "rpc"])(
     "fails closed for %s failure",
     async (kind) => {
-      const intent = service.create(input());
+      const intent = await service.create(input());
       if (kind === "chain") chain = "0x2105";
       if (kind === "canonical") canonicalHash = `0x${"ff".repeat(32)}`;
       if (kind === "receipt") receipt.transactionHash = `0x${"aa".repeat(32)}`;
@@ -180,23 +186,25 @@ describe("test USDC deposit integrity", () => {
       await expect(
         service.verify(intent.id, { transactionHash: hash }),
       ).rejects.toMatchObject({ status: 502 });
-      expect(service.summary().balanceUnits).toBe(0);
-      expect(service.get(intent.id).message).not.toBe("Checking the network.");
+      expect((await service.summary()).balanceUnits).toBe(0);
+      expect((await service.get(intent.id)).message).not.toBe(
+        "Checking the network.",
+      );
     },
   );
   it("prevents two intents from claiming the same transaction concurrently", async () => {
-    const first = service.create(input());
-    const second = service.create(input());
+    const first = await service.create(input());
+    const second = await service.create(input());
     const results = await Promise.allSettled([
       service.verify(first.id, { transactionHash: hash }),
       service.verify(second.id, { transactionHash: hash }),
     ]);
     expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
-    expect(service.summary().balanceUnits).toBe(10000000);
-    expect(service.summary().totalDeposits).toBe(1);
+    expect((await service.summary()).balanceUnits).toBe(10000000);
+    expect((await service.summary()).totalDeposits).toBe(1);
   });
   it("releases in-progress guard after RPC failure and preserves the ledger", async () => {
-    const intent = service.create(input());
+    const intent = await service.create(input());
     rpc.mockRejectedValueOnce(new FundingError(502, "Network unavailable"));
     await expect(
       service.verify(intent.id, { transactionHash: hash }),
@@ -207,7 +215,6 @@ describe("test USDC deposit integrity", () => {
     ).toBe("credited");
   });
 });
-
 describe("funding HTTP boundary", () => {
   it("keeps mainnet disabled, rejects malformed inputs, and inherits token checks", async () => {
     const token = config.token;

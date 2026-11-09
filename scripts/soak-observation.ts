@@ -92,15 +92,15 @@ try {
     const { budgetMicros: _budget, ...agentIntent } = intent;
     const s =
       sessionMode === "backend"
-        ? obs.createAgentSession(agentIntent)
-        : obs.create(intent, "operator_entered");
+        ? await obs.createAgentSession(agentIntent)
+        : await obs.create(intent, "operator_entered");
     if (sessionMode === "backend") {
       assert.equal(s.status, "active");
       assert.equal(s.authorizationSource, "backend_policy");
       assert.equal(s.budgetMicros, 1000);
       assert.equal(s.commercialConsent, true);
       assert.equal(
-        obs.db.events(s.id).some((e) => e.type === "intent_approved"),
+        (await obs.db.events(s.id)).some((e) => e.type === "intent_approved"),
         false,
       );
     } else {
@@ -114,9 +114,9 @@ try {
         }),
         /Approve/,
       );
-      obs.approve(s.id, s.intentHash);
+      await obs.approve(s.id, s.intentHash);
     }
-    obs.discover(s.id, "Validate a known public URL");
+    await obs.discover(s.id, "Validate a known public URL");
     const input = {
       tool: "firecrawl_extract" as const,
       url: `https://example.com/${cycles % 7 === 0 ? "failure" : cycles % 5 === 0 ? "missing" : "fixture"}`,
@@ -134,17 +134,17 @@ try {
     const replay = await obs.execute(s.id, input);
     assert.equal(replay.id, first.id);
     assert.equal(executions, before + 1);
-    const finished = obs.outcome(s.id, {
+    const finished = await obs.outcome(s.id, {
       requestKey: "final",
       text: "Synthetic final output for durability validation.",
       evidenceCallIds: [first.id],
     });
-    obs.outcome(s.id, {
+    await obs.outcome(s.id, {
       requestKey: "final",
       text: "Synthetic final output for durability validation.",
       evidenceCallIds: [first.id],
     });
-    const reviewed = obs.evaluate(s.id, {
+    const reviewed = await obs.evaluate(s.id, {
       outcomeId: finished.outcomes[0].id,
       criteria: s.criteria.map((c, i) => ({
         criterionId: c.id,
@@ -164,27 +164,30 @@ try {
       assert.equal(executions, before + 1);
     }
     if (cycles % 4 === 0) {
-      const withCase = obs.openCase(
+      const withCase = await obs.openCase(
         s.id,
         reviewed.evaluations[0].id,
         "Synthetic review case for closure testing.",
       );
-      obs.resolveCase(
+      await obs.resolveCase(
         s.id,
         withCase.cases[0].id,
         "resolved",
         "Synthetic resolution recorded without payment.",
       );
     }
-    obs.consent(s.id, true);
-    assert.throws(() => obs.consent(s.id, false), /workspace policy/);
+    await obs.consent(s.id, true);
+    assert.throws(
+      async () => await obs.consent(s.id, false),
+      /workspace policy/,
+    );
     if (cycles % 2 === 0) {
-      const revised = obs.outcome(s.id, {
+      const revised = await obs.outcome(s.id, {
         requestKey: "revised",
         text: "Revised synthetic output for versioned review validation.",
         evidenceCallIds: [first.id],
       });
-      obs.evaluate(s.id, {
+      await obs.evaluate(s.id, {
         outcomeId: finished.outcomes[0].id,
         historical: true,
         reviewer: { kind: "assistant_reported", label: "Synthetic soak" },
@@ -195,7 +198,7 @@ try {
           evidenceCallIds: [first.id],
         })),
       });
-      obs.evaluate(s.id, {
+      await obs.evaluate(s.id, {
         outcomeId: revised.outcomes.at(-1)!.id,
         reviewer: { kind: "assistant_reported", label: "Synthetic soak" },
         criteria: s.criteria.map((c) => ({
@@ -205,7 +208,7 @@ try {
           evidenceCallIds: [first.id],
         })),
       });
-      const original = obs.outcome(s.id, {
+      const original = await obs.outcome(s.id, {
         requestKey: "final",
         text: "Synthetic final output for durability validation.",
         evidenceCallIds: [first.id],
@@ -214,27 +217,30 @@ try {
       assert.equal(original.outcomes.length, 2);
     }
     assert.equal(
-      obs.commercialAggregate().available,
+      (await obs.commercialAggregate()).available,
       cycles >= config.minCohort,
     );
-    assert.equal(obs.db.detail(s.id)?.integrity, true);
+    assert.equal((await obs.db.detail(s.id))?.integrity, true);
     assert.equal(
       verifyPrivateEvidence({
         version: "private-evidence-v1",
-        session: obs.db.detail(s.id),
+        session: await obs.db.detail(s.id),
       }).valid,
       true,
     );
     if (cycles % 10 === 0) {
-      store.close();
+      await store.close();
       store = new Store(dbPath);
       obs = new Observatory(store, adapters);
-      obs.db.recover();
+      await obs.db.recover();
       restarts++;
-      assert.equal(obs.db.detail(s.id)?.integrity, true);
-      assert.equal(obs.db.get(s.id)?.spentMicros, 1000);
+      assert.equal((await obs.db.detail(s.id))?.integrity, true);
+      assert.equal((await obs.db.get(s.id))?.spentMicros, 1000);
       if (sessionMode === "backend") {
-        assert.equal(obs.db.get(s.id)?.authorizationSource, "backend_policy");
+        assert.equal(
+          (await obs.db.get(s.id))?.authorizationSource,
+          "backend_policy",
+        );
         await assert.rejects(
           obs.execute(s.id, { ...input, requestKey: "over-cap-after-restart" }),
           /budget/,
@@ -278,5 +284,5 @@ try {
   );
   throw error;
 } finally {
-  store.close();
+  await store.close();
 }

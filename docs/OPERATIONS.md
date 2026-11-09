@@ -2,15 +2,23 @@
 
 ## Credentials and access
 
-Except for explicitly enabled Firecrawl keyless extraction, provider keys are read from the Node server environment or local `.env` file. They never enter browser bundles, source control, SQLite events, or API responses. The Connections screen displays only whether a key is configured, not whether it has been verified.
+Except for explicitly enabled Firecrawl keyless extraction, provider keys are read from the Node server environment or local `.env` file. They never enter browser bundles, source control, stored events, or API responses. The Connections screen displays only whether a key is configured, not whether it has been verified.
 
-By default the server binds to loopback. Non-loopback binding requires `API_TOKEN` with at least 24 characters. For remote use, place the service behind HTTPS and trusted access controls. The browser keeps the workspace token in memory only, clearing it on reload; provider credentials cannot be entered into the browser. Local API host validation and same-origin JSON writes reduce browser-based attacks against unauthenticated loopback deployments.
+By default the server binds to loopback. SQLite/local mode requires `API_TOKEN` with at least 24 characters before non-loopback binding; the browser keeps that owner token in memory only. PostgreSQL mode requires [Supabase Auth configuration](AUTH.md), verifies live sessions and workspace membership, and ignores `API_TOKEN`/`ADMIN_API_TOKEN`. Its browser SDK persists and refreshes account sessions; provider credentials cannot be entered into the browser. For remote use, place the service behind HTTPS and trusted deployment access controls. Same-origin JSON writes remain enforced.
 
-This is a single shared workspace. The token grants access to all local sessions and research tasks. It does not supply tenant isolation, roles, user identity, audit attribution, or buyer access control. Do not use this version for untrusted public users or confidential multi-tenant workloads.
+PostgreSQL accounts select only workspaces granted by live membership; explicit `SUPABASE_ADMIN_USER_IDS` allowlisted operators can access registered workspaces and restricted operator actions. Workspace owners manage keys, routing, and test funding, while members have research/tool access and usage reads. Forced row-level security and workspace-scoped constraints protect business queries. User-editable identity metadata grants no role. Hosted login, email, and deployment controls still require target-project validation.
+
+[Scoped API keys](API_KEYS.md) restrict machine permissions, tools, expiry, and cumulative configured estimates. PostgreSQL key-policy audit events record the authenticated account UUID; SQLite records an owner-credential identifier. SQLite retains its shared local workspace and requires an owner `API_TOKEN` of at least 24 characters before key issuance. Removing or shortening it after issuance makes general `/api` requests return `503`; revoking all keys does not restore anonymous access.
+
+PostgreSQL additionally requires an explicit [operator workspace allowance](WORKSPACE_ALLOWANCES.md) before provider admission. The admin **Tool access** page changes or pauses that lifetime estimate cap with an audit reason; customer keys, new sessions, and test deposits cannot grant it. Missing grants deny execution. Pausing preserves incurred and reserved estimates; already admitted calls settle conservatively.
+
+The [hosted rollout checkpoint](SUPABASE_ROLLOUT.md) records applied schema migrations, checksum/RLS/runtime-role checks, verified historical-data import, and remaining hosted validation. It does not establish a deployed public application.
 
 ## Local data
 
-The default database is `data/apilayer.sqlite`; its directory is created with owner-only permissions. Normal operations append events and replace materialized session/task state. Observation events have a local SHA-256 chain; this checks internal chain consistency, not independent attestation or immutable external custody. WAL sidecars are part of the database's operational storage. Protect the directory and any backups as sensitive workspace data.
+The default backend is SQLite at `data/apilayer.sqlite`; its directory is created with owner-only permissions. Normal operations append events and replace materialized session/task state. Observation events have a local SHA-256 chain; this checks internal chain consistency, not independent attestation or immutable external custody. WAL sidecars are part of SQLite's operational storage. Protect the directory and any backups as sensitive workspace data.
+
+PostgreSQL is an explicit alternative through `STORAGE_BACKEND=postgres`, a private `DATABASE_URL`, and `LEGACY_WORKSPACE_ID`. Application tables remain in the private `octolab` schema, with no browser-role grants. Use a direct connection or Supabase session pooler on port 5432; transaction pooling cannot retain runtime ownership. Remote connections verify TLS certificates. Follow the [migration guide](POSTGRES_MIGRATION.md) before cutover: stop writers, inspect the read-only SQLite source, migrate the schema, bootstrap and confirm the intended Auth account, stop the runtime, assign its UUID explicitly, import, and verify counts and content digests. Signup before import never inherits history. Setting `DATABASE_URL` alone never switches storage. Preserve backups and historical consent/evidence; after new PostgreSQL writes, selecting the old SQLite file would lose those changes.
 
 Internal storage includes prompts, criteria, normalized query arguments, source excerpts and URLs, evidence assessments, reviewer notes, routing/usage metadata, and estimates. Search providers receive the query and domain filters needed to perform the search; Firecrawl receives an explicitly selected source URL. Review the vendor's terms, data retention, and permitted use before processing sensitive requests.
 
@@ -20,7 +28,7 @@ Sanitized trace exports omit prompts, queries, source URLs/content, organization
 
 ## Observation records and sharing
 
-The MCP bridge exposes intent proposals, session reads, explicit provider tools, cached evidence, and output submission. Intent acceptance, evaluations, case handling, deletion, and the legacy sharing compatibility route are operator HTTP operations, absent from the MCP tool catalog. This is a local shared trust boundary; it is not a defense against another privileged local process accessing the operator API.
+The MCP bridge exposes intent proposals, session reads, explicit provider tools, cached evidence, and output submission. Intent acceptance, evaluations, case handling, deletion, and the legacy sharing compatibility route are operator HTTP operations, absent from the MCP tool catalog. In PostgreSQL mode, manual creation/approval, evaluation, case mutations, provider lab, and dispute review require a platform administrator account. Actor attribution records account/key identity separately from agent-reported model/host fields. SQLite remains a shared local trust boundary; server/database credentials still grant privileged access.
 
 Each delivered output remains available as a separate version. An evaluation references an exact output ID, accepted intent hash, criterion verdicts, supporting call IDs, and a reported review source. Reviewing a prior version requires an explicit retrospective flag. Cases reference one exact evaluation and record their resolution; no money moves and no coverage is issued.
 
@@ -30,29 +38,62 @@ Commercial aggregate sharing is enabled for all observation sessions under works
 
 ## Retention
 
-Default documented retention: **30 days**. Scheduling cleanup is the operator's responsibility; no background job silently deletes research. Stop the server before running maintenance.
+The default age is **30 days**. Cleanup is operator-run, with no automatic schedule. The API and maintenance command share `openConfiguredStore`, so `STORAGE_BACKEND` selects the same backend for both. Stop the API and other maintenance processes, then preserve a consistent backup before applying deletion. SQLite refuses a second writer; PostgreSQL maintenance acquires the runtime ownership lock and refuses to overlap a running API.
+
+Build the maintenance command first. Without `--apply`, it only previews the selected workspace's deletion counts, cutoff, and plan digest; it does not print candidate record IDs or delete records:
 
 ```bash
-RETENTION_DAYS=30 npm run retention
+npm run build
+# SQLite: DB_PATH must identify an existing source file.
+STORAGE_BACKEND=sqlite DB_PATH=./data/apilayer.sqlite RETENTION_DAYS=30 npm run retention
+# PostgreSQL: explicitly select a registered workspace; there is no legacy-workspace fallback.
+STORAGE_BACKEND=postgres RETENTION_WORKSPACE_ID=<workspace-id> RETENTION_DAYS=30 npm run retention
 ```
 
-The command deletes expired research tasks and observation sessions with their evidence and event histories. It skips running research tasks, observation sessions with active provider calls, and observation sessions with open review cases. Expiration uses the last materialized update. Closed cases are subject to ordinary retention. Provider lab maintenance deletes expired reviewed plans and completed unlinked runs, while preserving running tests, recent usefulness reviews, unfinished plans, and runs linked by retained plans. It then checkpoints WAL and vacuums SQLite. MCP client connection metadata is operational history and remains until the workspace is removed; it contains client name/version and timestamps, not conversation content. A paused task is not a complete backup. Apply equivalent retention to exported files, screenshots, backups, and hosting volumes. Filesystem snapshots and external backups are outside this application's deletion control.
+PostgreSQL requires `DATABASE_URL` and an explicit `RETENTION_WORKSPACE_ID` that exists in the workspace registry. On SQLite, an optional `RETENTION_WORKSPACE_ID` must match the source's identity; a missing file or mismatched identity fails. A database URL alone does not change the selected backend.
+
+After reviewing the preview and backup, pass `--apply`. To require the exact previewed plan, reuse its **same cutoff** with `RETENTION_CUTOFF` and supply its digest:
+
+```bash
+STORAGE_BACKEND=postgres RETENTION_WORKSPACE_ID=<workspace-id> \
+  RETENTION_CUTOFF=<cutoff-from-preview> \
+  npm run retention -- --apply --expect-digest=<digest-from-preview>
+```
+
+The digest covers the workspace, cutoff, and candidate IDs. A changed plan rejects before deletion. Without `RETENTION_CUTOFF`, each invocation computes a new cutoff from `RETENTION_DAYS`, so a later digest check would not describe the same plan. `--expect-digest` is optional; `--apply` is always required to delete. SQLite uses the same flags with its explicit `DB_PATH`.
+
+Deletion runs in one workspace transaction. A failure rolls back the entire deletion set. It retains running or reserved research tasks, reserved observation sessions, running calls, open review cases, unfinished test plans, recent usefulness reviews, runs linked by retained plans, and source runs needed by retained replays, including replay ancestry. Timestamps exactly at the cutoff are retained. Expired eligible tasks and sessions are deleted with their evidence and event histories; expired reviewed plans and unprotected non-running runs are also eligible. Cumulative key spending and financial ledgers are not reset. Cleanup no longer runs `VACUUM` automatically.
+
+PostgreSQL backups and restores must also preserve `workspace_allowances`, `workspace_allowance_spend`, and `workspace_allowance_events`, including privileges, limits, pause/revision, counters, reservations, and audit history. Research retention leaves these tables intact. They are PostgreSQL-only and are not part of the earlier 24-table SQLite history import. A readable custom-archive catalog and matching file hash verify backup readability/integrity; they do not establish a successful restore drill.
+
+Restore deleted records from the preserved backup if necessary; restarting does not undo applied cleanup. Before the first PostgreSQL write, rollback can select the preserved SQLite source. After PostgreSQL writes, reconcile or export those changes before reverting storage, as described in the [migration rollback guide](POSTGRES_MIGRATION.md#rollback). This checkpoint did not apply retention to the original or hosted application data. Isolated checks cover dry runs, cutoff boundaries, stale plans, rollback after an interrupted deletion, protected evidence, and a neighboring PostgreSQL workspace.
+
+MCP client connection metadata remains until its workspace is removed; it contains client name/version and timestamps, not conversation content. A paused task is not a backup. Apply a separate retention policy to exported files, screenshots, backups, and hosting volumes; filesystem snapshots and external backups are outside this command's deletion control. Scheduling retention across workspaces remains operational follow-up.
 
 ## Limits and pricing
 
-| Variable                            | Default                  | Meaning                                                                                        |
-| ----------------------------------- | ------------------------ | ---------------------------------------------------------------------------------------------- |
-| `EXA_SEARCH_USD`                    | 0.007                    | Estimate for one search with text from up to 10 returned pages                                 |
-| `TAVILY_SEARCH_USD`                 | 0.008                    | Estimate for one basic search                                                                  |
-| `FIRECRAWL_SCRAPE_USD`              | 0.001                    | Estimate for one extraction                                                                    |
-| `PROVIDER_TIMEOUT_MS`               | 20000                    | HTTP request deadline                                                                          |
-| `PROVIDER_RPM`                      | 20                       | Process-local requests per provider per rolling minute                                         |
-| `AGENT_SESSION_BUDGET_MICROS`       | 100000                   | Backend cap per automatically authorized MCP session ($0.10); 0 blocks positive-estimate calls |
-| `PROVIDER_TEST_BUDGET_MICROS`       | 150000                   | Backend cap per controlled provider run ($0.15)                                                |
-| `PROVIDER_TEST_DAILY_BUDGET_MICROS` | 500000                   | Controlled-test allowance per UTC start day ($0.50), separate from organic research            |
-| `ANALYTICS_MIN_TASKS`               | 5                        | Minimum commercial export cohort, cannot be configured below 5                                 |
-| `DB_PATH`                           | `./data/apilayer.sqlite` | Workspace database                                                                             |
-| `HOST` / `PORT`                     | `127.0.0.1` / `3001`     | HTTP listener                                                                                  |
+| Variable                                    | Default                  | Meaning                                                                                              |
+| ------------------------------------------- | ------------------------ | ---------------------------------------------------------------------------------------------------- |
+| `EXA_SEARCH_USD`                            | 0.007                    | Estimate for one search with text from up to 10 returned pages                                       |
+| `TAVILY_SEARCH_USD`                         | 0.008                    | Estimate for one basic search                                                                        |
+| `FIRECRAWL_SCRAPE_USD`                      | 0.001                    | Estimate for one extraction                                                                          |
+| `PROVIDER_TIMEOUT_MS`                       | 20000                    | HTTP request deadline                                                                                |
+| `PROVIDER_RPM`                              | 20                       | Process-local requests per provider per rolling minute                                               |
+| `AGENT_SESSION_BUDGET_MICROS`               | 100000                   | Backend cap per automatically authorized MCP session ($0.10); 0 blocks positive-estimate calls       |
+| `PROVIDER_TEST_BUDGET_MICROS`               | 150000                   | Backend cap per controlled provider run ($0.15)                                                      |
+| `PROVIDER_TEST_DAILY_BUDGET_MICROS`         | 500000                   | Controlled-test allowance per UTC start day ($0.50), separate from organic research                  |
+| `ANALYTICS_MIN_TASKS`                       | 5                        | Minimum commercial export cohort, cannot be configured below 5                                       |
+| `STORAGE_BACKEND`                           | `sqlite`                 | Explicit runtime backend: `sqlite` or `postgres`; a URL alone does not switch it                     |
+| `DB_PATH`                                   | `./data/apilayer.sqlite` | SQLite workspace or read-only migration source                                                       |
+| `DATABASE_URL`                              | unset                    | Private PostgreSQL connection string; keep server-side                                               |
+| `LEGACY_WORKSPACE_ID`                       | unset                    | Imported workspace UUID used by the PostgreSQL runtime; does not select retention targets            |
+| `RETENTION_DAYS`                            | 30                       | Positive age in days used to compute the cleanup cutoff                                              |
+| `RETENTION_WORKSPACE_ID`                    | unset                    | Explicit registered PostgreSQL workspace to maintain; optional identity check on SQLite              |
+| `RETENTION_CUTOFF`                          | unset                    | Fixed timestamp overriding the computed cutoff, needed to reuse a preview digest                     |
+| `LEGACY_OWNER_USER_ID`                      | unset                    | Intended owner's Supabase Auth UUID, required explicitly for import and verification                 |
+| `SUPABASE_URL` / `SUPABASE_PUBLISHABLE_KEY` | unset                    | Public hosted Auth origin and publishable key; `VITE_` aliases supported, no secret/service-role key |
+| `SUPABASE_ADMIN_USER_IDS`                   | unset                    | Explicit platform administrator UUID allowlist; empty grants none                                    |
+| `HOST` / `PORT`                             | `127.0.0.1` / `3001`     | HTTP listener                                                                                        |
 
 Prices are **configurable planning assumptions**, not verified current plan prices. Exa's default is $0.007 for Auto search with up to ten results and page text, checked against its published price card and five provider-reported responses on November 1, 2026. The prior $0.017 default double-counted an allowance for content. Historical receipts keep their original rate card and estimates. Vendor plans, search types, returned contents, credit packages, and discounts can change actual charges. Confirm the official price card and your account plan before use:
 
@@ -64,7 +105,7 @@ The ledger enforces the task cap against those configured estimates. Actual vend
 
 MCP sessions start automatically under backend policy. Consumers do not configure research spending or approve sessions; a shopping budget remains part of their product request. `AGENT_SESSION_BUDGET_MICROS` is read by the HTTP server, not accepted from the agent. Changing it affects new sessions after restart; existing sessions retain their recorded cap. Automatic authorization is an observed backend event, separate from human acceptance and commercial consent. The cap is per session, not an account-wide quota or tenant isolation mechanism. Existing manual operator sessions retain their explicit acceptance flow.
 
-Each observation session and legacy research task has a maximum of 50 provider attempts across search and extraction. The rolling provider rate limit is shared across organic research and the provider lab within the process. Observation calls are explicitly selected by the external agent and are never automatically retried. Legacy research additionally limits each plan to five queries and two search attempts per query, with at most three legacy tasks active simultaneously. The legacy three-task limit does not apply to observation sessions; their admission uses accepted budgets, call counts, and shared provider rate limits. Run a single process per database; process-local limits are not distributed rate limiting. Database exclusive ownership prevents another server, retention command, or direct-database live runner from claiming that database while the server is running. Stop the server before maintenance.
+Each observation session and legacy research task has a maximum of 50 provider attempts across search and extraction. The rolling provider rate limit is shared across organic research and the provider lab within the process. Observation calls are explicitly selected by the external agent and are never automatically retried. Legacy research additionally limits each plan to five queries and two search attempts per query, with at most three legacy tasks active simultaneously. The legacy three-task limit does not apply to observation sessions; their admission uses accepted budgets, call counts, and shared provider rate limits. Run a single API server per database; process-local limits are not distributed rate limiting. SQLite exclusive ownership and PostgreSQL's session advisory lock prevent overlapping runtime recovery and maintenance. PostgreSQL import and verification also refuse an active runtime. Losing the advisory-lock connection terminates the API server. Stop the server before maintenance; connection pooling does not enable horizontal deployment.
 
 ## Optional keyless extraction
 
@@ -80,12 +121,16 @@ The start/development/CLI scripts enable Node's environment proxy support (`--us
 
 ## Shutdown, recovery, and health
 
-SIGTERM/SIGINT stops accepting connections, asks active legacy plans and controlled provider tests to stop between calls, and waits for in-flight legacy, observation, and lab operations to settle. If the process is killed before settlement, startup conservatively consumes outstanding estimates, records interrupted-call and settlement events, and marks affected tasks partial. Observation calls are marked interrupted and retain a conservative estimate; the same request key returns the recorded interruption rather than repeating the provider operation. Repeated recovery does not charge the same reservation twice.
+SIGTERM/SIGINT stops accepting connections, asks active legacy plans and controlled provider tests to stop between calls, and waits for in-flight legacy, observation, and lab operations, on-chain verification, and Stripe creation/reconciliation to settle. If the process is killed before provider settlement, startup conservatively consumes outstanding estimates, records interrupted-call and settlement events, and marks affected tasks partial. Observation calls are marked interrupted and retain a conservative estimate; the same request key returns the recorded interruption rather than repeating the provider operation. Repeated recovery does not charge the same reservation twice. Funding recovery follows the separate [Stripe](STRIPE_DEPOSITS.md) and [on-chain](TESTNET_DEPOSITS.md) receipt rules.
 
-`GET /healthz` tests the database connection and returns only `{ "ok": true }`. It does not verify vendor credentials or prove an external provider is healthy. `/api/health` is authenticated when a workspace token is configured and provides connection configuration, not vendor uptime.
+`GET /healthz` tests the database connection and returns only `{ "ok": true }`. It does not verify vendor credentials or prove an external provider is healthy. `/api/health` requires account workspace access in PostgreSQL mode or the configured workspace token in SQLite mode and provides connection configuration, not vendor uptime.
 
 ## Deployment artifact
 
-The Dockerfile builds both the browser and server, installs runtime dependencies separately, and runs as the non-root `node` user. Use a persistent `/app/data` volume. The server deliberately refuses public binding without a long token. Supply secrets through your hosting system and terminate TLS in front of the container.
+Use the [release and recovery checklist](RELEASE_CHECKLIST.md) for the packaged application/recovery images, compiled migration commands, exact-revision CI evidence, encrypted backup ownership/retention and tested fresh-destination restore procedure. The offline application archive excludes hosted Auth identities and object storage; those need their own recovery arrangements. No hosted backup, restore, data cutover or deployment is implied by a passing isolated drill.
 
-The Docker artifact passes local and CI build/runtime/restart checks. It still has to be configured and validated in the target deployment environment; it is not a claim that a hosted service has been deployed. Buyer interviews, vendor terms review, and willingness-to-pay validation remain operational tasks.
+The Dockerfile builds both the browser and server, installs runtime dependencies separately, and runs as the non-root `node` user. Use a persistent `/app/data` volume for SQLite. For PostgreSQL, complete the [verified cutover](POSTGRES_MIGRATION.md) and supply the backend selection, workspace ID, and private connection string through deployment configuration. SQLite refuses public binding without a long owner token; PostgreSQL starts only with valid public Auth configuration and enforces account access. Complete actual redirect/email/login validation before hosted rollout. Supply secrets through your hosting system and terminate TLS in front of the container.
+
+Use the actual CI results for the selected image revision to establish which build/runtime/restart/restore checks passed. It still has to be configured and validated in the target deployment environment; a prepared artifact is not a deployed service. Buyer interviews, vendor terms review, and willingness-to-pay validation remain operational tasks.
+
+When the canonical local runtime serves the original checkout's browser assets, build and test further candidates in an isolated working copy. Promote the verified backend and browser assets together, then let the canonical-runtime owner restart it. Fixture servers use their isolated test ports and database settings; do not point them at the live PostgreSQL runtime.

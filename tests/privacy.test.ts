@@ -14,26 +14,29 @@ beforeEach(() => {
   engine = new Engine(store);
   app = createApp(store, engine);
 });
-afterEach(() => store.close());
+afterEach(async () => await store.close());
 describe("consent withdrawal and deletion", () => {
   it("withdraws a task from aggregate reporting immediately and records its changed consent scope", async () => {
-    const task = createTask(store, { consent: true });
-    for (let i = 0; i < 4; i++) createTask(store, { consent: true });
-    expect(analytics(store).suppressed).toBe(false);
+    const task = await createTask(store, { consent: true });
+    for (let i = 0; i < 4; i++) await createTask(store, { consent: true });
+    expect((await analytics(store)).suppressed).toBe(false);
     const result = await request(app)
       .post(`/api/tasks/${task.id}/privacy`)
       .send({ consent: false });
     expect(result.status).toBe(200);
-    expect(analytics(store)).toMatchObject({ suppressed: true, cohortSize: 4 });
-    expect(store.events(task.id).at(-1)?.data).toMatchObject({
+    expect(await analytics(store)).toMatchObject({
+      suppressed: true,
+      cohortSize: 4,
+    });
+    expect((await store.events(task.id)).at(-1)?.data).toMatchObject({
       consent: false,
       scope: "local task storage only",
     });
   });
   it("allows immediate withdrawal during a running operation without cancelling billing reconciliation", async () => {
-    const task = createTask(store, { consent: true });
+    const task = await createTask(store, { consent: true });
     engine.active.add(task.id);
-    engine.reserve(task.id, "exa", "reserved", "research.search", {});
+    await engine.reserve(task.id, "exa", "reserved", "research.search", {});
     expect(
       (
         await request(app)
@@ -41,13 +44,13 @@ describe("consent withdrawal and deletion", () => {
           .send({ consent: false })
       ).status,
     ).toBe(200);
-    expect(store.get(task.id)).toMatchObject({
+    expect(await store.get(task.id)).toMatchObject({
       reservedMicros: config.prices.exa,
       intent: { consent: false },
     });
   });
   it("requires an exact confirmation and blocks deletion while a request is active or reserved", async () => {
-    const task = createTask(store);
+    const task = await createTask(store);
     expect(
       (
         await request(app)
@@ -64,7 +67,7 @@ describe("consent withdrawal and deletion", () => {
       ).status,
     ).toBe(409);
     engine.active.delete(task.id);
-    engine.reserve(task.id, "exa", "pending", "research.search", {});
+    await engine.reserve(task.id, "exa", "pending", "research.search", {});
     expect(
       (
         await request(app)
@@ -72,17 +75,30 @@ describe("consent withdrawal and deletion", () => {
           .send({ confirmTaskId: task.id })
       ).status,
     ).toBe(409);
-    expect(store.get(task.id)).toBeDefined();
+    expect(await store.get(task.id)).toBeDefined();
   });
   it("deletes the selected task and all its events without deleting another session", async () => {
-    const deleted = createTask(store, { consent: true });
-    const kept = createTask(store);
-    store.event(deleted.id, "intent_created", { prompt: "private content" });
-    store.beginReceipt(deleted.id, "research.search", "delete-receipt", "hash");
-    store.finishReceipt(deleted.id, "research.search", "delete-receipt", 202, {
-      taskId: deleted.id,
+    const deleted = await createTask(store, { consent: true });
+    const kept = await createTask(store);
+    await store.event(deleted.id, "intent_created", {
+      prompt: "private content",
     });
-    store.event(kept.id, "intent_created", { prompt: "other content" });
+    await store.beginReceipt(
+      deleted.id,
+      "research.search",
+      "delete-receipt",
+      "hash",
+    );
+    await store.finishReceipt(
+      deleted.id,
+      "research.search",
+      "delete-receipt",
+      202,
+      {
+        taskId: deleted.id,
+      },
+    );
+    await store.event(kept.id, "intent_created", { prompt: "other content" });
     expect(
       (
         await request(app)
@@ -90,13 +106,13 @@ describe("consent withdrawal and deletion", () => {
           .send({ confirmTaskId: deleted.id })
       ).status,
     ).toBe(200);
-    expect(store.get(deleted.id)).toBeUndefined();
+    expect(await store.get(deleted.id)).toBeUndefined();
     expect(
-      store.receipt(deleted.id, "research.search", "delete-receipt"),
+      await store.receipt(deleted.id, "research.search", "delete-receipt"),
     ).toBeUndefined();
-    expect(store.events(deleted.id)).toEqual([]);
-    expect(store.get(kept.id)).toBeDefined();
-    expect(store.events(kept.id)).toHaveLength(1);
+    expect(await store.events(deleted.id)).toEqual([]);
+    expect(await store.get(kept.id)).toBeDefined();
+    expect(await store.events(kept.id)).toHaveLength(1);
     expect((await request(app).get(`/api/tasks/${deleted.id}`)).status).toBe(
       404,
     );

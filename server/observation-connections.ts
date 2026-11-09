@@ -7,14 +7,14 @@ export const clientIdentity = z
   })
   .strict();
 export type ClientIdentity = z.infer<typeof clientIdentity>;
-export function recordConnection(
+export async function recordConnection(
   db: ObservationStore,
   input: ClientIdentity,
   sessionId?: string,
 ) {
   const client = clientIdentity.parse(input);
   const key = JSON.stringify([client.clientName, client.clientVersion]);
-  const existing = db.store.db
+  const existing = await db.store.db
     .prepare("SELECT body FROM observation_clients WHERE id=?")
     .get(key);
   const at = new Date().toISOString();
@@ -27,24 +27,22 @@ export function recordConnection(
     transport: "stdio",
     identity: "MCP client-reported",
   };
-  db.store.db
+  await db.store.db
     .prepare(
       "INSERT INTO observation_clients VALUES (?,?) ON CONFLICT(id) DO UPDATE SET body=excluded.body",
     )
     .run(key, JSON.stringify(connection));
   if (
     sessionId &&
-    db.get(sessionId) &&
-    !db
-      .events(sessionId)
-      .some(
-        (e) =>
-          e.type === "client_observed" &&
-          e.data.clientName === client.clientName &&
-          e.data.clientVersion === client.clientVersion,
-      )
+    (await db.get(sessionId)) &&
+    !(await db.events(sessionId)).some(
+      (e) =>
+        e.type === "client_observed" &&
+        e.data.clientName === client.clientName &&
+        e.data.clientVersion === client.clientVersion,
+    )
   )
-    db.event(sessionId, "client_observed", "observed", {
+    await db.event(sessionId, "client_observed", "observed", {
       ...client,
       transport: "stdio",
       identity:
@@ -52,11 +50,12 @@ export function recordConnection(
     });
   return connection;
 }
-export function connections(db: ObservationStore) {
-  return db.store.db
-    .prepare(
-      "SELECT body FROM observation_clients ORDER BY json_extract(body,'$.lastSeenAt') DESC",
-    )
-    .all()
-    .map((r) => JSON.parse(r.body as string));
+export async function connections(db: ObservationStore) {
+  return (
+    await db.store.db
+      .prepare(
+        "SELECT body FROM observation_clients ORDER BY json_extract(body,'$.lastSeenAt') DESC",
+      )
+      .all()
+  ).map((r) => JSON.parse(r.body as string));
 }

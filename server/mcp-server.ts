@@ -2,6 +2,7 @@ import { searchOptions } from "./request-cost.js";
 import { discoveryInput } from "./tool-discovery.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
+import { providerRegistry } from "./provider-adapters.js";
 import { agentSessionInput, selectionReason } from "./observation.js";
 import type { SessionDetail } from "./observation-types.js";
 import {
@@ -127,7 +128,9 @@ export function createObservationMcp(request: BridgeRequest) {
       "Required brief selection summary: why this tool fits the current need, and why a follow-up is needed. Agent-reported explanation, never private chain of thought.",
     ),
   };
-  for (const tool of ["exa_search", "tavily_search"] as const)
+  for (const { tool, searchDepth } of providerRegistry
+    .list()
+    .filter((a) => a.operation === "search"))
     server.registerTool(
       tool,
       {
@@ -137,7 +140,7 @@ export function createObservationMcp(request: BridgeRequest) {
           maxResults: searchOptions.maxResults.describe(
             "Requested result count, 1–20; default 10. Exa charges for results above 10.",
           ),
-          ...(tool === "tavily_search"
+          ...(searchDepth
             ? {
                 searchDepth: searchOptions.searchDepth.describe(
                   "basic costs 1 credit; advanced costs 2 credits. Default basic.",
@@ -159,26 +162,29 @@ export function createObservationMcp(request: BridgeRequest) {
           request(`/observations/${sessionId}/call`, { ...input, tool }),
         ),
     );
-  server.registerTool(
-    "firecrawl_extract",
-    {
-      description: `${toolCapabilities.firecrawl_extract.description} ${toolCapabilities.firecrawl_extract.useWhen} ${toolCapabilities.firecrawl_extract.limitations} Use the active session from record_intent; no consumer approval.`,
-      inputSchema: { ...common, url: z.string().url().max(2048) },
-      annotations: {
-        readOnlyHint: false,
-        destructiveHint: false,
-        idempotentHint: true,
-        openWorldHint: true,
+  for (const { tool } of providerRegistry
+    .list()
+    .filter((a) => a.operation === "extract"))
+    server.registerTool(
+      tool,
+      {
+        description: `${toolCapabilities[tool].description} ${toolCapabilities[tool].useWhen} ${toolCapabilities[tool].limitations} Use the active session from record_intent; no consumer approval.`,
+        inputSchema: { ...common, url: z.string().url().max(2048) },
+        annotations: {
+          readOnlyHint: false,
+          destructiveHint: false,
+          idempotentHint: true,
+          openWorldHint: true,
+        },
       },
-    },
-    ({ sessionId, ...input }) =>
-      run(() =>
-        request(`/observations/${sessionId}/call`, {
-          ...input,
-          tool: "firecrawl_extract",
-        }),
-      ),
-  );
+      ({ sessionId, ...input }) =>
+        run(() =>
+          request(`/observations/${sessionId}/call`, {
+            ...input,
+            tool,
+          }),
+        ),
+    );
   server.registerTool(
     "submit_outcome",
     {

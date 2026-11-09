@@ -1,22 +1,59 @@
+import { Accounts } from "./accounts.js";
 import { config } from "./config.js";
-import { Store } from "./store.js";
+import { PostgresDatabase } from "./database.js";
+import { claimRuntime } from "./migration.js";
+import { openConfiguredStore } from "./runtime-storage.js";
 import { Engine } from "./engine.js";
 import { createApp } from "./app.js";
 import { Observatory } from "./observation.js";
 if (
   !["127.0.0.1", "localhost", "::1"].includes(config.host) &&
-  config.token.length < 24
+  config.token.length < 24 &&
+  config.storageBackend !== "postgres"
 )
   throw new Error(
     "Set API_TOKEN to at least 24 characters before binding beyond loopback.",
   );
-const store = new Store(config.dbPath);
-store.recover();
+if (!["sqlite", "postgres"].includes(config.storageBackend))
+  throw new Error("STORAGE_BACKEND must be sqlite or postgres.");
+if (config.storageBackend === "postgres" && !config.databaseUrl)
+  throw new Error("Set DATABASE_URL before choosing Postgres.");
+const store = openConfiguredStore();
+const releaseRuntime =
+  store.db instanceof PostgresDatabase
+    ? await claimRuntime(store.db)
+    : undefined;
+
 const engine = new Engine(store);
 const observatory = new Observatory(store, undefined, engine.timestamps);
-observatory.db.recover();
-const app = createApp(store, engine, observatory);
-app.locals.providerLab.recover();
+await observatory.ready;
+const accounts =
+  store.db instanceof PostgresDatabase ? new Accounts(store) : undefined;
+const app = createApp(
+  store,
+  engine,
+  observatory,
+  undefined,
+  undefined,
+  undefined,
+  accounts,
+);
+const workspaceIds =
+  store.db instanceof PostgresDatabase
+    ? (
+        await store.db.pool.query(
+          "SELECT id FROM octolab.workspaces ORDER BY id",
+        )
+      ).rows.map((r) => String(r.id))
+    : [store.legacyWorkspaceId];
+for (const id of workspaceIds)
+  await store.scope.run(id, async () => {
+    await store.recover();
+    await observatory.db.applySharingPolicy();
+    await observatory.db.recover();
+    await app.locals.providerLab.recover();
+    await store.allowance.recover();
+  });
 const server = app.listen(config.port, config.host, () =>
   console.log(
     `APILayer listening at http://${config.host}:${config.port}; provider credentials stay on the server.`,
@@ -24,24 +61,35 @@ const server = app.listen(config.port, config.host, () =>
 );
 let shuttingDown = false;
 for (const signal of ["SIGTERM", "SIGINT"])
-  process.on(signal, () => {
+  process.on(signal, async () => {
     if (shuttingDown) return;
     shuttingDown = true;
-    for (const id of engine.active) engine.cancel(id);
+    let httpClosed = false;
+    server.close(() => {
+      httpClosed = true;
+    });
+    for (const id of engine.active) await engine.cancel(id);
     for (const id of app.locals.providerLab.active)
       app.locals.providerLab.cancel(id);
-    server.close();
-    const deadline = setTimeout(() => process.exit(1), config.timeoutMs + 3000);
+    const deadline = setTimeout(
+      () => process.exit(1),
+      Math.max(config.timeoutMs, 60000) + 3000,
+    );
     deadline.unref();
-    const drain = setInterval(() => {
+    const drain = setInterval(async () => {
       if (
+        httpClosed &&
         engine.active.size === 0 &&
         observatory.active.size === 0 &&
-        app.locals.providerLab.active.size === 0
+        app.locals.providerLab.active.size === 0 &&
+        app.locals.funding.active.size === 0 &&
+        app.locals.stripeFunding.active.size === 0 &&
+        app.locals.stripeFunding.creating.size === 0
       ) {
         clearInterval(drain);
         clearTimeout(deadline);
-        store.close();
+        await releaseRuntime?.();
+        await store.close();
         process.exit(0);
       }
     }, 50);

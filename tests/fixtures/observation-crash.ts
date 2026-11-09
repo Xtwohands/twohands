@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { Store } from "../../server/store.js";
 import { Observatory, sessionInput } from "../../server/observation.js";
 import { config } from "../../server/config.js";
@@ -13,7 +14,7 @@ const obs = new Observatory(store, {
     return { httpStatus: 200, text: "Never committed" };
   },
 });
-const s = obs.create(
+const s = await obs.create(
   sessionInput.parse({
     title: "Crash fixture",
     objective: "Validate recovery of an interrupted synthetic request.",
@@ -22,12 +23,23 @@ const s = obs.create(
   }),
   "operator_entered",
 );
-obs.approve(s.id, s.intentHash);
-await obs.execute(s.id, {
-  tool: "firecrawl_extract",
-  url: "https://example.com",
-  requestKey: "crash-once",
-  domains: [],
-  statedReason: "Synthetic crash fixture",
+await obs.approve(s.id, s.intentHash);
+const key = await obs.db.apiKeys.create({
+  name: "Crash scoped key",
+  requestKey: randomUUID(),
+  scopes: ["tools:execute"],
+  allowedTools: ["firecrawl_extract"],
+  limitUsd: "0.001",
 });
-store.close();
+await obs.execute(
+  s.id,
+  {
+    tool: "firecrawl_extract",
+    url: "https://example.com",
+    requestKey: "crash-once",
+    domains: [],
+    statedReason: "Synthetic crash fixture",
+  },
+  key.key.id,
+);
+await store.close();

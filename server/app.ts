@@ -1,13 +1,29 @@
+import { workspaceAllowanceAdminRoutes } from "./workspace-allowance-api.js";
+import { providerActivity } from "./provider-activity.js";
+import { toolCapabilities } from "./provider-capabilities.js";
+import { type Accounts } from "./accounts.js";
+import {
+  accountRoutes,
+  accountAccess,
+  companyAccountRoutes,
+  adminAccountAccess,
+  accountPreviewAccess,
+} from "./account-api.js";
 import express from "express";
+import { ApiKeyError, requiredApiKeyScope } from "./api-keys.js";
+import { apiKeyRoutes } from "./api-key-api.js";
+import { DisputeReviewService } from "./dispute-review.js";
+import { disputeReviewRoutes } from "./dispute-review-api.js";
 import { FundingService } from "./funding.js";
-import { fundingRoutes } from "./funding-api.js";
+import { fundingRoutes, stripeWebhookRoute } from "./funding-api.js";
+import { StripeFundingService } from "./stripe-funding.js";
 import { workspaceRoutes } from "./workspace-api.js";
 import { sanitizedEventData } from "./sanitized.js";
 import { analytics } from "./analytics.js";
 import { randomUUID, timingSafeEqual, createHash } from "node:crypto";
 import { z } from "zod";
 import { config, providerAuthMode } from "./config.js";
-import { Store } from "./store.js";
+import { Store, StorageConflict } from "./store.js";
 import { Engine } from "./engine.js";
 import type { Task } from "./types.js";
 import { publicEvidenceUrl } from "./url-policy.js";
@@ -30,7 +46,7 @@ const intentSchema = z.object({
   query: z.string().trim().min(3).max(500),
   queries: z.array(z.string().trim().min(3).max(500)).min(1).max(5).optional(),
   requiredCount: z.number().int().min(1).max(100),
-  budgetMicros: z.number().int().min(1000).max(5_000_000),
+  budgetMicros: z.number().int().min(1000).max(5000000),
   criteria: z
     .array(z.string().trim().min(3).max(160))
     .min(1)
@@ -59,81 +75,168 @@ export function createApp(
   observatory = new Observatory(store, undefined, engine.timestamps),
   providerLab = new ProviderLab(store, undefined, engine.timestamps),
   funding = new FundingService(store),
+  stripeFunding = new StripeFundingService(funding),
+  accounts?: Accounts,
 ) {
   const app = express();
+  app.locals.apiKeys = observatory.db.apiKeys;
   app.locals.funding = funding;
+  app.locals.stripeFunding = stripeFunding;
   app.locals.providerLab = providerLab;
-  observatory.controlledSamples = () => providerLab.controlledSamples();
+  observatory.controlledSamples = async () =>
+    await providerLab.controlledSamples();
   app.disable("x-powered-by");
   app.use((_req, res, next) => {
     res.set({
       "X-Content-Type-Options": "nosniff",
       "Referrer-Policy": "no-referrer",
       "Cache-Control": "no-store",
-      "Content-Security-Policy":
-        "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; font-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
+      "Content-Security-Policy": `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'${accounts ? " " + new URL(accounts.settings.url).origin : ""}; font-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'`,
     });
     next();
   });
-  app.get("/healthz", (_req, res) => {
-    store.db.prepare("SELECT 1").get();
+  app.get("/healthz", async (_req, res) => {
+    await store.db.prepare("SELECT 1").get();
     res.json({ ok: true });
   });
-  app.use("/api", (req, res, next) => {
-    if (
-      !config.token &&
-      !["127.0.0.1", "localhost", "[::1]"].includes(req.hostname)
-    ) {
-      res.status(403).json({
-        error:
-          "Unrecognized local host. Set API_TOKEN when using a public hostname.",
-      });
-      return;
-    }
-    if (config.token) {
-      const actual = Buffer.from(
-        req.headers.authorization?.replace(/^Bearer /, "") || "",
-      );
-      const expected = Buffer.from(config.token);
+  app.get("/api/public/catalog", (_req, res) =>
+    res.json(
+      Object.entries(toolCapabilities).map(([tool, capability]) => {
+        const provider = tool.split("_")[0] as import("./types.js").ProviderId;
+        return {
+          tool,
+          provider,
+          description: capability.description,
+          available:
+            !!config.keys[provider] ||
+            (provider === "firecrawl" && config.allowKeylessFirecrawl),
+          estimatedMicros: config.prices[provider],
+        };
+      }),
+    ),
+  );
+  if (accounts) app.use("/api", accountPreviewAccess(accounts));
+  accountRoutes(app, accounts);
+  companyAccountRoutes(app, accounts);
+  workspaceAllowanceAdminRoutes(app, store, accounts);
+  if (accounts)
+    stripeFunding.workspaceForWebhook = (identity) =>
+      accounts.paymentWorkspace(identity);
+  stripeWebhookRoute(app, stripeFunding);
+  disputeReviewRoutes(
+    app,
+    new DisputeReviewService(stripeFunding),
+    accounts ? adminAccountAccess(accounts, store) : undefined,
+  );
+  if (accounts)
+    app.use("/api", accountAccess(accounts, store, observatory.db.apiKeys));
+  else
+    app.use("/api", async (req, res, next) => {
       if (
-        actual.length !== expected.length ||
-        !timingSafeEqual(actual, expected)
+        !config.token &&
+        !["127.0.0.1", "localhost", "[::1]"].includes(req.hostname)
       ) {
+        res.status(403).json({
+          error:
+            "Unrecognized local host. Set API_TOKEN when using a public hostname.",
+        });
+        return;
+      }
+      if (
+        config.token.length < 24 &&
+        (await observatory.db.apiKeys.hasIssuedKeys())
+      ) {
+        res.status(503).json({
+          error:
+            "Scoped key access requires a workspace owner token of at least 24 characters. Restore owner access before using this workspace.",
+        });
+        return;
+      }
+      const credential =
+        req.headers.authorization?.replace(/^Bearer /, "") || "";
+      const actual = Buffer.from(credential);
+      const expected = Buffer.from(config.token);
+      const owner =
+        config.token &&
+        actual.length === expected.length &&
+        timingSafeEqual(actual, expected);
+      if (!owner && credential.startsWith("oct_key_")) {
+        try {
+          const key = await observatory.db.apiKeys.authenticate(credential);
+          const scope = requiredApiKeyScope(
+            req.method,
+            `/api${req.path.replace(/\/+$/, "")}`,
+          );
+          if (!scope || !key.scopes.includes(scope))
+            throw new ApiKeyError(
+              403,
+              "This API key does not permit this operation.",
+            );
+          res.locals.apiKeyId = key.id;
+        } catch (e) {
+          res.status(e instanceof ApiKeyError ? e.status : 401).json({
+            error: e instanceof ApiKeyError ? e.message : "Invalid API key.",
+          });
+          return;
+        }
+      } else if (!owner && config.token) {
         res
           .status(401)
           .json({ error: "Enter the server access token to connect." });
         return;
       }
-    }
-    if (!["GET", "HEAD", "OPTIONS"].includes(req.method)) {
-      const origin = req.headers.origin;
-      if (
-        origin &&
-        (() => {
-          try {
-            return new URL(origin).host !== req.headers.host;
-          } catch {
-            return true;
-          }
-        })()
-      ) {
-        res.status(403).json({ error: "Cross-origin writes are not allowed" });
-        return;
+      if (!["GET", "HEAD", "OPTIONS"].includes(req.method)) {
+        const origin = req.headers.origin;
+        if (
+          origin &&
+          (() => {
+            try {
+              return new URL(origin).host !== req.headers.host;
+            } catch {
+              return true;
+            }
+          })()
+        ) {
+          res
+            .status(403)
+            .json({ error: "Cross-origin writes are not allowed" });
+          return;
+        }
+        if (!req.is("application/json")) {
+          res.status(415).json({ error: "JSON content type required" });
+          return;
+        }
       }
-      if (!req.is("application/json")) {
-        res.status(415).json({ error: "JSON content type required" });
-        return;
-      }
-    }
-    next();
-  });
+      next();
+    });
   app.use("/api/observations", express.json({ limit: "160kb" }));
+  app.use("/api/provider-lab/suites", express.json({ limit: "256kb" }));
+  app.use(
+    "/api/workspace/provider-billing/imports",
+    express.json({ limit: "256kb" }),
+  );
   app.use(express.json({ limit: "24kb" }));
+  apiKeyRoutes(app, observatory.db.apiKeys, !!accounts);
   observationRoutes(app, observatory);
   workspaceRoutes(app, observatory);
-  fundingRoutes(app, funding);
+  fundingRoutes(app, funding, stripeFunding);
   providerLabRoutes(app, providerLab);
-  app.get("/api/company-insights/:provider", (req, res) => {
+  app.get("/api/provider-activity/:provider", async (req, res) => {
+    const provider = z
+        .enum(["exa", "tavily", "firecrawl"])
+        .safeParse(req.params.provider),
+      days = z.enum(["7", "30", "90"]).safeParse(req.query.days ?? "30");
+    if (!provider.success || !days.success) {
+      res.status(400).json({
+        error: "Choose a supported provider and a 7, 30, or 90 day window.",
+      });
+      return;
+    }
+    res.json(
+      await providerActivity(observatory, provider.data, Number(days.data)),
+    );
+  });
+  app.get("/api/company-insights/:provider", async (req, res) => {
     const p = z
       .enum(["exa", "tavily", "firecrawl"])
       .safeParse(req.params.provider);
@@ -150,7 +253,7 @@ export function createApp(
       return;
     }
     res.json(
-      companyReport(
+      await companyReport(
         p.data,
         source.data,
         observatory,
@@ -159,7 +262,7 @@ export function createApp(
       ),
     );
   });
-  function idempotency(
+  async function idempotency(
     req: express.Request,
     res: express.Response,
     taskId: string,
@@ -177,7 +280,7 @@ export function createApp(
     const hash = createHash("sha256")
       .update(JSON.stringify(args))
       .digest("hex");
-    const receipt = store.receipt(taskId, operation, key);
+    const receipt = await store.receipt(taskId, operation, key);
     if (receipt) {
       if (receipt.argsHash !== hash) {
         res.status(409).json({
@@ -208,8 +311,36 @@ export function createApp(
       providerIssues: engine.providerIssues(),
     }),
   );
-  app.get("/api/tasks", (_req, res) => res.json(store.tasks().map(publicTask)));
-  app.post("/api/tasks", (req, res) => {
+  const taskWrites = new Map<string, Promise<void>>();
+  app.use("/api/tasks/:id", async (req, res, next) => {
+    if (["GET", "HEAD", "OPTIONS"].includes(req.method)) {
+      next();
+      return;
+    }
+    const key = `${store.workspaceId}:${req.params.id}`;
+    const previous = taskWrites.get(key) ?? Promise.resolve();
+    let release!: () => void;
+    const current = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    taskWrites.set(key, current);
+    const done = () => {
+      release();
+      if (taskWrites.get(key) === current) taskWrites.delete(key);
+    };
+    await previous;
+    res.once("finish", done);
+    res.once("close", done);
+    if (res.destroyed) {
+      done();
+      return;
+    }
+    next();
+  });
+  app.get("/api/tasks", async (_req, res) =>
+    res.json((await store.tasks()).map(publicTask)),
+  );
+  app.post("/api/tasks", async (req, res) => {
     const parsed = intentSchema.safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({
@@ -219,7 +350,7 @@ export function createApp(
       });
       return;
     }
-    if (store.tasks().length >= 500) {
+    if ((await store.tasks()).length >= 500) {
       res.status(409).json({
         error:
           "Local task limit reached. Apply the retention policy before creating more tasks.",
@@ -238,9 +369,9 @@ export function createApp(
       sources: [],
       assessments: [],
     };
-    store.transaction(() => {
-      store.save(task);
-      store.event(task.id, "intent_created", {
+    await store.transaction(async () => {
+      await store.save(task);
+      await store.event(task.id, "intent_created", {
         ...parsed.data,
         rubricVersion: "user-rubric-v1",
         consentScope: parsed.data.consent
@@ -250,20 +381,21 @@ export function createApp(
     });
     res.status(201).json(task);
   });
-  app.get("/api/tasks/:id", (req, res) => {
-    const task = store.get(req.params.id);
+  app.get("/api/tasks/:id", async (req, res) => {
+    const task = await store.get(req.params.id);
     if (!task) {
       res.status(404).json({ error: "Task not found" });
       return;
     }
     res.json({
       ...task,
-      events: store.events(task.id),
+      events: await store.events(task.id),
       organizations: acceptedOrganizations(task),
     });
   });
-  app.post("/api/tasks/:id/sources", (req, res) => {
-    const task = store.get(req.params.id);
+  app.post("/api/tasks/:id/sources", async (req, res) => {
+    const task = await store.get(req.params.id);
+    const taskVersion = JSON.stringify(task);
     if (!task) {
       res.status(404).json({ error: "Task not found" });
       return;
@@ -313,9 +445,9 @@ export function createApp(
     };
     task.sources.push(source);
     task.updatedAt = new Date().toISOString();
-    store.transaction(() => {
-      store.save(task);
-      store.event(task.id, "evidence_added", {
+    await store.transaction(async () => {
+      await store.saveIfUnchanged(task, taskVersion);
+      await store.event(task.id, "evidence_added", {
         sourceId: source.id,
         url,
         origin: "user",
@@ -324,8 +456,9 @@ export function createApp(
     });
     res.status(201).json(source);
   });
-  app.post("/api/tasks/:id/privacy", (req, res) => {
-    const task = store.get(req.params.id);
+  app.post("/api/tasks/:id/privacy", async (req, res) => {
+    const task = await store.get(req.params.id);
+    const taskVersion = JSON.stringify(task);
     if (!task) {
       res.status(404).json({ error: "Task not found" });
       return;
@@ -337,9 +470,9 @@ export function createApp(
     }
     task.intent.consent = parsed.data.consent;
     task.updatedAt = new Date().toISOString();
-    store.transaction(() => {
-      store.save(task);
-      store.event(task.id, "consent_updated", {
+    await store.transaction(async () => {
+      await store.saveIfUnchanged(task, taskVersion);
+      await store.event(task.id, "consent_updated", {
         consent: parsed.data.consent,
         scope: parsed.data.consent
           ? "de-identified local aggregates"
@@ -348,8 +481,8 @@ export function createApp(
     });
     res.json({ ok: true, consent: task.intent.consent });
   });
-  app.post("/api/tasks/:id/delete", (req, res) => {
-    const task = store.get(req.params.id);
+  app.post("/api/tasks/:id/delete", async (req, res) => {
+    const task = await store.get(req.params.id);
     if (!task) {
       res.status(404).json({ error: "Task not found" });
       return;
@@ -367,11 +500,12 @@ export function createApp(
       });
       return;
     }
-    store.db.prepare("DELETE FROM tasks WHERE id=?").run(task.id);
+    await store.db.prepare("DELETE FROM tasks WHERE id=?").run(task.id);
     res.json({ ok: true });
   });
-  app.post("/api/tasks/:id/run", (req, res) => {
-    const task = store.get(req.params.id);
+  app.post("/api/tasks/:id/run", async (req, res) => {
+    const task = await store.get(req.params.id);
+    const taskVersion = JSON.stringify(task);
     if (!task) {
       res.status(404).json({ error: "Task not found" });
       return;
@@ -385,7 +519,7 @@ export function createApp(
     }
     const queries =
       parsed.data.query ?? task.intent.queries ?? task.intent.query;
-    const receipt = idempotency(req, res, task.id, "research.search", {
+    const receipt = await idempotency(req, res, task.id, "research.search", {
       queries,
       domains: task.intent.domains,
       mode: task.intent.mode,
@@ -404,7 +538,7 @@ export function createApp(
       return;
     }
     if (
-      store.events(task.id).filter((e) => e.type === "provider_request")
+      (await store.events(task.id)).filter((e) => e.type === "provider_request")
         .length >= 50
     ) {
       res.status(409).json({
@@ -436,9 +570,9 @@ export function createApp(
         .json({ error: "The remaining task budget cannot cover a search." });
       return;
     }
-    store.transaction(() => {
+    await store.transaction(async () => {
       if (receipt.key)
-        store.beginReceipt(
+        await store.beginReceipt(
           task.id,
           "research.search",
           receipt.key,
@@ -447,26 +581,33 @@ export function createApp(
       task.status = "running";
       task.error = undefined;
       task.updatedAt = new Date().toISOString();
-      store.save(task);
+      await store.saveIfUnchanged(task, taskVersion);
     });
     engine.active.add(task.id);
-    void engine.execute(task.id, queries).then(() => {
+    void engine.execute(task.id, queries).then(async () => {
       if (receipt.key)
-        store.finishReceipt(task.id, "research.search", receipt.key, 202, {
-          taskId: task.id,
-        });
+        await store.finishReceipt(
+          task.id,
+          "research.search",
+          receipt.key,
+          202,
+          {
+            taskId: task.id,
+          },
+        );
     });
     res.status(202).json({ taskId: task.id });
   });
-  app.post("/api/tasks/:id/cancel", (req, res) => {
-    if (!store.get(req.params.id)) {
+  app.post("/api/tasks/:id/cancel", async (req, res) => {
+    if (!(await store.get(req.params.id))) {
       res.status(404).json({ error: "Task not found" });
       return;
     }
-    res.json({ requested: engine.cancel(req.params.id) });
+    res.json({ requested: await engine.cancel(req.params.id) });
   });
   app.post("/api/tasks/:id/fetch", async (req, res) => {
-    const task = store.get(req.params.id);
+    const task = await store.get(req.params.id);
+    const taskVersion = JSON.stringify(task);
     if (!task) {
       res.status(404).json({ error: "Task not found" });
       return;
@@ -478,7 +619,7 @@ export function createApp(
       res.status(400).json({ error: "Invalid source ID" });
       return;
     }
-    const receipt = idempotency(req, res, task.id, "research.fetch_url", {
+    const receipt = await idempotency(req, res, task.id, "research.fetch_url", {
       sourceId: parsed.data.sourceId,
     });
     if (receipt.handled) return;
@@ -497,16 +638,16 @@ export function createApp(
       return;
     }
     const previousStatus = task.status;
-    store.transaction(() => {
+    await store.transaction(async () => {
       if (receipt.key)
-        store.beginReceipt(
+        await store.beginReceipt(
           task.id,
           "research.fetch_url",
           receipt.key,
           receipt.hash!,
         );
       task.status = "running";
-      store.save(task);
+      await store.saveIfUnchanged(task, taskVersion);
     });
     engine.active.add(task.id);
     let responseStatus = 200;
@@ -521,13 +662,13 @@ export function createApp(
     } finally {
       engine.active.delete(task.id);
       engine.cancelled.delete(task.id);
-      const fresh = store.get(task.id)!;
-      fresh.status = previousStatus;
-      fresh.updatedAt = new Date().toISOString();
-      store.transaction(() => {
-        store.save(fresh);
+      await store.transaction(async () => {
+        const fresh = (await store.get(task.id))!;
+        fresh.status = previousStatus;
+        fresh.updatedAt = new Date().toISOString();
+        await store.save(fresh);
         if (receipt.key)
-          store.finishReceipt(
+          await store.finishReceipt(
             task.id,
             "research.fetch_url",
             receipt.key,
@@ -538,8 +679,9 @@ export function createApp(
     }
     res.status(responseStatus).json(responseBody);
   });
-  app.post("/api/tasks/:id/assessments", (req, res) => {
-    const task = store.get(req.params.id);
+  app.post("/api/tasks/:id/assessments", async (req, res) => {
+    const task = await store.get(req.params.id);
+    const taskVersion = JSON.stringify(task);
     if (!task) {
       res.status(404).json({ error: "Task not found" });
       return;
@@ -650,9 +792,9 @@ export function createApp(
       .filter((v) => v.sourceId !== a.sourceId)
       .concat(a);
     task.updatedAt = new Date().toISOString();
-    store.transaction(() => {
-      store.save(task);
-      store.event(task.id, "user_feedback", {
+    await store.transaction(async () => {
+      await store.saveIfUnchanged(task, taskVersion);
+      await store.event(task.id, "user_feedback", {
         ...a,
         evaluator: "human",
         rubricVersion: "user-rubric-v1",
@@ -661,8 +803,8 @@ export function createApp(
     });
     res.json({ ok: true });
   });
-  app.get("/api/tasks/:id/results", (req, res) => {
-    const task = store.get(req.params.id);
+  app.get("/api/tasks/:id/results", async (req, res) => {
+    const task = await store.get(req.params.id);
     if (!task) {
       res.status(404).json({ error: "Task not found" });
       return;
@@ -674,14 +816,14 @@ export function createApp(
       csv: resultCsv(task),
     });
   });
-  app.get("/api/tasks/:id/export", (req, res) => {
-    const task = store.get(req.params.id);
+  app.get("/api/tasks/:id/export", async (req, res) => {
+    const task = await store.get(req.params.id);
     if (!task) {
       res.status(404).json({ error: "Task not found" });
       return;
     }
     // Strict allowlist: no prompts, queries, URLs, content, credentials, organization names or feedback notes.
-    const events = store.events(task.id).map((e) => ({
+    const events = (await store.events(task.id)).map((e) => ({
       id: e.id,
       callId: e.callId,
       type: e.type,
@@ -702,7 +844,9 @@ export function createApp(
       events,
     });
   });
-  app.get("/api/analytics", (_req, res) => res.json(analytics(store)));
+  app.get("/api/analytics", async (_req, res) =>
+    res.json(await analytics(store)),
+  );
   app.use("/api", (_req, res) =>
     res.status(404).json({ error: "API endpoint not found" }),
   );
@@ -725,18 +869,22 @@ export function createApp(
       _next: express.NextFunction,
     ) => {
       const status =
-        err.type === "entity.too.large"
-          ? 413
-          : err instanceof SyntaxError
-            ? 400
-            : 500;
+        err instanceof StorageConflict
+          ? 409
+          : err.type === "entity.too.large"
+            ? 413
+            : err instanceof SyntaxError
+              ? 400
+              : 500;
       res.status(status).json({
         error:
-          status === 413
-            ? "Request too large"
-            : status === 400
-              ? "Invalid JSON"
-              : "Internal server error",
+          status === 409
+            ? err.message
+            : status === 413
+              ? "Request too large"
+              : status === 400
+                ? "Invalid JSON"
+                : "Internal server error",
       });
     },
   );

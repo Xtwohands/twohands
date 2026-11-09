@@ -20,7 +20,13 @@ export default defineConfig({
   webServer: [
     {
       command:
-        "PORT=3101 DB_PATH=:memory: EXA_API_KEY= TAVILY_API_KEY= FIRECRAWL_API_KEY= API_TOKEN= npm start",
+        "API_TOKEN= FIXTURE_API_KEYS=true FIXTURE_PORT=3107 node --import tsx tests/fixtures/server.ts",
+      url: "http://127.0.0.1:3107",
+      reuseExistingServer: false,
+    },
+    {
+      command:
+        "STORAGE_BACKEND=sqlite DATABASE_URL= PORT=3101 DB_PATH=:memory: EXA_API_KEY= TAVILY_API_KEY= FIRECRAWL_API_KEY= API_TOKEN= npm start",
       url: "http://127.0.0.1:3101",
       reuseExistingServer: false,
     },

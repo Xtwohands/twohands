@@ -8,6 +8,7 @@ playwright-report/
 test-results/
 *.log
 build/
+release-manifest.json
 
 # macOS Finder metadata
 .DS_Store
@@ -15,3 +16,6 @@ build/
 # Machine-local MCP connection
 .mcp.json
 .mcp.json.backup-*
+
+# Supabase CLI machine-local metadata
+supabase/.temp/

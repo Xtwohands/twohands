@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { captureJourney } from "./helpers/launch-screenshots";
 import AxeBuilder from "@axe-core/playwright";
 
 const fixture = "http://127.0.0.1:3102";
@@ -166,6 +167,7 @@ test("fixture requests flow into usage, filters, receipt inspection, and CSV", a
   );
   await page.getByRole("tab", { name: "Response", exact: true }).click();
   await expect(page.getByRole("dialog")).toContainText("TEST FIXTURE");
+  await captureJourney(page, "first-tool-call-receipt");
   await page.getByRole("button", { name: "Close", exact: true }).click();
   const file = page.waitForEvent("download");
   await page.getByRole("button", { name: "Export CSV" }).click();
@@ -197,6 +199,13 @@ test("connection instructions change with the chosen client", async ({
   await expect(page.locator(".ws-setup-steps")).toContainText(
     "npm run mcp:install -- codex",
   );
+  await expect(page.locator(".ws-agent-environment")).toContainText(
+    `APILAYER_URL=${new URL("/api", page.url()).href}`,
+  );
+  await expect(page.locator(".ws-agent-environment")).toContainText(
+    "APILAYER_API_KEY=<your scoped key>",
+  );
+  await captureJourney(page, "agent-connection-settings");
   await page.getByRole("button", { name: "Claude", exact: true }).click();
   await expect(page.locator(".ws-setup-steps")).toContainText(
     "npm run mcp:install -- claude",
@@ -232,4 +241,31 @@ test("usage charts keep every day visible for longer periods", async ({
     expect(Math.min(...layout.widths)).toBeGreaterThan(0);
     expect(layout.right).toBeLessThanOrEqual(layout.boundary + 1);
   }
+});
+
+test("remote HTTP previews explain the secure endpoint requirement before agent setup", async ({
+  page,
+}) => {
+  const origin = "http://preview.fixture.invalid";
+  await page.route(origin + "/**", async (route) => {
+    const url = new URL(route.request().url());
+    const response = await route.fetch({
+      url: "http://127.0.0.1:3101" + url.pathname + url.search,
+    });
+    await route.fulfill({ response });
+  });
+  await page.goto(origin + "/#dashboard/connections");
+  await expect(page.getByRole("alert")).toContainText(
+    "Open octolab over HTTPS",
+  );
+  await expect(
+    page.getByRole("heading", { name: "Open octolab securely", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: "Open HTTPS address", exact: true }),
+  ).toHaveAttribute(
+    "href",
+    "https://preview.fixture.invalid/#dashboard/connections",
+  );
+  await captureJourney(page, "remote-http-setup-warning");
 });

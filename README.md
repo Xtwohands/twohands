@@ -10,7 +10,7 @@ The local MCP server works with Claude desktop and Codex CLI. Both have complete
 
 The [product direction](docs/PRODUCT_DIRECTION.md) connects this evidence to future model evaluation, refund review, and aggregate tool-company feedback, and identifies what still needs to be established for each.
 
-The sidebar now includes a **Tool company** demo and **Provider lab**. Explore illustrative company insights, turn findings into test plans, and compare real controlled provider samples separately from organic agent choices. See the [provider lab guide](docs/PROVIDER_LAB.md).
+PostgreSQL accounts have separate **User workspace**, **Tool company**, and **Administration** areas. Users connect agents and manage their usage; tool company owners register for review, manage analyst access, and see only approved aggregate insights; allowlisted administrators review companies and operate the service. See [role journeys and company access](docs/ROLE_JOURNEYS.md). The illustrative company demo and controlled [provider lab](docs/PROVIDER_LAB.md) remain operator tooling, separate from the company-owner portal.
 
 ## Run locally
 
@@ -26,15 +26,25 @@ npm start
 
 Open [the user dashboard](http://127.0.0.1:3001/#dashboard), or [the operator console](http://127.0.0.1:3001/#sessions). Exa and Tavily provide search; Firecrawl extracts a known public HTTPS page. Missing providers stay unavailable. Intent recording, review, and history work without provider keys.
 
-For development, `npm run dev` runs the API on port 3001 and Vite on port 5173.
+For development, `npm run dev` runs the API on `PORT` (default 3001) and Vite on port 5173. Vite's API proxy follows the same configured `PORT`.
+
+SQLite remains the default local backend. PostgreSQL mode uses [Supabase Auth accounts and workspace membership](docs/AUTH.md), with signup, email confirmation, sign-in, password recovery, workspace selection, and sign-out. Follow the [PostgreSQL migration guide](docs/POSTGRES_MIGRATION.md) for schema setup, account bootstrap, explicit legacy-owner assignment, verified import, and rollback. `DATABASE_URL` alone does not switch storage. The PostgreSQL runtime can start for signup before importing history; signup never claims existing records. `API_TOKEN` and `ADMIN_API_TOKEN` apply only to SQLite/local mode.
+
+The connected Supabase project has eight checked-in schema migrations installed, with checksums verified through the application database connection. Historical SQLite data has been imported and verified with an explicitly assigned confirmed owner; platform-admin access is configured separately. The canonical local account runtime uses port 3008. This is a local integration checkpoint, not a deployed public service; hosted account journeys, email delivery, and the final HTTPS origin still need verification. See the [hosted rollout checkpoint](docs/SUPABASE_ROLLOUT.md).
 
 ## Tool workspace
 
-The user sidebar groups **Tool catalog**, **Routing**, **Activity**, **Usage**, **Credits**, and **Connections** under `#dashboard`. Tool switches are persisted on the server, affect discovery eligibility, and block new calls to paused tools. Existing receipts can still be read and replayed. A free route preview shows compatible tools and request estimates without starting a session or calling providers.
+The user sidebar groups **Tool catalog**, **Routing**, **Activity**, **Usage**, **Credits**, **API keys**, and **Connections** under `#dashboard`. Tool switches are persisted on the server, affect discovery eligibility, and block new calls to paused tools. Existing receipts can still be read and replayed. A free route preview shows compatible tools and request estimates without starting a session or calling providers.
 
-Activity supports date, provider, status, and text filters, pagination, receipt inspection, and matching CSV exports. Usage separates configured estimates from provider-reported USD or credits. Connection status reports historical requests, not a live heartbeat. This remains a shared local workspace; account isolation and scoped API-key issuance are not implemented. See [interface decisions](research/2026-11-08-tool-routing-workspace.md).
+Activity supports date, provider, status, and text filters, pagination, receipt inspection, and matching CSV exports. Usage separates configured estimates from provider-reported USD or credits. Connection status reports historical requests, not a live heartbeat. PostgreSQL account mode scopes these records to the selected authorized workspace; SQLite retains its shared local workspace. See [interface decisions](research/2026-11-08-tool-routing-workspace.md).
 
-**Base Sepolia test USDC deposits are disabled by default.** The Credits page includes an opt-in deposit flow, finalized on-chain receipt verification, and a separate test-credit ledger. Test credits never fund paid provider calls. No mainnet, signing, wallet custody, withdrawals, or Stripe integration is enabled. See [test deposit setup and validation](docs/TESTNET_DEPOSITS.md).
+**Stripe test payments and Base Sepolia test USDC deposits are disabled by default.** The Credits page offers both methods with one test-credit balance, separate receipts, and an append-only adjustment ledger. Stripe uses hosted Checkout, signed webhooks, server-retrieved payment proof, refund adjustments, and dispute holds. On-chain deposits require finalized matching USDC transfers. Test credits never fund paid provider calls. Live payments, mainnet, wallet custody, and withdrawals are unsupported. See [Stripe setup](docs/STRIPE_DEPOSITS.md) and [on-chain setup](docs/TESTNET_DEPOSITS.md).
+
+The **API keys** page creates one-time scoped credentials with tool restrictions, expiry, revocation, policy audit history, and cumulative estimated-spend limits reserved atomically with tool calls. PostgreSQL issuance requires a workspace owner or platform administrator account. SQLite issuance requires a protected owner token and fails closed if it is later removed. Use a scoped workspace key in `APILAYER_API_KEY` with the MCP bridge. See [API key setup and boundaries](docs/API_KEYS.md).
+
+In PostgreSQL mode, **Tool access** (`#tool-access`) lets a verified platform administrator set or pause a workspace’s lifetime estimated-provider allowance with a reason and revision check. No allowance means provider execution is denied, including for self-issued customer keys. Users see read-only access status; test deposits never grant spending authority. See [operator workspace allowances](docs/WORKSPACE_ALLOWANCES.md).
+
+The operator sidebar also includes **Payment disputes** (`#disputes`): a separately authenticated queue with saved payment evidence, review notes, optimistic conflict checks, and audit history. Review decisions retain credit holds. In PostgreSQL mode, explicitly allowlist platform administrator UUIDs with `SUPABASE_ADMIN_USER_IDS`; SQLite uses a distinct `ADMIN_API_TOKEN`. Workspace ownership alone does not grant operator approval, evaluation, provider-lab, or dispute-review privileges; see [admin dispute review](docs/DISPUTE_REVIEW.md).
 
 ## Connect an agent
 
@@ -82,11 +92,15 @@ MCP exposes actions and supplied explanations, **not private internal reasoning 
 
 ## Reliability and operations
 
-Calls reserve integer USD micro-units transactionally against configured estimates. Exact request-key retries reuse receipts, including across restarts; uncertain interrupted calls are retained and conservatively settled without automatically repeating provider work. Output retries return the original output version’s receipt. Provider billing and model-host subscription/token costs are not reconciled by this ledger.
+Calls reserve integer USD micro-units transactionally against configured estimates. Exact request-key retries reuse receipts, including across restarts; uncertain interrupted calls are retained and conservatively settled without automatically repeating provider work. Output retries return the original output version’s receipt. The separate [provider billing interface](docs/PROVIDER_ADAPTERS_AND_BILLING.md) supports reviewed manual imports with exact request/account matching; it does not fetch invoices or change this estimated-spend ledger. Model-host subscription/token costs are not reconciled.
 
-The workspace is single-user and local by default. Set a long `API_TOKEN` before binding beyond loopback; use HTTPS and trusted access controls for any remote deployment. The MCP bridge intentionally accepts only loopback HTTP destinations. Run one server per SQLite database. See [privacy and operations](docs/OPERATIONS.md).
+SQLite is single-user and local by default; set a long `API_TOKEN` before binding it beyond loopback. PostgreSQL requires configured Supabase Auth and live session/membership checks instead. Use HTTPS and trusted deployment access controls for remote use; hosted login, email delivery, and cutover still require validation in the target project. The MCP bridge defaults to loopback HTTP and also supports an explicitly configured HTTPS service using a scoped `APILAYER_API_KEY`; it never forwards the local owner token remotely. See [MCP setup](docs/MCP.md#hosted-stdio-bridge). Run one API server per database with either storage backend; PostgreSQL uses a session advisory ownership lock and requires a direct connection or session pooler. See [privacy and operations](docs/OPERATIONS.md).
+
+Retention previews counts by default and requires `--apply` to delete. PostgreSQL cleanup requires an explicit registered workspace, uses the API's backend selection and runtime lock, and preserves active or linked evidence. Follow the [backup and retention procedure](docs/OPERATIONS.md#retention) before running maintenance.
 
 Earlier deterministic routing runs remain available at [Research tools](http://127.0.0.1:3001/research/#workspace). Their original data and workflows are preserved and explicitly distinguished from external-agent decisions. See [the earlier research workflow](docs/RESEARCH_WORKFLOW.md).
+
+Preserved historical notes include the [observation plan](docs/OBSERVATION_PLAN.md), [November 3 accepted scope](docs/PENDING_IMPROVEMENTS.md), and [that implementation checkpoint](docs/IMPLEMENTATION_2026-11-03.md). Their dates and validation counts describe those earlier revisions.
 
 ## Verify
 
@@ -99,6 +113,8 @@ npm run format:check
 
 Tests use isolated fixtures and temporary databases. They cover protocol transport, authentication, approval boundaries, budgets, idempotency, real process interruption, retained evidence, output/review versions, cases, sharing policy, exports, mobile navigation, accessibility, and safe Markdown rendering.
 
+Real PostgreSQL integration tests are separate and require disposable databases through `OCTOLAB_TEST_POSTGRES_URL`, `OCTOLAB_BILLING_TEST_POSTGRES_URL`, or `OCTOLAB_WORKBENCH_TEST_POSTGRES_URL`; see [migration validation](docs/POSTGRES_MIGRATION.md#validation), [billing validation](docs/PROVIDER_ADAPTERS_AND_BILLING.md#validation), and [workbench readiness](docs/PROVIDER_READINESS.md). Never point fixture tests at the production database.
+
 During development, pass a test file to run a focused check:
 
 ```bash
@@ -107,7 +123,7 @@ npm run build
 npm run test:e2e -- tests/browser/observation.spec.ts --project=desktop
 ```
 
-Browser tests start the built server with `npm start`, so rebuild after source changes. They also start isolated fixture servers on ports 3102 and 3106; leave those ports and the application test port 3101 free. Focused checks supplement the full verification commands above.
+Browser tests start the built server with `npm start`, so rebuild after source changes. They also start isolated fixture servers on ports 3102, 3106, and 3107; leave those ports and the application test port 3101 free. Focused checks supplement the full verification commands above.
 
 A reproducible durability workload is available without any external provider calls:
 
@@ -117,7 +133,7 @@ SOAK_SECONDS=60 npm run test:soak
 
 Live checks require a deliberately accepted budget and configured provider credentials. Never treat fixture results as provider or model performance. The earlier `npm run smoke:live` command makes paid search calls and requires its explicit budget setting; see [its documentation](docs/RESEARCH_WORKFLOW.md).
 
-For the separate provider lab, the backend supplies the run and daily spending caps. A full fifteen-call suite is $0.080 at default estimates. Consumer sessions have no approval step. To exercise only synthetic lab workloads without network calls, run `SOAK_SECONDS=60 npm run test:soak:providers`.
+For the separate provider lab, the backend supplies the run and daily spending caps. The default fifteen-call suite is $0.080 at default estimates; custom versioned suites have their own configured estimates. Saved-result replay makes no new provider calls. Consumer sessions have no approval step. To exercise only synthetic lab workloads without network calls, run `SOAK_SECONDS=60 npm run test:soak:providers`.
 
 ## Verify an exported evidence record
 

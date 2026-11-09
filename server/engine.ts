@@ -23,10 +23,10 @@ export class Engine {
         : {};
   }
   cancelled = new Set<string>();
-  cancel(taskId: string) {
+  async cancel(taskId: string) {
     if (!this.active.has(taskId)) return false;
     this.cancelled.add(taskId);
-    this.store.event(taskId, "cancellation_requested", {
+    await this.store.event(taskId, "cancellation_requested", {
       reason: "User requested stop; in-flight vendor calls must still settle",
     });
     return true;
@@ -55,18 +55,19 @@ export class Engine {
     }
     return set;
   }
-  reserve(
+  async reserve(
     taskId: string,
     provider: ProviderId,
     callId: string,
     capability: string,
     args: object,
   ) {
-    return this.store.transaction(() => {
-      const task = this.store.get(taskId)!;
+    return await this.store.transaction(async () => {
+      const task = (await this.store.get(taskId))!;
       if (
-        this.store.events(taskId).filter((e) => e.type === "provider_request")
-          .length >= 50
+        (await this.store.events(taskId)).filter(
+          (e) => e.type === "provider_request",
+        ).length >= 50
       )
         throw new Error("Task safety cap of 50 provider attempts reached");
       if (
@@ -85,9 +86,10 @@ export class Engine {
         throw new Error("Remaining budget is insufficient");
       if (this.limited().has(provider))
         throw new Error("Provider rate limit reached");
+      await this.store.allowance.reserve(callId, "task", estimate);
       task.reservedMicros += estimate;
-      this.store.save(task);
-      this.store.event(
+      await this.store.save(task);
+      await this.store.event(
         taskId,
         "budget_reserved",
         {
@@ -100,7 +102,7 @@ export class Engine {
         },
         callId,
       );
-      this.store.event(
+      await this.store.event(
         taskId,
         "provider_request",
         { provider, capability, arguments: args, credentialsRedacted: true },
@@ -114,7 +116,7 @@ export class Engine {
       return estimate;
     });
   }
-  settle(
+  async settle(
     taskId: string,
     callId: string,
     provider: ProviderId,
@@ -122,36 +124,37 @@ export class Engine {
     response: object,
     sources?: Source[],
   ) {
-    this.store.transaction(() => {
+    await this.store.transaction(async () => {
       if (
-        this.store
-          .events(taskId)
-          .some((e) => e.type === "budget_settled" && e.callId === callId)
+        (await this.store.events(taskId)).some(
+          (e) => e.type === "budget_settled" && e.callId === callId,
+        )
       )
         return;
-      const reservation = this.store
-        .events(taskId)
-        .find((e) => e.type === "budget_reserved" && e.callId === callId);
+      const reservation = (await this.store.events(taskId)).find(
+        (e) => e.type === "budget_reserved" && e.callId === callId,
+      );
       if (
         !reservation ||
         reservation.data.provider !== provider ||
         reservation.data.estimateMicros !== estimate
       )
         throw new Error("Unknown or mismatched budget reservation");
-      const task = this.store.get(taskId)!;
+      const task = (await this.store.get(taskId))!;
       if (task.reservedMicros < estimate)
         throw new Error("Budget reservation balance is inconsistent");
+      await this.store.allowance.settle(callId);
       if (sources) task.sources.push(...sources);
       task.reservedMicros -= estimate;
       task.spentMicros += estimate;
-      this.store.save(task);
-      this.store.event(
+      await this.store.save(task);
+      await this.store.event(
         taskId,
         "provider_response",
         { provider, ...response, quality: null },
         callId,
       );
-      this.store.event(
+      await this.store.event(
         taskId,
         "budget_settled",
         {
@@ -176,25 +179,26 @@ export class Engine {
     let completedQueries = 0;
     try {
       const queries = Array.isArray(queryOrPlan) ? queryOrPlan : [queryOrPlan];
-      this.store.event(taskId, "plan_started", {
+      await this.store.event(taskId, "plan_started", {
         queryCount: queries.length,
         planner: "explicit-user-plan-v1",
         maxPaidAttempts: queries.length * 2,
       });
       for (const [queryIndex, query] of queries.entries()) {
         if (this.cancelled.has(taskId)) break;
-        const initial = this.store.get(taskId)!;
+        const initial = (await this.store.get(taskId))!;
         if (
-          this.store.events(taskId).filter((e) => e.type === "provider_request")
-            .length >= 50
+          (await this.store.events(taskId)).filter(
+            (e) => e.type === "provider_request",
+          ).length >= 50
         ) {
-          this.store.event(taskId, "route_blocked", {
+          await this.store.event(taskId, "route_blocked", {
             reason: "Task safety cap of 50 provider attempts reached",
           });
           break;
         }
         const invocationId = randomUUID();
-        this.store.event(taskId, "tool_invoked", {
+        await this.store.event(taskId, "tool_invoked", {
           invocationId,
           queryIndex,
           capability: "research.search",
@@ -207,20 +211,20 @@ export class Engine {
         for (let i = 0; i < 2; i++) {
           if (this.cancelled.has(taskId)) break;
           if (
-            this.store
-              .events(taskId)
-              .filter((e) => e.type === "provider_request").length >= 50
+            (await this.store.events(taskId)).filter(
+              (e) => e.type === "provider_request",
+            ).length >= 50
           ) {
-            this.store.event(taskId, "route_blocked", {
+            await this.store.event(taskId, "route_blocked", {
               reason: "Task safety cap of 50 provider attempts reached",
             });
             break;
           }
-          const task = this.store.get(taskId)!;
+          const task = (await this.store.get(taskId))!;
           const all = candidates(
             task.intent,
             task.intent.budgetMicros - task.spentMicros - task.reservedMicros,
-            this.store.observations(),
+            await this.store.observations(),
             this.available(),
             this.limited(),
           );
@@ -229,14 +233,14 @@ export class Engine {
               c.eligible = false;
               c.reasons.push("Already attempted for this invocation");
             }
-          this.store.event(taskId, "provider_candidates", {
+          await this.store.event(taskId, "provider_candidates", {
             invocationId,
             candidates: all,
             policyVersion: config.policyVersion,
           });
           const selected = all.find((c) => c.eligible);
           if (!selected) {
-            this.store.event(taskId, "route_blocked", {
+            await this.store.event(taskId, "route_blocked", {
               reason:
                 "No eligible provider; inspect credentials, budget, or rate limits.",
             });
@@ -244,7 +248,7 @@ export class Engine {
           }
           attempted.add(selected.provider);
           const callId = randomUUID();
-          this.store.event(
+          await this.store.event(
             taskId,
             "route_selected",
             {
@@ -259,7 +263,7 @@ export class Engine {
             },
             callId,
           );
-          const estimate = this.reserve(
+          const estimate = await this.reserve(
             taskId,
             selected.provider,
             callId,
@@ -281,7 +285,7 @@ export class Engine {
             anySuccess = true;
             querySuccesses++;
             queryCoverage ||= passed;
-            this.settle(
+            await this.settle(
               taskId,
               callId,
               selected.provider,
@@ -298,7 +302,7 @@ export class Engine {
               },
               result.sources,
             );
-            this.store.event(
+            await this.store.event(
               taskId,
               "outcome_evaluated",
               { ...check, invocationId },
@@ -307,7 +311,7 @@ export class Engine {
           } catch (e) {
             const err =
               e instanceof ProviderError ? e : new ProviderError("network");
-            this.settle(taskId, callId, selected.provider, estimate, {
+            await this.settle(taskId, callId, selected.provider, estimate, {
               invocationId,
               success: false,
               httpStatus: err.httpStatus ?? null,
@@ -315,7 +319,7 @@ export class Engine {
               latencyMs: Date.now() - start,
               resultCount: 0,
             });
-            this.store.event(
+            await this.store.event(
               taskId,
               "outcome_evaluated",
               {
@@ -329,7 +333,7 @@ export class Engine {
           }
           if (task.intent.mode === "route" && passed) break;
           if (i === 0)
-            this.store.event(
+            await this.store.event(
               taskId,
               task.intent.mode === "compare"
                 ? "comparison_requested"
@@ -350,27 +354,31 @@ export class Engine {
         )
           completedQueries++;
       }
-      const final = this.store.get(taskId)!;
-      final.status = this.cancelled.has(taskId)
-        ? "partial"
-        : anySuccess
-          ? !anyCoverage || completedQueries < queries.length
-            ? "partial"
-            : "complete"
-          : "failed";
-      final.updatedAt = new Date().toISOString();
-      this.store.save(final);
-      this.store.event(taskId, "run_finished", {
-        status: final.status,
-        taskCriteria: "unknown",
-        note: "Review sources against the intent rubric. API completion does not mean task completion.",
+      await this.store.db.atomic(async () => {
+        const final = (await this.store.get(taskId))!;
+        final.status = this.cancelled.has(taskId)
+          ? "partial"
+          : anySuccess
+            ? !anyCoverage || completedQueries < queries.length
+              ? "partial"
+              : "complete"
+            : "failed";
+        final.updatedAt = new Date().toISOString();
+        await this.store.save(final);
+        await this.store.event(taskId, "run_finished", {
+          status: final.status,
+          taskCriteria: "unknown",
+          note: "Review sources against the intent rubric. API completion does not mean task completion.",
+        });
       });
     } catch {
-      const task = this.store.get(taskId)!;
-      task.status = "partial";
-      task.error = "Run interrupted. Inspect the trace before retrying.";
-      this.store.save(task);
-      this.store.event(taskId, "run_error", { reason: task.error });
+      await this.store.db.atomic(async () => {
+        const task = (await this.store.get(taskId))!;
+        task.status = "partial";
+        task.error = "Run interrupted. Inspect the trace before retrying.";
+        await this.store.save(task);
+        await this.store.event(taskId, "run_error", { reason: task.error });
+      });
     } finally {
       this.active.delete(taskId);
       this.cancelled.delete(taskId);
@@ -385,7 +393,7 @@ export class Engine {
         "Configure Firecrawl or explicitly enable its documented keyless tier",
       );
     const callId = randomUUID();
-    this.store.event(
+    await this.store.event(
       task.id,
       "route_selected",
       {
@@ -397,7 +405,7 @@ export class Engine {
       },
       callId,
     );
-    const estimate = this.reserve(
+    const estimate = await this.reserve(
       task.id,
       "firecrawl",
       callId,
@@ -407,7 +415,7 @@ export class Engine {
     const start = Date.now();
     try {
       const result = await scrape(source.url);
-      this.settle(task.id, callId, "firecrawl", estimate, {
+      await this.settle(task.id, callId, "firecrawl", estimate, {
         success: true,
         httpStatus: result.httpStatus,
         latencyMs: Date.now() - start,
@@ -420,65 +428,67 @@ export class Engine {
           source: "provider response; credits are not USD charges",
         },
       });
-      const fresh = this.store.get(task.id)!;
-      const s = fresh.sources.find((s) => s.id === sourceId)!;
-      const changed =
-        s.snippet !== result.text ||
-        s.extraction?.pageStatus !== result.pageStatus;
-      s.snippet = result.text;
-      s.extraction = {
-        provider: "firecrawl",
-        callId,
-        at: new Date().toISOString(),
-        pageStatus: result.pageStatus,
-        authMode: providerAuthMode("firecrawl"),
-      };
-      if (s.provider === "user" && result.title) s.title = result.title;
-      if (changed) {
-        s.contentVersion = (s.contentVersion ?? 1) + 1;
-        for (const assessment of fresh.assessments) {
-          const affected = fresh.intent.criteria.filter((c) =>
-            (assessment.evidence?.[c] || [assessment.sourceId]).includes(
-              sourceId,
-            ),
-          );
-          if (!affected.length) continue;
-          for (const c of affected) assessment.criteria[c] = "unknown";
-          assessment.disposition = "pending";
-          assessment.updatedAt = new Date().toISOString();
-          this.store.event(
-            task.id,
-            "assessment_invalidated",
-            {
-              sourceId: assessment.sourceId,
-              changedSourceId: sourceId,
-              criteria: affected,
-              reason:
-                "Referenced evidence content changed; human re-review required",
-            },
-            callId,
-          );
-        }
-      }
-      this.store.save(fresh);
-      this.store.event(
-        task.id,
-        "extraction_received",
-        {
-          sourceId,
-          characters: result.text.length,
-          taskCriteria: "unknown",
+      await this.store.db.atomic(async () => {
+        const fresh = (await this.store.get(task.id))!;
+        const s = fresh.sources.find((s) => s.id === sourceId)!;
+        const changed =
+          s.snippet !== result.text ||
+          s.extraction?.pageStatus !== result.pageStatus;
+        s.snippet = result.text;
+        s.extraction = {
+          provider: "firecrawl",
+          callId,
+          at: new Date().toISOString(),
           pageStatus: result.pageStatus,
-          evidenceUsable:
-            result.text.trim().length > 0 &&
-            !(result.pageStatus && result.pageStatus >= 400),
-        },
-        callId,
-      );
+          authMode: providerAuthMode("firecrawl"),
+        };
+        if (s.provider === "user" && result.title) s.title = result.title;
+        if (changed) {
+          s.contentVersion = (s.contentVersion ?? 1) + 1;
+          for (const assessment of fresh.assessments) {
+            const affected = fresh.intent.criteria.filter((c) =>
+              (assessment.evidence?.[c] || [assessment.sourceId]).includes(
+                sourceId,
+              ),
+            );
+            if (!affected.length) continue;
+            for (const c of affected) assessment.criteria[c] = "unknown";
+            assessment.disposition = "pending";
+            assessment.updatedAt = new Date().toISOString();
+            await this.store.event(
+              task.id,
+              "assessment_invalidated",
+              {
+                sourceId: assessment.sourceId,
+                changedSourceId: sourceId,
+                criteria: affected,
+                reason:
+                  "Referenced evidence content changed; human re-review required",
+              },
+              callId,
+            );
+          }
+        }
+        await this.store.save(fresh);
+        await this.store.event(
+          task.id,
+          "extraction_received",
+          {
+            sourceId,
+            characters: result.text.length,
+            taskCriteria: "unknown",
+            pageStatus: result.pageStatus,
+            evidenceUsable:
+              result.text.trim().length > 0 &&
+              !(result.pageStatus && result.pageStatus >= 400),
+          },
+          callId,
+        );
+      });
     } catch (e) {
       const err = e instanceof ProviderError ? e : new ProviderError("network");
       if (err.kind === "human_required") this.keylessBlocked = true;
-      this.settle(task.id, callId, "firecrawl", estimate, {
+      await this.settle(task.id, callId, "firecrawl", estimate, {
         success: false,
         httpStatus: err.httpStatus ?? null,
         latencyMs: Date.now() - start,

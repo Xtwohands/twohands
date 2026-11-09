@@ -5,7 +5,6 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { Store } from "../server/store";
 import { ProviderLab } from "../server/provider-lab";
-
 it("recovers an actual killed lab process without repeating a provider request", async () => {
   const dir = await mkdtemp(join(tmpdir(), "apilayer-lab-crash-"));
   const path = join(dir, "workspace.sqlite");
@@ -57,10 +56,10 @@ it("recovers an actual killed lab process without repeating a provider request",
         return { httpStatus: 200, text: "Unexpected retry" };
       },
     });
-    expect(lab.get(id).reservedMicros).toBe(1000);
-    lab.recover();
-    lab.recover();
-    const replay = lab.start({
+    expect((await lab.get(id)).reservedMicros).toBe(1000);
+    await lab.recover();
+    await lab.recover();
+    const replay = await lab.start({
       requestKey: "crash-fixture",
       providers: ["firecrawl"],
     });
@@ -75,10 +74,10 @@ it("recovers an actual killed lab process without repeating a provider request",
       true,
     );
     expect(requests).toBe(0);
-    expect(lab.summaries()).toHaveLength(1);
+    expect(await lab.summaries()).toHaveLength(1);
   } finally {
     child.kill("SIGKILL");
-    store?.close();
+    await store?.close();
     await rm(dir, { recursive: true, force: true });
   }
 });

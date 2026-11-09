@@ -2,7 +2,7 @@
 
 # API contract
 
-Base URL: `http://127.0.0.1:3001`. Requests that mutate state require `Content-Type: application/json`. If `API_TOKEN` is configured, every `/api/*` request requires `Authorization: Bearer <workspace token>`. Same-origin writes only. `/healthz` returns minimal unauthenticated liveness.
+Base URL: `http://127.0.0.1:3001`. Requests that mutate state require `Content-Type: application/json`. In PostgreSQL mode these routes require a verified account session and selected authorized workspace; legacy task mutations additionally require platform administrator access. Send `Authorization: Bearer <access token>` and `X-Octolab-Workspace: <workspace ID>`; see [account API and roles](AUTH.md). SQLite retains `Authorization: Bearer <workspace token>` when `API_TOKEN` is configured. Both modes enforce same-origin writes. The separate `POST /api/webhooks/stripe` endpoint authenticates raw JSON with a Stripe signature instead; see [Stripe test deposits](STRIPE_DEPOSITS.md). `/healthz` returns minimal unauthenticated liveness.
 
 ## Create explicit intent
 

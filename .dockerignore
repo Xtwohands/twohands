@@ -12,3 +12,10 @@ playwright-report
 .gstack
 .mcp.json*
 *.log
+research
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+*.enc
+*.dump
+release-manifest.json

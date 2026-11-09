@@ -1,12 +1,18 @@
 /** TEST PROCESS ONLY. No fixture adapter is imported by server/index.ts. */
 import { config } from "../../server/config.js";
 import { Store } from "../../server/store.js";
+import { FundingService } from "../../server/funding.js";
+import { StripeFundingService } from "../../server/stripe-funding.js";
+import { FixtureStripeGateway, fixtureStripeSettings } from "./stripe.js";
 import { createApp } from "../../server/app.js";
 config.keys.exa = "TEST_ONLY_EXA_KEY";
 config.keys.tavily = "TEST_ONLY_TAVILY_KEY";
 config.keys.firecrawl = "TEST_ONLY_FIRECRAWL_KEY";
-config.providerTestDailyBudgetMicros = 50_000_000;
+config.providerTestDailyBudgetMicros = 50000000;
 config.rpm = 1000;
+if (process.env.FIXTURE_API_KEYS === "true")
+  config.token = "fixture-owner-token-0000000000001";
+config.adminToken = "fixture-admin-token";
 // Test process only: no receiving address or RPC fixture is configured in production.
 process.env.DEPOSITS_TESTNET_ENABLED = "true";
 process.env.BASE_SEPOLIA_DEPOSIT_ADDRESS = `0x${"22".repeat(20)}`;
@@ -118,7 +124,72 @@ globalThis.fetch = async (input, init) => {
   );
 };
 const store = new Store(":memory:");
-const server = createApp(store).listen(
+const funding = new FundingService(store);
+const stripeGateway = new FixtureStripeGateway();
+const stripeFunding = new StripeFundingService(
+  funding,
+  {
+    ...fixtureStripeSettings,
+    appUrl: `http://127.0.0.1:${process.env.FIXTURE_PORT || 3102}`,
+  },
+  stripeGateway,
+);
+const app = createApp(
+  store,
+  undefined,
+  undefined,
+  undefined,
+  funding,
+  stripeFunding,
+);
+// Fixture control exists only in this dedicated in-memory test process.
+app.post("/__fixture/stripe/:id", async (req, res) => {
+  try {
+    const intent = await stripeFunding.get(String(req.params.id));
+    const payment = stripeGateway.pay(
+      intent.checkoutSessionId!,
+      Number(req.body.refundedCents || 0),
+      req.body.disputed === true,
+    );
+    const event = stripeGateway.signed(
+      req.body.disputed
+        ? "charge.dispute.created"
+        : req.body.refundedCents
+          ? "charge.refunded"
+          : "checkout.session.completed",
+      req.body.disputed
+        ? {
+            id: `dp_fixture_${intent.id}`,
+            object: "dispute",
+            charge: payment.payment_intent.latest_charge.id,
+            payment_intent: payment.payment_intent.id,
+            status: "needs_response",
+            livemode: false,
+          }
+        : req.body.refundedCents
+          ? {
+              ...payment.payment_intent.latest_charge,
+              payment_intent: payment.payment_intent.id,
+            }
+          : payment,
+    );
+    const response = await nativeFetch(
+      `http://127.0.0.1:${process.env.FIXTURE_PORT || 3102}/api/webhooks/stripe`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "stripe-signature": event.signature,
+        },
+        body: event.payload.toString(),
+      },
+    );
+    res.status(response.status).json(await response.json());
+  } catch (e) {
+    res.status(500).json({ error: (e as Error).message });
+  }
+});
+const server = app.listen(
   Number(process.env.FIXTURE_PORT || 3102),
   "127.0.0.1",
   () =>
@@ -127,8 +198,8 @@ const server = createApp(store).listen(
     ),
 );
 process.on("SIGTERM", () =>
-  server.close(() => {
-    store.close();
+  server.close(async () => {
+    await store.close();
     process.exit(0);
   }),
 );

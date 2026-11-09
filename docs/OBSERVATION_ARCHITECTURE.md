@@ -13,7 +13,7 @@ flowchart LR
   API <-->|Explicit selected call| Providers[Exa / Tavily / Firecrawl]
 ```
 
-The bridge never opens the database. A single HTTP process owns SQLite and provider admission. Existing research remains under `/research/`, with its earlier deterministic routing clearly separated from external-agent decisions.
+The diagram shows the default SQLite path. The bridge never opens the database. A single HTTP process owns the selected database and provider admission. Asynchronous storage supports SQLite and an explicitly selected PostgreSQL backend; the latter uses a private schema, workspace-scoped constraints, forced row-level security, and a session advisory runtime lock. PostgreSQL uses [Supabase Auth, live session/membership validation, and platform roles](AUTH.md); SQLite retains `API_TOKEN` local access. Browser account requests select an authorized workspace, while a scoped key resolves its own workspace. Startup recovery visits each registered workspace under the single runtime lock. See [PostgreSQL migration and boundaries](POSTGRES_MIGRATION.md). Existing research remains under `/research/`, with its earlier deterministic routing clearly separated from external-agent decisions.
 
 ## Record lifecycle
 
@@ -42,12 +42,12 @@ On an unclean process termination, startup marks outstanding calls interrupted a
 - Coverage = known weight / total accepted weight. A 100% score at 50% coverage is not full fulfillment.
 - An all-unknown review has a null score and zero coverage.
 - Model summaries use the latest evaluation of the latest output per session. They require at least five fully reviewed sessions before displaying a local aggregate score, and never score the `Not reported` model group.
-- These are task-specific workspace reviews, not a general model benchmark. Reviewer kind and model identity are reported, not authenticated or independently attested. Assistant-written reviews are visibly labeled.
+- These are task-specific workspace reviews, not a general model benchmark. Reviewer kind and model identity remain reported, not independently attested; the authenticated account/key actor is stored separately in PostgreSQL mode. Assistant-written reviews are visibly labeled.
 - Provider quality remains unknown. Local HTTP success and latency are execution measurements, not accuracy or task success.
 
 ## API surface
 
-All routes below live under `/api/observations`, inherit workspace token/origin/host checks, and use a 160 KB JSON request limit.
+All routes below live under `/api/observations`, inherit account/workspace or local credential checks and same-origin writes, and use a 160 KB JSON request limit. PostgreSQL manual intent/proposal creation, approval, evaluation, consent/case mutations, and legacy task mutations require a platform administrator; an ordinary workspace owner cannot perform those operator actions. [Scoped API keys](API_KEYS.md) can access only explicitly allowed routes with the required scope; operator approval, evaluation, cases, deletion, and aggregate endpoints remain unavailable to them. Scoped provider calls atomically reserve and settle both the session allowance and the key's cumulative configured-estimate limit, including interrupted-call recovery.
 
 | Route                                        | Behavior                                                                               |
 | -------------------------------------------- | -------------------------------------------------------------------------------------- |
@@ -82,7 +82,7 @@ The [provider lab and company preview](PROVIDER_LAB.md) add operator-run matched
 
 MCP does not expose private reasoning, the host's complete conversation, or outside tool calls. APILayer records only what reaches its own tools. The local event chain detects chain inconsistency but is not external custody or protection against a database owner rewriting the whole record. Provider content is untrusted, extraction text may be partial, and model/client/reviewer identities are reported.
 
-Before a commercial scoring or refund product: add authenticated principal identities, external evidence attestation, a reproducible evaluation protocol with independent review, verified price/usage reconciliation, and a separately defined claims/payment contract. Before vendor analytics: define consent and licensing for every exported field, cohort and privacy protections, and a buyer-facing export boundary. Those are future product capabilities, not claims made by this implementation.
+Account/key attribution now supplies a backend principal in PostgreSQL mode. Before a commercial scoring or refund product: add trusted host/model provenance, external evidence attestation, a reproducible evaluation protocol with independent review, verified price/usage reconciliation, and a separately defined claims/payment contract. Before vendor analytics: define consent and licensing for every exported field, cohort and privacy protections, and a buyer-facing export boundary. Those are future product capabilities, not claims made by this implementation.
 
 ## Candidate discovery and sharing policy (November 3, 2026)
 

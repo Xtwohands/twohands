@@ -30,9 +30,10 @@
   background: #1d1d1d;
   border: 1px solid #353535;
   border-radius: 6px;
-  padding: 8px 12px;
+  padding: 0 12px;
   font-size: 12px;
-  min-height: 35px;
+  height: 36px;
+  min-height: 36px;
   cursor: pointer;
 }
 .ws-select select:focus-visible {
@@ -293,6 +294,9 @@
   width: 19px;
   height: 19px;
   object-fit: contain;
+}
+.ws-provider-tavily img {
+  filter: brightness(0) invert(0.9);
 }
 .ws-provider-exa {
   font-family: Georgia, serif;
@@ -762,7 +766,7 @@
   flex: 1;
 }
 .ws-preview-query input {
-  height: 35px;
+  height: 36px;
   font-size: 12px;
 }
 .ws-preview-result {
@@ -1423,8 +1427,14 @@
 }
 .ws-funding-grid {
   display: grid;
-  grid-template-columns: 1fr 1.3fr;
+  grid-template-columns: 1fr 1fr;
   gap: 22px;
+}
+.ws-funding-grid > .ws-panel:not(.ws-funding-method) {
+  grid-column: 1 / -1;
+}
+.ws-funding-method a:not([data-slot="button"]) {
+  margin-top: 16px;
 }
 .ws-balance-card {
   padding: 24px;
@@ -1639,4 +1649,140 @@
 .obs-sidebar:has(.ws-nav-group) .ws-nav-group > span,
 .mobile-sidebar-content:has(.ws-nav-group) .ws-nav-group > span {
   padding-bottom: 7px;
+}
+
+.ws-dispute-controls {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  align-items: end;
+  margin: 20px 0;
+}
+.ws-dispute-controls label {
+  display: grid;
+  gap: 7px;
+  font-size: 12px;
+  color: #aaa;
+}
+.ws-dispute-controls input {
+  flex: 1;
+  min-width: 180px;
+}
+.ws-dispute-controls select,
+.ws-deposit-form select {
+  background: #202020;
+  border: 1px solid #3b3b3b;
+  color: #eee;
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 12px;
+  min-height: 36px;
+  max-width: 100%;
+}
+.ws-dispute-subline {
+  display: block;
+  margin-top: 5px;
+  color: #aaa;
+  font-size: 11px;
+}
+.ws-dispute-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 14px;
+  padding: 16px;
+  color: #aaa;
+  font-size: 12px;
+}
+.ws-dispute-history {
+  display: grid;
+  gap: 15px;
+  padding: 0;
+  list-style: none;
+}
+.ws-dispute-history li {
+  padding: 14px;
+  border: 1px solid #333;
+  border-radius: 6px;
+}
+.ws-dispute-history p {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  margin: 8px 0;
+}
+.ws-dispute-history small {
+  color: #aaa;
+}
+
+.ws-dispute-subline {
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+@media (max-width: 600px) {
+  .ws-dispute-controls input {
+    flex-basis: 100%;
+    width: 100%;
+    min-width: 0;
+    font-size: 16px;
+  }
+}
+
+.ws-key-options {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 14px;
+  border: 1px solid #3a3a3a;
+  border-radius: 7px;
+}
+.ws-key-options legend {
+  color: #bbb;
+  font-size: 12px;
+  padding: 0 5px;
+}
+.ws-key-options label {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+.ws-key-options input {
+  margin-top: 3px;
+  accent-color: #a8b4cf;
+  flex-shrink: 0;
+}
+.ws-key-options strong {
+  display: block;
+  font-size: 12px;
+  font-weight: 500;
+}
+.ws-key-options small {
+  display: block;
+  color: #aaa;
+  line-height: 1.6;
+  margin-top: 4px;
+}
+.ws-key-secret {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.ws-key-secret input {
+  min-width: 0;
+  font-family: var(--font-mono);
+}
+.ws-key-instructions {
+  padding: 20px;
+  font-size: 12px;
+  color: #aaa;
+  line-height: 1.8;
+}
+.ws-key-instructions .command-box {
+  margin: 14px 0;
+}
+.ws-agent-environment code,
+.ws-setup-steps .ws-agent-environment code {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.8;
 }

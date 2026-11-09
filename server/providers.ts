@@ -130,6 +130,7 @@ export async function search(
   };
 }
 export async function scrape(url: string): Promise<{
+  requestId?: string;
   text: string;
   truncated?: boolean;
   originalCharacters?: number;
@@ -148,6 +149,13 @@ export async function scrape(url: string): Promise<{
     throw new ProviderError("invalid_response", response.status);
   return {
     text: json.data.markdown.slice(0, 20000),
+    requestId:
+      clean(
+        json.requestId ??
+          json.request_id ??
+          response.headers.get("x-request-id"),
+        200,
+      ) || undefined,
     truncated: json.data.markdown.length > 20000,
     originalCharacters: json.data.markdown.length,
     returnedCharacters: Math.min(json.data.markdown.length, 20000),
