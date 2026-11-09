@@ -36,26 +36,22 @@ export function workspaceAllowanceAdminRoutes(
         await fn(req, res, next);
       } catch (error) {
         if (error instanceof AllowanceError)
-          res
-            .status(error.status)
-            .json({
-              error: error.message,
-              code: error.code,
-              ...(error.operatorAllowance
-                ? { operatorAllowance: error.operatorAllowance }
-                : {}),
-            });
+          res.status(error.status).json({
+            error: error.message,
+            code: error.code,
+            ...(error.operatorAllowance
+              ? { operatorAllowance: error.operatorAllowance }
+              : {}),
+          });
         else if (error instanceof z.ZodError)
           res
             .status(400)
             .json({ error: error.issues.map((i) => i.message).join("; ") });
         else
-          res
-            .status(503)
-            .json({
-              error:
-                "Workspace allowance could not be verified. No automatic retry was made.",
-            });
+          res.status(503).json({
+            error:
+              "Workspace allowance could not be verified. No automatic retry was made.",
+          });
       }
     };
   router.get(

@@ -11,10 +11,12 @@ import pg from "pg";
 import { Store } from "../../server/store.js";
 import { PostgresDatabase } from "../../server/database.js";
 import { applyMigrations, claimRuntime } from "../../server/migration.js";
-import { Observatory } from "../../server/observation.js";
+import { Observatory, callInput } from "../../server/observation.js";
 import { FundingService } from "../../server/funding.js";
 import { StripeFundingService } from "../../server/stripe-funding.js";
 import { backupDatabase, restoreDatabase } from "../../server/backup.js";
+import { digest } from "../../server/observation-store.js";
+import { grantFixtureAllowance } from "./allowance.js";
 import { config } from "../../server/config.js";
 import { FixtureStripeGateway, fixtureStripeSettings } from "./stripe.js";
 
@@ -69,6 +71,11 @@ export async function runRestoreDrill(
     financialBalancesMatch: false,
     billingAmountsMatch: false,
     workspaceIsolationPassed: false,
+    allowancesPreserved: false,
+    allowancePermissionsPreserved: false,
+    allowanceAuditPreserved: false,
+    interruptedReservationsSettledOnce: false,
+    receiptReplaysNotCharged: false,
     sourceDatabaseDropped: false,
     restoredDatabaseDropped: false,
   };
@@ -109,6 +116,18 @@ export async function runRestoreDrill(
     });
     await obs.ready;
     const balances: number[] = [];
+    const allowances: Awaited<ReturnType<Store["allowance"]["status"]>>[] = [];
+    const fixtures: {
+      sessionId: string;
+      keyId: string;
+      pendingId?: string;
+      pendingInput?: {
+        tool: "exa_search";
+        query: string;
+        statedReason: string;
+        requestKey: string;
+      };
+    }[] = [];
     for (const [index, workspaceId] of workspaces.entries()) {
       await source.scope.run(workspaceId, () =>
         source!.actorScope.run({ kind: "account", id: owner }, async () => {
@@ -116,6 +135,7 @@ export async function runRestoreDrill(
             "INSERT INTO octolab.workspace_memberships(workspace_id,user_id,role) VALUES($1,$2,'owner')",
             [workspaceId, owner],
           );
+          await grantFixtureAllowance(source!);
           const { key } = await obs.db.apiKeys.create({
             requestKey: randomUUID(),
             name: "Restore fixture agent",
@@ -149,6 +169,63 @@ export async function runRestoreDrill(
             },
             key.id,
           );
+          const fixture: (typeof fixtures)[number] = {
+            sessionId: session.id,
+            keyId: key.id,
+          };
+          if (index === 0) {
+            // Preserve an admitted call interrupted before its result was recorded.
+            const pendingId = randomUUID(),
+              pendingInput = {
+                tool: "exa_search" as const,
+                query: "RESTORE_FIXTURE_RAW pending query",
+                statedReason: "Synthetic interrupted recovery fixture",
+                requestKey: "fixture-interrupted-call",
+              };
+            await source!.db.transaction(async () => {
+              await source!.allowance.reserve(
+                pendingId,
+                "observation",
+                receipt.estimateMicros,
+              );
+              await obs.db.apiKeys.reserve(
+                key.id,
+                pendingId,
+                "exa_search",
+                receipt.estimateMicros,
+              );
+              const current = await obs.require(session.id);
+              current.reservedMicros += receipt.estimateMicros;
+              await obs.db.save(current);
+              await obs.db.saveCall(
+                {
+                  id: pendingId,
+                  sessionId: session.id,
+                  apiKeyId: key.id,
+                  requestKey: pendingInput.requestKey,
+                  tool: "exa_search",
+                  provider: "exa",
+                  arguments: { query: pendingInput.query },
+                  statedReason: pendingInput.statedReason,
+                  status: "running",
+                  startedAt: new Date().toISOString(),
+                  estimateMicros: receipt.estimateMicros,
+                },
+                digest(callInput.parse(pendingInput)),
+              );
+            });
+            const current = await source!.allowance.status();
+            await source!.allowance.change(workspaceId, owner, {
+              requestKey: randomUUID(),
+              revision: current.revision,
+              limitMicros: current.limitMicros,
+              paused: true,
+              reason: "Paused synthetic recovery fixture",
+            });
+            Object.assign(fixture, { pendingId, pendingInput });
+          }
+          fixtures.push(fixture);
+          allowances.push(await source!.allowance.status());
           const billing = new ProviderBilling(obs),
             start = new Date();
           start.setUTCHours(0, 0, 0, 0);
@@ -271,13 +348,118 @@ export async function runRestoreDrill(
     );
     evidence.populatedDestinationRejected = true;
     restored = new Store(":unused:", targetUrl.toString(), workspaces[0]);
-    const restoredObs = new Observatory(restored);
+    let unexpectedTransports = 0;
+    const restoredObs = new Observatory(restored, {
+      search: async () => {
+        unexpectedTransports++;
+        throw new Error("Restored fixture must not repeat provider work");
+      },
+      scrape: async () => {
+        unexpectedTransports++;
+        throw new Error("Restored fixture must not repeat provider work");
+      },
+    });
     await restoredObs.ready;
     let isolated = true,
       billingMatch = true;
     const restoredBalances: number[] = [];
+    let allowancesMatch = true,
+      permissionsMatch = true,
+      auditsMatch = true,
+      settledOnce = true,
+      replaysFree = true;
     for (const [index, workspaceId] of workspaces.entries())
       await restored.scope.run(workspaceId, async () => {
+        const fixture = fixtures[index];
+        const before = await restored!.allowance.status();
+        if (JSON.stringify(before) !== JSON.stringify(allowances[index]))
+          allowancesMatch = false;
+        const grants = await (restored!.db as PostgresDatabase).pool.query(
+          "SELECT count(*)::int AS n FROM octolab.workspace_allowance_events WHERE workspace_id=$1",
+          [workspaceId],
+        );
+        if (grants.rows[0].n !== (index === 0 ? 2 : 1)) auditsMatch = false;
+        await assert.rejects(
+          restored!.db
+            .prepare(
+              "UPDATE workspace_allowances SET limit_micros=? WHERE workspace_id=?",
+            )
+            .run(1e9, workspaceId),
+          /permission denied/,
+        );
+        await assert.rejects(
+          restored!.db
+            .prepare("SELECT * FROM workspace_allowance_events")
+            .all(),
+          /permission denied/,
+        );
+        const visible = await restored!.db
+          .prepare("SELECT workspace_id FROM workspace_allowances")
+          .all();
+        permissionsMatch &&=
+          visible.length === 1 && visible[0].workspace_id === workspaceId;
+        await restored!.recover();
+        await restoredObs.db.recover();
+        await restored!.allowance.recover();
+        const once = await restored!.allowance.status();
+        await restoredObs.db.recover();
+        await restored!.allowance.recover();
+        settledOnce &&=
+          JSON.stringify(once) ===
+          JSON.stringify(await restored!.allowance.status());
+        settledOnce &&=
+          once.spentMicros === before.spentMicros + before.reservedMicros &&
+          once.reservedMicros === 0 &&
+          once.revision === before.revision &&
+          once.state === before.state;
+        if (fixture.pendingInput) {
+          const replay = await restoredObs.execute(
+            fixture.sessionId,
+            fixture.pendingInput,
+            fixture.keyId,
+          );
+          replaysFree &&=
+            "replayed" in replay &&
+            replay.replayed === true &&
+            replay.status === "interrupted";
+          const key = await restoredObs.db.apiKeys.get(fixture.keyId);
+          const session = await restoredObs.require(fixture.sessionId);
+          settledOnce &&=
+            key?.spentMicros === once.spentMicros &&
+            key.reservedMicros === 0 &&
+            session.spentMicros === once.spentMicros &&
+            session.reservedMicros === 0;
+        }
+        const replay = await restoredObs.execute(
+          fixture.sessionId,
+          {
+            tool: "exa_search",
+            query: "RESTORE_FIXTURE_RAW query",
+            statedReason: "Synthetic recovery fixture",
+            requestKey: "fixture-call",
+          },
+          fixture.keyId,
+        );
+        const entries = await restored!.db
+          .prepare("SELECT call_id,state FROM workspace_allowance_spend")
+          .all();
+        replaysFree &&=
+          "replayed" in replay &&
+          replay.replayed === true &&
+          JSON.stringify(once) ===
+            JSON.stringify(await restored!.allowance.status()) &&
+          entries.length === (index === 0 ? 2 : 1) &&
+          entries.every((e) => e.state === "settled") &&
+          new Set(entries.map((e) => e.call_id)).size === entries.length;
+        if (
+          (
+            await (restored!.db as PostgresDatabase).pool.query(
+              "SELECT count(*)::int AS n FROM octolab.workspace_allowance_events WHERE workspace_id=$1",
+              [workspaceId],
+            )
+          ).rows[0].n !== grants.rows[0].n
+        )
+          auditsMatch = false;
         const sessions = await restoredObs.db.list();
         if (
           sessions.length !== 1 ||
@@ -301,6 +483,13 @@ export async function runRestoreDrill(
         );
       });
     evidence.workspaceIsolationPassed = isolated;
+    evidence.allowancesPreserved =
+      allowancesMatch && recovery.allowanceLedgerValid === true;
+    evidence.allowancePermissionsPreserved = permissionsMatch;
+    evidence.allowanceAuditPreserved = auditsMatch;
+    evidence.interruptedReservationsSettledOnce = settledOnce;
+    evidence.receiptReplaysNotCharged =
+      replaysFree && unexpectedTransports === 0;
     evidence.billingAmountsMatch = billingMatch;
     evidence.financialBalancesMatch =
       JSON.stringify(balances) === JSON.stringify(restoredBalances) &&
@@ -320,6 +509,11 @@ export async function runRestoreDrill(
         evidence.financialBalancesMatch,
         evidence.billingAmountsMatch,
         evidence.workspaceIsolationPassed,
+        evidence.allowancesPreserved,
+        evidence.allowancePermissionsPreserved,
+        evidence.allowanceAuditPreserved,
+        evidence.interruptedReservationsSettledOnce,
+        evidence.receiptReplaysNotCharged,
       ].some((value) => !value)
     )
       throw new Error("Recovery drill checks failed.");

@@ -34,6 +34,11 @@ const url = process.env.OCTOLAB_RESTORE_DRILL_URL;
       auditChainsValid: true,
       financialBalancesMatch: true,
       workspaceIsolationPassed: true,
+      allowancesPreserved: true,
+      allowancePermissionsPreserved: true,
+      allowanceAuditPreserved: true,
+      interruptedReservationsSettledOnce: true,
+      receiptReplaysNotCharged: true,
     });
   },
   60000,

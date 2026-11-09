@@ -6,9 +6,12 @@ export interface DatabaseSnapshot {
   tables: { schema: string; table: string; rows: number; sha256: string }[];
   sequences: Record<string, unknown>[];
   security: Record<string, unknown>[];
+  columnSecurity: Record<string, unknown>[];
+  policies: Record<string, unknown>[];
   ledger: Record<string, unknown>[];
   audit: { events: number; chains: number; valid: boolean };
   keyLedgerValid: boolean;
+  allowanceLedgerValid: boolean | null;
 }
 export const sqlIdentifier = (value: string) =>
   `"${value.replaceAll('"', '""')}"`;
@@ -81,6 +84,25 @@ export async function databaseSnapshot(
       "SELECT c.relname AS name,c.relrowsecurity AS rls,c.relforcerowsecurity AS forced,has_table_privilege('octolab_runtime',c.oid,'SELECT') AS runtime_read,has_table_privilege('octolab_runtime',c.oid,'INSERT') AS runtime_insert,has_table_privilege('octolab_runtime',c.oid,'UPDATE') AS runtime_update,has_table_privilege('octolab_runtime',c.oid,'DELETE') AS runtime_delete FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='octolab' AND c.relkind='r' ORDER BY c.relname",
     )
   ).rows;
+  const columnSecurity = (
+    await client.query(
+      "SELECT c.relname AS table,a.attname AS column,has_column_privilege('octolab_runtime',c.oid,a.attnum,'SELECT') AS runtime_read,has_column_privilege('octolab_runtime',c.oid,a.attnum,'INSERT') AS runtime_insert,has_column_privilege('octolab_runtime',c.oid,a.attnum,'UPDATE') AS runtime_update FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace JOIN pg_attribute a ON a.attrelid=c.oid AND a.attnum>0 AND NOT a.attisdropped WHERE n.nspname='octolab' AND c.relkind='r' ORDER BY c.relname,a.attnum",
+    )
+  ).rows;
+  const policies = (
+    await client.query(
+      "SELECT tablename,policyname,permissive,roles,cmd,qual,with_check FROM pg_policies WHERE schemaname='octolab' ORDER BY tablename,policyname",
+    )
+  ).rows;
+  const allowanceLedgerValid = tables.some(
+    (t) => t.schema === "octolab" && t.name === "workspace_allowances",
+  )
+    ? (
+        await client.query(
+          "SELECT 1 FROM octolab.workspace_allowances a WHERE a.spent_micros+a.reserved_micros>a.limit_micros OR a.spent_micros <> COALESCE((SELECT SUM(s.amount_micros) FROM octolab.workspace_allowance_spend s WHERE s.workspace_id=a.workspace_id AND s.state='settled'),0) OR a.reserved_micros <> COALESCE((SELECT SUM(s.amount_micros) FROM octolab.workspace_allowance_spend s WHERE s.workspace_id=a.workspace_id AND s.state='reserved'),0) LIMIT 1",
+        )
+      ).rowCount === 0
+    : null;
   const ledger = (
     await client.query(
       "SELECT workspace_id,source,COUNT(*)::integer AS entries,SUM(delta_units)::text AS balance_units FROM octolab.funding_ledger GROUP BY workspace_id,source ORDER BY workspace_id,source",
@@ -120,6 +142,9 @@ export async function databaseSnapshot(
     tables: results,
     sequences,
     security,
+    columnSecurity,
+    policies,
+    allowanceLedgerValid,
     ledger,
     audit: { events, chains: heads.size, valid },
     keyLedgerValid: inconsistent.rowCount === 0,

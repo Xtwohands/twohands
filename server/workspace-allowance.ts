@@ -164,13 +164,11 @@ export class WorkspaceAllowance {
       [cursor],
     );
     return {
-      items: rows.rows
-        .slice(0, 50)
-        .map((r) => ({
-          workspaceId: r.id,
-          name: r.name,
-          operatorAllowance: status(r.limit_micros === null ? undefined : r),
-        })),
+      items: rows.rows.slice(0, 50).map((r) => ({
+        workspaceId: r.id,
+        name: r.name,
+        operatorAllowance: status(r.limit_micros === null ? undefined : r),
+      })),
       nextCursor: rows.rows.length > 50 ? rows.rows[49].id : null,
     };
   }

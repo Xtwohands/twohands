@@ -121,7 +121,11 @@ async function fileHash(path: string) {
   return hash.digest("hex");
 }
 function assertEvidence(snapshot: DatabaseSnapshot) {
-  if (!snapshot.audit.valid || !snapshot.keyLedgerValid)
+  if (
+    !snapshot.audit.valid ||
+    !snapshot.keyLedgerValid ||
+    snapshot.allowanceLedgerValid === false
+  )
     throw new BackupError(
       "Audit or financial consistency checks failed. Investigate before claiming a recoverable backup.",
     );
@@ -235,6 +239,7 @@ export async function backupDatabase(
       })),
       audit: manifest.snapshot.audit,
       keyLedgerValid: manifest.snapshot.keyLedgerValid,
+      allowanceLedgerValid: manifest.snapshot.allowanceLedgerValid,
     };
   } catch (error) {
     await client?.query("ROLLBACK").catch(() => {});
@@ -425,6 +430,7 @@ export async function restoreDatabase(
       })),
       audit: snapshot.audit,
       keyLedgerValid: snapshot.keyLedgerValid,
+      allowanceLedgerValid: snapshot.allowanceLedgerValid,
       ledgerGroupsVerified: snapshot.ledger.length,
     };
   } catch (error) {
