@@ -139,6 +139,10 @@ export function compareProviderRuns(
   const previous = cases(before),
     next = cases(after);
   const warnings: string[] = [];
+  if (before.source === "replay" || after.source === "replay")
+    warnings.push(
+      "Replay uses historical responses. It tests the checks only; execution, latency, cost, and provider improvement cannot be inferred.",
+    );
   const sameCases =
     before.suiteVersion === after.suiteVersion &&
     JSON.stringify(previous) === JSON.stringify(next);

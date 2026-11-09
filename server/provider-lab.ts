@@ -6,7 +6,14 @@ import { config, providerEstimate } from "./config.js";
 import { search, scrape, ProviderError } from "./providers.js";
 import { digest } from "./observation-store.js";
 import { ObservationError } from "./observation.js";
-import { toolCapabilities } from "./provider-capabilities.js";
+import {
+  providerRegistry,
+  registeredProviderSchema,
+  registeredProviderIds,
+} from "./provider-adapters.js";
+import { providerAccountForCall } from "./provider-accounts.js";
+import { replayProviderRun } from "./provider-lab-replay.js";
+import { ProviderLabSuites } from "./provider-lab-suites.js";
 import {
   suiteCases,
   suiteVersion,
@@ -17,7 +24,7 @@ import type {
   Experiment,
   ControlledSample,
 } from "./provider-lab-types.js";
-const provider = z.enum(["exa", "tavily", "firecrawl"]);
+const provider = registeredProviderSchema;
 export const labRunInput = z
   .object({
     requestKey: z.string().trim().min(1).max(120),
@@ -26,6 +33,8 @@ export const labRunInput = z
       .min(1)
       .max(3)
       .refine((v) => new Set(v).size === v.length, "Choose each provider once"),
+    suiteId: z.string().min(1).max(120).optional(),
+    suiteRevision: z.number().int().positive().optional(),
   })
   .strict();
 export const labReviewInput = z
@@ -57,11 +66,14 @@ export { measure, labMeasurements } from "./provider-lab-metrics.js";
 import { measure, labMeasurements } from "./provider-lab-metrics.js";
 export class ProviderLab {
   active = new Set<string>();
+  suites: ProviderLabSuites;
   constructor(
     private store: Store,
     private adapters = { search, scrape },
     private timestamps = new Map<ProviderId, number[]>(),
-  ) {}
+  ) {
+    this.suites = new ProviderLabSuites(store);
+  }
   async list(): Promise<LabRun[]> {
     return (
       await this.store.db
@@ -87,9 +99,10 @@ export class ProviderLab {
   > {
     const runs = await this.summaries();
     return Object.fromEntries(
-      (["exa", "tavily", "firecrawl"] as ProviderId[]).flatMap((provider) => {
+      registeredProviderIds.flatMap((provider) => {
         const run = runs.find(
           (r) =>
+            r.source === "live_controlled" &&
             r.status === "completed" &&
             r.calls.some(
               (c) =>
@@ -115,7 +128,7 @@ export class ProviderLab {
               useful: m.useful,
               partial: m.partial,
               limitations:
-                "Fixed public-reference diagnostic cases, forced by the backend. Reference checks are not factual accuracy. Usefulness verdicts are attributed reports, not independent verification. Small sample; no general quality ranking or organic preference is established.",
+                "Versioned diagnostic cases, forced by the backend. Reference checks are not factual accuracy. Usefulness verdicts are attributed reports, not independent verification. Small sample; no general quality ranking or organic preference is established.",
             },
           ],
         ];
@@ -163,6 +176,7 @@ export class ProviderLab {
       suiteVersion,
       methodology: suiteMethodology,
       cases: suiteCases,
+      suites: await this.suites.list(),
       backendBudgetMicros: config.providerTestBudgetMicros,
       dailyBudgetMicros: config.providerTestDailyBudgetMicros,
       dailyCommittedMicros,
@@ -170,14 +184,19 @@ export class ProviderLab {
         0,
         config.providerTestDailyBudgetMicros - dailyCommittedMicros,
       ),
-      providers: (["exa", "tavily", "firecrawl"] as ProviderId[]).map((id) => ({
+      providers: registeredProviderIds.map((id) => ({
         id,
-        configured: !!config.keys[id],
+        configured: providerRegistry.credentialStatus(
+          providerRegistry.forProvider(id).tool,
+        ).configured,
+        adapterVersion: providerRegistry.forProvider(id).version,
         estimateMicros: providerEstimate(id),
         plannedCalls: 5,
       })),
       runs,
-      measurements: labMeasurements(runs),
+      measurements: labMeasurements(
+        runs.filter((r) => r.source === "live_controlled"),
+      ),
       experiments: await this.experiments(),
     };
   }
@@ -195,7 +214,11 @@ export class ProviderLab {
     const admitted = await this.store.transaction(async () => {
       const input = labRunInput.parse(raw);
       const providers = [...input.providers].sort() as ProviderId[];
-      const signature = digest({ providers, suiteVersion });
+      const suite = await this.suites.get(input.suiteId, input.suiteRevision);
+      const version = suite.builtIn
+        ? suiteVersion
+        : `${suite.id}@${suite.revision}`;
+      const signature = digest({ providers, suiteVersion: version });
       const existing = await this.store.db
         .prepare("SELECT body FROM provider_lab_runs WHERE request_key=?")
         .get(input.requestKey);
@@ -214,29 +237,53 @@ export class ProviderLab {
           409,
           "A controlled test is already running. Wait for it to finish or stop it.",
         );
-      if (providers.some((p) => !config.keys[p]))
+      if (
+        providers.some(
+          (p) =>
+            !providerRegistry.credentialStatus(
+              providerRegistry.forProvider(p).tool,
+            ).configured,
+        )
+      )
         throw new ObservationError(
           409,
           "Configure every selected provider on the backend before running a live test.",
         );
-      const cases = suiteCases.filter((c) =>
-        c.kind === "search"
-          ? providers.some((p) => p !== "firecrawl")
-          : providers.includes("firecrawl"),
+      const cases = suite.cases.filter((c) =>
+        providers.some(
+          (p) => providerRegistry.forProvider(p).operation === c.kind,
+        ),
       );
+      if (
+        providers.some(
+          (p) =>
+            !cases.some(
+              (c) => providerRegistry.forProvider(p).operation === c.kind,
+            ),
+        )
+      )
+        throw new ObservationError(
+          400,
+          "Each selected provider needs at least one compatible case in the suite.",
+        );
       const offset = priorRuns.length % 2;
       const calls = cases.flatMap((c, i) => {
-        const order =
-          c.kind === "extract"
-            ? ["firecrawl" as const]
-            : providers.filter((p) => p !== "firecrawl");
+        const order = providers.filter(
+          (p) => providerRegistry.forProvider(p).operation === c.kind,
+        );
         if ((i + offset) % 2) order.reverse();
         return order.map((p) => ({
           id: randomUUID(),
           caseId: c.id,
           provider: p,
           status: "pending" as const,
-          estimateMicros: providerEstimate(p),
+          adapter: providerRegistry.snapshot(
+            providerRegistry.forProvider(p).tool,
+          ),
+          estimateMicros: providerRegistry.estimate(
+            providerRegistry.forProvider(p).tool,
+            c.kind === "search" ? { query: c.input } : { url: c.input },
+          ).estimatedMicros,
           reviews: [],
         }));
       });
@@ -256,9 +303,11 @@ export class ProviderLab {
         id: randomUUID(),
         requestKey: input.requestKey,
         signature,
-        title: "Public reference checks",
+        title: suite.title,
         source: "live_controlled",
-        suiteVersion,
+        suiteId: suite.id,
+        suiteRevision: suite.revision,
+        suiteVersion: version,
         suiteHash: digest(cases),
         status: "running",
         cancelRequested: false,
@@ -271,7 +320,12 @@ export class ProviderLab {
         reservedMicros: 0,
         rateCardVersion: config.rateCardVersion,
         adapterSnapshot: Object.fromEntries(
-          Object.entries(toolCapabilities).map(([k, v]) => [k, v.adapter]),
+          providerRegistry
+            .list()
+            .map((a) => [
+              a.tool,
+              { ...a.capabilities.adapter, version: a.version },
+            ]),
         ),
         cases,
         calls,
@@ -337,6 +391,10 @@ export class ProviderLab {
         )
           throw new Error("Test ledger would exceed its cap");
         call.status = "running";
+        call.providerAccountReference = await providerAccountForCall(
+          this.store,
+          providerRegistry.forProvider(call.provider).tool,
+        );
         call.startedAt = new Date().toISOString();
         run.reservedMicros += call.estimateMicros;
         await this.save(run);
@@ -354,14 +412,12 @@ export class ProviderLab {
         error: string | undefined,
         httpStatus: number | undefined;
       try {
-        result = (call.provider === "firecrawl"
-          ? await this.adapters.scrape(test.input)
-          : await this.adapters.search(
-              call.provider,
-              test.input,
-              [],
-              call.id,
-            )) as unknown as Record<string, unknown>;
+        result = await providerRegistry.execute(
+          providerRegistry.forProvider(call.provider).tool,
+          test.kind === "search" ? { query: test.input } : { url: test.input },
+          call.id,
+          this.adapters,
+        );
         httpStatus = result.httpStatus as number;
       } catch (e) {
         error =
@@ -404,6 +460,11 @@ export class ProviderLab {
       return run;
     });
   }
+  async replay(raw: unknown) {
+    return this.store.db.atomic(() =>
+      replayProviderRun(this, raw, (run) => this.save(run)),
+    );
+  }
   async review(id: string, callId: string, raw: unknown) {
     return this.store.db.atomic(async () => {
       const input = labReviewInput.parse(raw);
@@ -439,6 +500,9 @@ export class ProviderLab {
           .flatMap((p) => [p.baselineRunId, p.followupRunId])
           .filter(Boolean),
       );
+      // Keep the original receipts for as long as a replay refers to them.
+      for (const run of await this.summaries())
+        if (run.sourceRunId) linked.add(run.sourceRunId);
       let runs = 0;
       for (const run of await this.summaries()) {
         const updated = [

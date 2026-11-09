@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { providerRegistry } from "./provider-adapters.js";
 import {
   costRequest,
   requestDomains,
@@ -7,6 +8,8 @@ import {
 } from "./request-cost.js";
 import { publicEvidenceUrl } from "./url-policy.js";
 import type { ToolName } from "./observation-types.js";
+import type { ProviderId } from "./types.js";
+import type { AdapterRegistry, AdapterRequest } from "./provider-registry.js";
 
 export const CATALOG_VERSION = "capabilities-v1";
 export const discoveryOperation = z
@@ -90,7 +93,12 @@ export type DiscoveryMatch = {
     | "needs_parameters";
   reason: string;
 };
-export type DiscoveryEstimate = ReturnType<typeof estimateRequest> & {
+export type DiscoveryEstimate<Tool extends string = ToolName> = Omit<
+  ReturnType<typeof estimateRequest>,
+  "tool" | "request"
+> & {
+  tool: Tool;
+  request: AdapterRequest & { tool: Tool };
   withinBudget: boolean;
   operationIndex: number;
   origin: "server_matched";
@@ -98,10 +106,17 @@ export type DiscoveryEstimate = ReturnType<typeof estimateRequest> & {
 };
 
 /** Deterministic catalog retrieval. Never runs providers or infers prices from prose. */
-export function matchTools(
+export function matchTools<
+  Tool extends string = ToolName,
+  Provider extends string = ProviderId,
+>(
   raw: DiscoveryInput,
-  available: Record<ToolName, boolean>,
+  available: Record<Tool, boolean>,
   remaining: number,
+  registry: AdapterRegistry<
+    Tool,
+    Provider
+  > = providerRegistry as unknown as AdapterRegistry<Tool, Provider>,
 ) {
   const input = discoveryInput.parse(raw);
   if (input.operations && input.requests)
@@ -109,7 +124,7 @@ export function matchTools(
   const operations: Operation[] =
     input.operations ??
     (input.requests ?? []).map((r) => ({
-      operation: r.tool === "firecrawl_extract" ? "extract" : "search",
+      operation: providerRegistry.get(r.tool).operation,
       query: r.query,
       url: r.url,
       domains: r.domains,
@@ -119,11 +134,12 @@ export function matchTools(
     }));
   // Validate every URL before saving discovery context, including incomplete operations.
   for (const op of operations) if (op.url) op.url = publicEvidenceUrl(op.url);
-  const tools = (Object.keys(available) as ToolName[]).map((tool) => {
+  const tools = (Object.keys(available) as Tool[]).map((tool) => {
     const matches: DiscoveryMatch[] = [];
-    const estimates: DiscoveryEstimate[] = [];
+    const estimates: DiscoveryEstimate<Tool>[] = [];
     operations.forEach((op, operationIndex) => {
-      const extraction = tool === "firecrawl_extract";
+      const adapter = registry.get(tool);
+      const extraction = adapter.operation === "extract";
       const mismatch = extraction !== (op.operation === "extract");
       let reason = mismatch
         ? extraction
@@ -133,7 +149,7 @@ export function matchTools(
       if (!reason && op.content === "complete_page")
         reason =
           "This adapter can truncate or omit page text and cannot guarantee complete-page content.";
-      if (!reason && op.content === "page_text" && tool === "tavily_search")
+      if (!reason && op.content === "page_text" && !adapter.pageText)
         reason =
           "This adapter returns excerpts, not source-page text. Exa can supply partial page text; extraction needs a known URL.";
       if (reason) {
@@ -157,33 +173,22 @@ export function matchTools(
             query: op.query,
             domains: op.domains,
             maxResults: op.maxResults ?? 10,
-            ...(tool === "tavily_search"
+            ...(adapter.searchDepth
               ? { searchDepth: op.searchDepth ?? "basic" }
               : {}),
           };
-      const estimate = estimateRequest(request);
+      const { tool: _tool, ...parameters } = request;
+      const estimate = registry.estimate(tool, parameters);
       const withinBudget = estimate.estimatedMicros <= remaining;
       estimates.push({
         ...estimate,
         operationIndex,
         origin: "server_matched",
         withinBudget,
-        mappingNotes: extraction
-          ? [
-              "Markdown extraction, up to 20,000 captured characters; full-page completeness is not guaranteed.",
-            ]
-          : tool === "exa_search"
-            ? [
-                "Exa auto mode returns up to 2,500 characters of source text per result; text may be absent.",
-                ...(op.searchDepth
-                  ? [
-                      "searchDepth configures Tavily only. Exa uses auto mode; equal retrieval depth or quality is not claimed.",
-                    ]
-                  : []),
-              ]
-            : [
-                `Tavily ${op.searchDepth ?? "basic"} mode returns excerpts; generated answers and raw content are disabled.`,
-              ],
+        mappingNotes: adapter.mappingNotes({
+          ...estimate.request,
+          searchDepth: op.searchDepth,
+        }),
       });
       matches.push({
         operationIndex,

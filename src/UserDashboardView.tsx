@@ -1,3 +1,7 @@
+import {
+  ProviderBillingView,
+  ProviderAdaptersView,
+} from "./ProviderBillingView";
 import { useAccount } from "./AccountGate";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -839,10 +843,16 @@ export function UserDashboardView({
               </Section>
             </>
           )}
+          {section === "usage" && canManage && (
+            <ProviderBillingView key={connectionRevision} days={days} />
+          )}
           {section === "keys" && <ApiKeysView key={connectionRevision} />}
           {section === "credits" && <FundingView key={connectionRevision} />}
           {section === "connections" && (
-            <ConnectionView connection={connection} catalog={catalog} />
+            <>
+              <ConnectionView connection={connection} catalog={catalog} />
+              {canManage && <ProviderAdaptersView key={connectionRevision} />}
+            </>
           )}
         </>
       )}

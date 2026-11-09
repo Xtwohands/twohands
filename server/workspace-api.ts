@@ -1,3 +1,4 @@
+import { providerManagementRoutes } from "./provider-management-api.js";
 import { ApiKeyError } from "./api-keys.js";
 import type { Express } from "express";
 import { z } from "zod";
@@ -103,6 +104,7 @@ export function workspaceUsage(
   };
 }
 export function workspaceRoutes(app: Express, obs: Observatory) {
+  providerManagementRoutes(app, obs);
   const route =
     (
       fn: (

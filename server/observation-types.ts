@@ -1,4 +1,4 @@
-export type ToolName = "exa_search" | "tavily_search" | "firecrawl_extract";
+export type ToolName = import("./provider-identifiers.js").RegisteredToolName;
 export type ReviewVerdict = "pass" | "fail" | "unknown";
 export interface Criterion {
   id: string;
@@ -71,6 +71,7 @@ export interface ObservationSession {
   cases: ReviewCase[];
 }
 export interface ObservedCall {
+  providerAccountReference?: string;
   id: string;
   apiKeyId?: string;
   sessionId: string;
@@ -83,6 +84,13 @@ export interface ObservedCall {
     domains?: string[];
     maxResults?: number;
     searchDepth?: "basic" | "advanced";
+  };
+  adapter?: {
+    tool: string;
+    provider: string;
+    version: string;
+    operation: "search" | "extract";
+    settings: Record<string, string | number | boolean>;
   };
   costEstimate?: import("./request-cost.js").RequestEstimate;
   statedReason: string;

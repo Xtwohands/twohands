@@ -48,7 +48,12 @@ const scrape = vi.fn(async (url: string) => ({
   httpStatus: 200,
   pageStatus: 200,
   text:
-    suiteCases.find((c) => c.input === url)?.terms.join(" ") ?? "Fixture page",
+    suiteCases
+      .find(
+        (c) =>
+          c.kind === "extract" && new URL(c.input).href === new URL(url).href,
+      )
+      ?.terms.join(" ") ?? "Fixture page",
 }));
 beforeEach(() => {
   Object.assign(config.prices, { exa: 17000, tavily: 8000, firecrawl: 1000 });

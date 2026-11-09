@@ -10,6 +10,7 @@ import {
 } from "@untitledui/icons";
 import { api, money } from "./api";
 import { ProviderComparison } from "./ProviderComparison";
+import { ProviderActivityView } from "./ProviderActivityView";
 import { Panel, InlineError, StateBadge, date } from "./observation-ui";
 import {
   BenchmarkTable,
@@ -104,7 +105,9 @@ export function CompanyView({
   const [notice, setNotice] = useState("");
   const [revision, setRevision] = useState(0);
   const current = useRef(0);
-  const tab = ["benchmarks", "plans"].includes(section) ? section : "overview";
+  const tab = ["benchmarks", "plans", "activity"].includes(section)
+    ? section
+    : "overview";
   useEffect(() => {
     const generation = ++current.current;
     let timer: ReturnType<typeof setTimeout>;
@@ -299,6 +302,7 @@ export function CompanyView({
         >
           <TabsList variant="line">
             <TabsTrigger value="overview">Overview</TabsTrigger>
+            <TabsTrigger value="activity">Live usage</TabsTrigger>
             <TabsTrigger value="benchmarks">Controlled tests</TabsTrigger>
             <TabsTrigger value="plans">
               Test plans
@@ -307,6 +311,13 @@ export function CompanyView({
               )}
             </TabsTrigger>
           </TabsList>
+          <TabsContent value="activity">
+            <ProviderActivityView
+              key={`${provider}/${source}`}
+              provider={provider}
+              demo={source === "demo"}
+            />
+          </TabsContent>
           <TabsContent value="overview">
             <div className="company-metric-grid">
               <Metric
@@ -914,6 +925,7 @@ function ExperimentForm({
                   <SelectItem value="none">Not linked</SelectItem>
                   {available.map((r) => (
                     <SelectItem key={r.id} value={r.id}>
+                      {r.source === "replay" ? "Replay · " : "Live · "}
                       {date(r.createdAt)} · {r.id.slice(0, 8)}
                     </SelectItem>
                   ))}

@@ -1,3 +1,4 @@
+import { providerActivity } from "./provider-activity.js";
 import { toolCapabilities } from "./provider-capabilities.js";
 import { type Accounts } from "./accounts.js";
 import {
@@ -208,12 +209,33 @@ export function createApp(
     });
   app.use("/api/observations", express.json({ limit: "160kb" }));
   app.use("/api/provider-lab/suites", express.json({ limit: "256kb" }));
+  app.use(
+    "/api/workspace/provider-billing/imports",
+    express.json({ limit: "256kb" }),
+  );
   app.use(express.json({ limit: "24kb" }));
   apiKeyRoutes(app, observatory.db.apiKeys, !!accounts);
   observationRoutes(app, observatory);
   workspaceRoutes(app, observatory);
   fundingRoutes(app, funding, stripeFunding);
   providerLabRoutes(app, providerLab);
+  app.get("/api/provider-activity/:provider", async (req, res) => {
+    const provider = z
+        .enum(["exa", "tavily", "firecrawl"])
+        .safeParse(req.params.provider),
+      days = z.enum(["7", "30", "90"]).safeParse(req.query.days ?? "30");
+    if (!provider.success || !days.success) {
+      res
+        .status(400)
+        .json({
+          error: "Choose a supported provider and a 7, 30, or 90 day window.",
+        });
+      return;
+    }
+    res.json(
+      await providerActivity(observatory, provider.data, Number(days.data)),
+    );
+  });
   app.get("/api/company-insights/:provider", async (req, res) => {
     const p = z
       .enum(["exa", "tavily", "firecrawl"])

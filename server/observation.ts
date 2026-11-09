@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { providerRegistry, registeredToolSchema } from "./provider-adapters.js";
+import { providerAccountForCall } from "./provider-accounts.js";
 import { matchTools, type DiscoveryInput } from "./tool-discovery.js";
 import { SHARING_POLICY, sharingPolicyEvent } from "./sharing-policy.js";
 import {
@@ -57,7 +59,7 @@ export const selectionReason = z
 // Retained only to replay historical receipts without changing their signatures.
 const legacyCallInput = z
   .object({
-    tool: z.enum(["exa_search", "tavily_search", "firecrawl_extract"]),
+    tool: registeredToolSchema,
     ...searchOptions,
     requestKey: text(120),
     query: text(500).optional(),
@@ -110,11 +112,9 @@ export class ObservationError extends Error {
     super(message);
   }
 }
-const names = {
-  exa_search: "exa",
-  tavily_search: "tavily",
-  firecrawl_extract: "firecrawl",
-} as const;
+const names = Object.fromEntries(
+  providerRegistry.list().map((a) => [a.tool, a.provider]),
+) as Record<ToolName, ProviderId>;
 export class Observatory {
   db: ObservationStore;
   readonly ready: Promise<void>;
@@ -193,7 +193,7 @@ export class Observatory {
       config.agentSessionBudgetMicros,
       key?.remainingMicros ?? Infinity,
     );
-    let discovery: ReturnType<typeof matchTools>;
+    let discovery: ReturnType<typeof matchTools<ToolName>>;
     try {
       discovery = matchTools(
         input,
@@ -446,7 +446,8 @@ export class Observatory {
             controlled: controlled[provider] ?? null,
           },
           ...toolCapabilities[tool],
-          available: Boolean(config.keys[provider]),
+          available: providerRegistry.credentialStatus(tool).configured,
+          adapterVersion: providerRegistry.get(tool).version,
           estimatedMicros: providerEstimate(provider),
           rateCardVersion: config.rateCardVersion,
           sampleCount: samples.length,
@@ -490,7 +491,7 @@ export class Observatory {
       typeof needOrInput === "string"
         ? { need: needOrInput, requests }
         : needOrInput;
-    let discovery: ReturnType<typeof matchTools>;
+    let discovery: ReturnType<typeof matchTools<ToolName>>;
     try {
       discovery = matchTools(
         input,
@@ -562,9 +563,10 @@ export class Observatory {
   async execute(id: string, raw: unknown, apiKeyId?: string) {
     const input = legacyCallInput.parse(raw);
     if (apiKeyId) await this.db.apiKeys.toolAccess(apiKeyId, input.tool);
-    const provider = names[input.tool];
+    const adapter = providerRegistry.get(input.tool);
+    const provider = adapter.provider;
     if (
-      provider === "firecrawl"
+      adapter.operation === "extract"
         ? !input.url || input.query !== undefined
         : !input.query || input.url !== undefined
     )
@@ -634,7 +636,7 @@ export class Observatory {
           409,
           "Approve the recorded intent and budget in APILayer before calling providers.",
         );
-      if (!config.keys[provider])
+      if (!providerRegistry.credentialStatus(input.tool).configured)
         throw new ObservationError(
           409,
           "This provider is not configured on the server.",
@@ -681,6 +683,11 @@ export class Observatory {
                   : {}),
               },
         costEstimate: estimate,
+        adapter: providerRegistry.snapshot(input.tool),
+        providerAccountReference: await providerAccountForCall(
+          this.db.store,
+          input.tool,
+        ),
         statedReason: input.statedReason,
         status: "running",
         startedAt: new Date().toISOString(),
@@ -720,26 +727,20 @@ export class Observatory {
     this.active.add(call.id);
     const start = Date.now();
     try {
-      const result =
-        provider === "firecrawl"
-          ? await this.adapters.scrape(input.url!)
-          : await this.adapters.search(
-              provider,
-              input.query!,
-              input.domains,
-              call.id,
-              ...(input.maxResults !== undefined ||
-              input.searchDepth !== undefined
-                ? [
-                    {
-                      maxResults: input.maxResults,
-                      searchDepth: input.searchDepth,
-                    },
-                  ]
-                : []),
-            );
+      const result = await providerRegistry.execute(
+        input.tool,
+        {
+          query: input.query,
+          url: input.url,
+          domains: input.domains,
+          maxResults: input.maxResults,
+          searchDepth: input.searchDepth,
+        },
+        call.id,
+        this.adapters,
+      );
       call.result = result as unknown as Record<string, unknown>;
-      call.httpStatus = result.httpStatus;
+      call.httpStatus = result.httpStatus as number;
       call.status = "succeeded";
     } catch (error) {
       call.status = "failed";

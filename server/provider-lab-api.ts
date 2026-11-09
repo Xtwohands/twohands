@@ -1,5 +1,6 @@
 import type { Express, Request, Response } from "express";
 import { z } from "zod";
+import { randomUUID } from "node:crypto";
 import { ObservationError } from "./observation.js";
 import type { ProviderLab } from "./provider-lab.js";
 export function providerLabRoutes(app: Express, lab: ProviderLab) {
@@ -22,6 +23,24 @@ export function providerLabRoutes(app: Express, lab: ProviderLab) {
           });
       }
     };
+  app.post(
+    "/api/provider-lab/suites",
+    route(async (req, res) =>
+      res.status(201).json(await lab.suites.save(req.body, randomUUID())),
+    ),
+  );
+  app.post(
+    "/api/provider-lab/suites/:id",
+    route(async (req, res) =>
+      res.json(
+        await lab.suites.save(req.body, z.string().uuid().parse(req.params.id)),
+      ),
+    ),
+  );
+  app.post(
+    "/api/provider-lab/replays",
+    route(async (req, res) => res.status(201).json(await lab.replay(req.body))),
+  );
   app.get(
     "/api/provider-lab",
     route(async (_req, res) => res.json(await lab.overview())),

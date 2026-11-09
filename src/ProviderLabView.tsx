@@ -1,5 +1,14 @@
 import { useEffect, useRef, useState } from "react";
-import { Play, CheckCircle, ArrowUpRight, Link01 } from "@untitledui/icons";
+import {
+  Play,
+  CheckCircle,
+  ArrowUpRight,
+  Link01,
+  Plus,
+  Download01,
+} from "@untitledui/icons";
+import { ProviderSuiteEditor } from "./ProviderSuiteEditor";
+import { ProviderComparison } from "./ProviderComparison";
 import { api, money, ApiError } from "./api";
 import { Panel, InlineError, StateBadge, date } from "./observation-ui";
 import { Button } from "./components/ui/button";
@@ -29,6 +38,7 @@ import type {
   ProviderMeasurement,
   Experiment,
   EvidenceReview,
+  LabSuite,
 } from "../server/provider-lab-types";
 
 import { labMeasurements, providerUsage } from "../server/provider-lab-metrics";
@@ -42,6 +52,7 @@ export interface LabOverview {
   suiteVersion: string;
   methodology: string;
   cases: LabCase[];
+  suites: LabSuite[];
   backendBudgetMicros: number;
   dailyBudgetMicros: number;
   dailyCommittedMicros: number;
@@ -58,8 +69,10 @@ export interface LabOverview {
 }
 export function BenchmarkTable({
   metrics,
+  replay = false,
 }: {
   metrics: ProviderMeasurement[];
+  replay?: boolean;
 }) {
   return (
     <div
@@ -72,11 +85,13 @@ export function BenchmarkTable({
         <thead>
           <tr>
             <th>Provider</th>
-            <th>Test calls</th>
-            <th>Requests succeeded</th>
+            <th>{replay ? "Saved receipts" : "Test calls"}</th>
+            <th>
+              {replay ? "Original requests succeeded" : "Requests succeeded"}
+            </th>
             <th>Reference checks</th>
             <th>Median response</th>
-            <th>Estimated cost</th>
+            <th>{replay ? "Replay spend" : "Estimated cost"}</th>
           </tr>
         </thead>
         <tbody>
@@ -130,7 +145,18 @@ export function ProviderLabView({
   ]);
   const [receiptId, setReceiptId] = useState<string | null>(null);
   const [notice, setNotice] = useState("");
+  const [suiteId, setSuiteId] = useState("public-reference-v1");
+  const [mode, setMode] = useState("live");
+  const [sourceRunId, setSourceRunId] = useState("");
+  const [suiteEditor, setSuiteEditor] = useState<{
+    initial?: LabSuite;
+    duplicate?: boolean;
+  } | null>(null);
+  const [baselineId, setBaselineId] = useState("none");
+  const [comparisonProvider, setComparisonProvider] =
+    useState<ProviderId>("exa");
   const requestKey = useRef<string | null>(null);
+  const requestSignature = useRef("");
   const initializedProviders = useRef(false);
   const activeRef = useRef(true);
   const currentRunId = useRef(runId);
@@ -184,6 +210,8 @@ export function ProviderLabView({
   useEffect(() => {
     let stale = false;
     currentRunId.current = runId;
+    let firstResponse = true;
+    setBaselineId("none");
     let timer: ReturnType<typeof setTimeout>;
     setRun(undefined);
     setReceiptId(null);
@@ -193,6 +221,10 @@ export function ProviderLabView({
       try {
         const r = await api<LabRun>(`/provider-lab/runs/${runId}`);
         if (!stale) {
+          if (firstResponse) {
+            setComparisonProvider(r.providers[0]);
+            firstResponse = false;
+          }
           applyRun(r);
           setError("");
           if (r.status === "running" || mutation !== detailMutation.current)
@@ -218,17 +250,35 @@ export function ProviderLabView({
     const startedFrom = currentRunId.current;
     setBusy(true);
     setError("");
+    const signature = JSON.stringify({
+      mode,
+      providers: mode === "replay" ? undefined : providers,
+      sourceRunId: mode === "replay" ? sourceRunId : undefined,
+      suiteId: selectedSuite?.id,
+      revision: selectedSuite?.revision,
+    });
+    if (signature !== requestSignature.current) {
+      requestKey.current = null;
+      requestSignature.current = signature;
+    }
     requestKey.current ??= crypto.randomUUID();
     try {
-      const r = await api<LabRun>("/provider-lab/runs", {
-        requestKey: requestKey.current,
-        providers,
-      });
+      const r = await api<LabRun>(
+        mode === "replay" ? "/provider-lab/replays" : "/provider-lab/runs",
+        {
+          requestKey: requestKey.current,
+          ...(mode === "replay" ? { sourceRunId } : { providers }),
+          suiteId: selectedSuite?.id,
+          suiteRevision: selectedSuite?.revision,
+        },
+      );
       requestKey.current = null;
       if (activeRef.current && currentRunId.current === startedFrom) {
         location.hash = `lab/${r.id}`;
         setNotice(
-          "Controlled test started. Organic session statistics are unchanged.",
+          mode === "replay"
+            ? "Saved responses replayed. No provider requests or spending."
+            : "Controlled test started. Organic session statistics are unchanged.",
         );
       }
     } catch (e) {
@@ -237,12 +287,20 @@ export function ProviderLabView({
       if (activeRef.current) setBusy(false);
     }
   }
+  const selectedSuite =
+    data?.suites.find((s) => s.id === suiteId) ?? data?.suites[0];
+  const plannedCalls = (id: ProviderId) =>
+    selectedSuite?.cases.filter((c) =>
+      id === "firecrawl" ? c.kind === "extract" : c.kind === "search",
+    ).length ?? 0;
   const estimate =
-    data?.providers
-      .filter((p) => providers.includes(p.id))
-      .reduce((n, p) => n + p.estimateMicros * p.plannedCalls, 0) ?? 0;
+    mode === "replay"
+      ? 0
+      : (data?.providers
+          .filter((p) => providers.includes(p.id))
+          .reduce((n, p) => n + p.estimateMicros * plannedCalls(p.id), 0) ?? 0);
   const unavailable = data?.providers.some(
-    (p) => providers.includes(p.id) && !p.configured,
+    (p) => providers.includes(p.id) && (!p.configured || !plannedCalls(p.id)),
   );
   const running = data?.runs.some((r) => r.status === "running");
   const receipt = run?.calls.find((c) => c.id === receiptId);
@@ -266,10 +324,7 @@ export function ProviderLabView({
       <div className="page-heading">
         <div>
           <h1>Provider lab</h1>
-          <p>
-            Test tools deliberately. Keep experiments separate from agent
-            choices.
-          </p>
+          <p>Build test suites, run live checks, and replay saved evidence.</p>
         </div>
         <Button variant="outline" asChild>
           <a href="#company/exa">
@@ -287,40 +342,169 @@ export function ProviderLabView({
       {!data && !error && <p role="status">Loading provider lab…</p>}
       {data && (
         <>
+          <div className="lab-suite-toolbar">
+            <div>
+              <Label htmlFor="lab-suite">Test suite</Label>
+              <Select
+                value={selectedSuite?.id}
+                disabled={busy}
+                onValueChange={(id) => {
+                  requestKey.current = null;
+                  setSuiteId(id);
+                  const suite = data.suites.find((s) => s.id === id);
+                  setProviders(
+                    data.providers
+                      .filter(
+                        (p) =>
+                          p.configured &&
+                          suite?.cases.some((c) =>
+                            p.id === "firecrawl"
+                              ? c.kind === "extract"
+                              : c.kind === "search",
+                          ),
+                      )
+                      .map((p) => p.id),
+                  );
+                }}
+              >
+                <SelectTrigger id="lab-suite">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {data.suites.map((s) => (
+                    <SelectItem key={s.id} value={s.id}>
+                      {s.title} · v{s.revision}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label htmlFor="lab-mode">Test mode</Label>
+              <Select
+                value={mode}
+                disabled={busy}
+                onValueChange={(v) => {
+                  setMode(v);
+                  requestKey.current = null;
+                }}
+              >
+                <SelectTrigger id="lab-mode">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="live">Live provider calls</SelectItem>
+                  <SelectItem value="replay">
+                    Replay saved responses · no spend
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="lab-suite-actions">
+              <Button variant="outline" onClick={() => setSuiteEditor({})}>
+                <Plus />
+                New suite
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() =>
+                  setSuiteEditor({ initial: selectedSuite, duplicate: true })
+                }
+              >
+                Duplicate
+              </Button>
+              {selectedSuite && !selectedSuite.builtIn && (
+                <Button
+                  variant="outline"
+                  onClick={() => setSuiteEditor({ initial: selectedSuite })}
+                >
+                  Edit suite
+                </Button>
+              )}
+            </div>
+          </div>
           <div className="lab-setup-grid">
             <Panel
-              title="Run a controlled test"
-              description="Five fixed cases per selected provider. Exa and Tavily receive identical queries; Firecrawl tests page extraction."
+              title={
+                mode === "replay"
+                  ? "Simulate checks on saved responses"
+                  : "Run a controlled test"
+              }
+              description={
+                mode === "replay"
+                  ? "Test references and text markers against historical evidence. This does not simulate an agent or new provider behavior."
+                  : "Selected providers receive the versioned cases below. Search providers get matched queries; extraction stays separate."
+              }
             >
-              <div className="lab-provider-options">
-                {data.providers.map((p) => (
-                  <label key={p.id} className="lab-provider-option">
-                    <Checkbox
-                      disabled={busy || !!running || !p.configured}
-                      checked={providers.includes(p.id)}
-                      onCheckedChange={(checked) => {
-                        requestKey.current = null;
-                        setProviders((v) =>
-                          checked === true
-                            ? [...v, p.id]
-                            : v.filter((x) => x !== p.id),
-                        );
-                      }}
-                    />
-                    <span>
-                      <strong>{providerNames[p.id]}</strong>
-                      <small>
-                        {p.configured
-                          ? `${p.plannedCalls} calls · ${money(p.estimateMicros * p.plannedCalls)} estimated`
-                          : "Not configured on backend"}
-                      </small>
-                    </span>
-                    <Badge variant="outline">
-                      {p.id === "firecrawl" ? "Extract" : "Search"}
-                    </Badge>
-                  </label>
-                ))}
-              </div>
+              {mode === "replay" ? (
+                <div className="lab-replay-source">
+                  <Label htmlFor="replay-source">Saved live run</Label>
+                  <Select
+                    value={sourceRunId}
+                    onValueChange={(id) => {
+                      setSourceRunId(id);
+                      requestKey.current = null;
+                    }}
+                  >
+                    <SelectTrigger id="replay-source">
+                      <SelectValue placeholder="Choose a completed live run" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {data.runs
+                        .filter(
+                          (r) =>
+                            r.source === "live_controlled" &&
+                            r.status === "completed",
+                        )
+                        .map((r) => (
+                          <SelectItem key={r.id} value={r.id}>
+                            {r.title} · {date(r.createdAt)} · {r.id.slice(0, 8)}
+                          </SelectItem>
+                        ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="field-hint">
+                    Case IDs and inputs must match the saved run. Duplicate its
+                    suite to revise reference checks. New queries or URLs need
+                    live calls.
+                  </p>
+                </div>
+              ) : (
+                <div className="lab-provider-options">
+                  {data.providers.map((p) => (
+                    <label key={p.id} className="lab-provider-option">
+                      <Checkbox
+                        disabled={
+                          busy ||
+                          !!running ||
+                          !p.configured ||
+                          !plannedCalls(p.id)
+                        }
+                        checked={providers.includes(p.id)}
+                        onCheckedChange={(checked) => {
+                          requestKey.current = null;
+                          setProviders((v) =>
+                            checked === true
+                              ? [...v, p.id]
+                              : v.filter((x) => x !== p.id),
+                          );
+                        }}
+                      />
+                      <span>
+                        <strong>{providerNames[p.id]}</strong>
+                        <small>
+                          {p.configured
+                            ? `${plannedCalls(p.id)} calls · ${money(p.estimateMicros * plannedCalls(p.id))} estimated`
+                            : "Not configured on backend"}
+                        </small>
+                      </span>
+                      <Badge variant="outline">
+                        {p.id === "firecrawl" ? "Extract" : "Search"}
+                      </Badge>
+                    </label>
+                  ))}
+                </div>
+              )}
               <div className="lab-run-footer">
                 <span>
                   <strong>{money(estimate)}</strong> estimated ·{" "}
@@ -329,27 +513,38 @@ export function ProviderLabView({
                 <Button
                   disabled={
                     busy ||
-                    !!running ||
-                    !providers.length ||
-                    unavailable ||
-                    estimate > data.backendBudgetMicros ||
-                    estimate > data.dailyRemainingMicros
+                    !selectedSuite ||
+                    (mode === "replay"
+                      ? !sourceRunId
+                      : !!running ||
+                        !providers.length ||
+                        unavailable ||
+                        estimate > data.backendBudgetMicros ||
+                        estimate > data.dailyRemainingMicros)
                   }
                   onClick={() => void start()}
                 >
                   <Play />
                   {busy
                     ? "Starting…"
-                    : running
-                      ? "Test in progress"
-                      : "Run live test"}
+                    : mode === "replay"
+                      ? "Run replay"
+                      : running
+                        ? "Test in progress"
+                        : "Run live test"}
                 </Button>
               </div>
               <p className="field-hint">
-                Uses server-side provider keys. Daily allowance remaining:{" "}
-                {money(data.dailyRemainingMicros)} of{" "}
-                {money(data.dailyBudgetMicros)}. Resets at midnight UTC. No
-                automatic retries or background schedule.
+                {mode === "replay" ? (
+                  "Replays use saved evidence and require no provider keys or test allowance."
+                ) : (
+                  <>
+                    Uses server-side provider keys. Daily allowance remaining:{" "}
+                    {money(data.dailyRemainingMicros)} of{" "}
+                    {money(data.dailyBudgetMicros)}. Resets at midnight UTC. No
+                    automatic retries or background schedule.
+                  </>
+                )}
               </p>
             </Panel>
             <Panel
@@ -391,10 +586,13 @@ export function ProviderLabView({
             </Panel>
           </div>
           <details className="lab-methodology">
-            <summary>Test cases and methodology · {data.suiteVersion}</summary>
-            <p>{data.methodology}</p>
+            <summary>
+              Test cases and methodology · {selectedSuite?.title} · v
+              {selectedSuite?.revision}
+            </summary>
+            <p>{selectedSuite?.description}</p>
             <div className="lab-case-grid">
-              {data.cases.map((c) => (
+              {selectedSuite?.cases.map((c) => (
                 <div key={c.id}>
                   <Badge variant="outline">{c.kind}</Badge>
                   <strong>{c.title}</strong>
@@ -431,6 +629,7 @@ export function ProviderLabView({
                       <div>
                         <strong>{r.title}</strong>
                         <small>
+                          {r.source === "replay" ? "Replay" : "Live"} ·{" "}
                           {date(r.createdAt)} ·{" "}
                           {r.providers.map((p) => providerNames[p]).join(", ")}
                         </small>
@@ -468,11 +667,45 @@ export function ProviderLabView({
               </Button>
               <h2>{run.title}</h2>
               <p>
-                {date(run.createdAt)} · <span>Live controlled test</span> ·{" "}
-                {run.suiteVersion}
+                {date(run.createdAt)} ·{" "}
+                <span>
+                  {run.source === "replay"
+                    ? "Replay of saved responses"
+                    : "Live controlled test"}
+                </span>{" "}
+                · {run.suiteVersion}
               </p>
             </div>
             <div>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  const url = URL.createObjectURL(
+                    new Blob(
+                      [
+                        JSON.stringify(
+                          {
+                            scope: "private_workspace",
+                            exportedAt: new Date().toISOString(),
+                            run,
+                          },
+                          null,
+                          2,
+                        ),
+                      ],
+                      { type: "application/json" },
+                    ),
+                  );
+                  const a = document.createElement("a");
+                  a.href = url;
+                  a.download = `octolab-private-run-${run.id}.json`;
+                  a.click();
+                  setTimeout(() => URL.revokeObjectURL(url), 1000);
+                }}
+              >
+                <Download01 />
+                Export private run
+              </Button>
               <StateBadge label={run.status} />
               {run.status === "running" && (
                 <Button
@@ -499,22 +732,99 @@ export function ProviderLabView({
               )}
             </div>
           </div>
+          {run.source === "replay" && (
+            <p className="notice">
+              Historical responses · no new provider requests, timing, or usage.
+              Reviews belong to this replay.{" "}
+              <a href={`#lab/${run.sourceRunId}`}>Inspect original run</a>
+            </p>
+          )}
           <Panel
             title="Measured results"
             description="Search and extraction checks measure different tasks. This sample is diagnostic, not a provider ranking."
           >
             <BenchmarkTable
+              replay={run.source === "replay"}
               metrics={labMeasurements([run]).filter((m) =>
                 run.providers.includes(m.provider),
               )}
             />
             <p className="field-hint">
-              {money(run.spentMicros)} estimated used ·{" "}
-              {money(run.reservedMicros)} reserved · provider billing may
-              differ. Reference checks exclude calls without a usable response;
-              request failures remain visible separately.
+              {run.source === "replay" ? (
+                "No new requests, timing, or provider usage. Original execution statuses are shown for context; reference checks were recomputed."
+              ) : (
+                <>
+                  {money(run.spentMicros)} estimated used ·{" "}
+                  {money(run.reservedMicros)} reserved · provider billing may
+                  differ. Reference checks exclude calls without a usable
+                  response; request failures remain visible separately.
+                </>
+              )}
             </p>
           </Panel>
+          {data && (
+            <Panel
+              title="Compare with a baseline"
+              description="Inspect changes case by case. Replays test checks; live runs measure fresh execution."
+            >
+              <div className="lab-evidence-filters">
+                <div>
+                  <Label htmlFor="compare-baseline">Baseline run</Label>
+                  <Select value={baselineId} onValueChange={setBaselineId}>
+                    <SelectTrigger id="compare-baseline">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">
+                        Choose a completed run
+                      </SelectItem>
+                      {data.runs
+                        .filter(
+                          (r) => r.id !== run.id && r.status === "completed",
+                        )
+                        .map((r) => (
+                          <SelectItem key={r.id} value={r.id}>
+                            {r.source === "replay" ? "Replay" : "Live"} ·{" "}
+                            {r.title} · {r.id.slice(0, 8)}
+                          </SelectItem>
+                        ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label htmlFor="compare-provider">Compare provider</Label>
+                  <Select
+                    value={comparisonProvider}
+                    onValueChange={(p) =>
+                      setComparisonProvider(p as ProviderId)
+                    }
+                  >
+                    <SelectTrigger id="compare-provider">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {run.providers.map((p) => (
+                        <SelectItem key={p} value={p}>
+                          {providerNames[p]}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              {baselineId !== "none" && (
+                <ProviderComparison
+                  plan={{
+                    provider: comparisonProvider,
+                    verification: "integration",
+                    baselineRunId: baselineId,
+                    followupRunId: run.id,
+                  }}
+                  runs={data.runs}
+                />
+              )}
+            </Panel>
+          )}
           <Panel
             title="Inspect the evidence"
             description="Open a receipt to see the exact input, captured results, and review history."
@@ -616,6 +926,64 @@ export function ProviderLabView({
           </details>
         </>
       )}
+      <Dialog
+        open={!!suiteEditor}
+        onOpenChange={(open) => {
+          if (!open) setSuiteEditor(null);
+        }}
+      >
+        <DialogContent className="company-plan-dialog">
+          <DialogHeader>
+            <DialogTitle>
+              {suiteEditor?.initial && !suiteEditor.duplicate
+                ? "Edit test suite"
+                : "Create test suite"}
+            </DialogTitle>
+            <DialogDescription>
+              Save versioned cases and explicit checks before running a
+              comparison.
+            </DialogDescription>
+          </DialogHeader>
+          {suiteEditor && (
+            <ProviderSuiteEditor
+              initial={suiteEditor.initial}
+              duplicate={suiteEditor.duplicate}
+              onSaved={(suite) => {
+                setSuiteId(suite.id);
+                setData((d) =>
+                  d
+                    ? {
+                        ...d,
+                        suites: [
+                          ...d.suites.filter((s) => s.id !== suite.id),
+                          suite,
+                        ],
+                      }
+                    : d,
+                );
+                setProviders(
+                  data?.providers
+                    .filter(
+                      (p) =>
+                        p.configured &&
+                        suite.cases.some((c) =>
+                          p.id === "firecrawl"
+                            ? c.kind === "extract"
+                            : c.kind === "search",
+                        ),
+                    )
+                    .map((p) => p.id) ?? [],
+                );
+                requestKey.current = null;
+                setSuiteEditor(null);
+                setNotice(
+                  "Suite saved. Earlier runs retain their original cases and checks.",
+                );
+              }}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
       <Dialog
         open={!!receipt}
         onOpenChange={(open) => {

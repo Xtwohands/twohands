@@ -13,7 +13,10 @@ export function ProviderComparison({
   plan,
   runs,
 }: {
-  plan: Experiment;
+  plan: Pick<
+    Experiment,
+    "provider" | "verification" | "baselineRunId" | "followupRunId"
+  >;
   runs: LabRun[];
 }) {
   const baseline = runs.find((r) => r.id === plan.baselineRunId);

@@ -6,11 +6,8 @@ export const API_KEY_SCOPES = [
   "usage:read",
 ] as const;
 export type ApiKeyScope = (typeof API_KEY_SCOPES)[number];
-export const API_KEY_TOOLS = [
-  "exa_search",
-  "tavily_search",
-  "firecrawl_extract",
-] as const;
+export { toolIdentifiers as API_KEY_TOOLS } from "./provider-identifiers.js";
+import { toolIdentifiers as API_KEY_TOOLS } from "./provider-identifiers.js";
 export interface WorkspaceApiKey {
   id: string;
   workspaceId: string;

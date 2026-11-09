@@ -188,6 +188,7 @@ function readRoute() {
       "benchmarks",
       "plans",
       "insights",
+      "activity",
       "team",
     ].includes(section)
       ? section
@@ -657,6 +658,7 @@ export function ObservationApp() {
         ) : surface === "business" ? (
           [
             { id: "overview", label: "Overview", icon: Grid01 },
+            { id: "activity", label: "Live usage", icon: Activity },
             {
               id: "benchmarks",
               label: "Controlled tests",
