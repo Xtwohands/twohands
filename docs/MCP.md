@@ -77,11 +77,11 @@ For ordinary use, keep the host’s interactive prompts. Do not use a blanket sa
 
 ## Configuration and troubleshooting
 
-- `APILAYER_URL` defaults to `http://127.0.0.1:3001/api`. Override it in the bridge environment for another local port. Only loopback HTTP addresses without URL credentials, query strings, or fragments are accepted.
+- `APILAYER_URL` defaults to `http://127.0.0.1:3001/api`. Local HTTP is restricted to loopback. For a hosted server, explicitly set an HTTPS URL ending in `/api` and a scoped `APILAYER_API_KEY`. A reverse-proxy prefix such as `https://tools.example.com/octolab/api` is supported. URL credentials, query strings, fragments and non-loopback HTTP are rejected. HTTPS uses normal certificate verification and never follows redirects.
 - `APILAYER_API_KEY` supplies a scoped workspace credential and takes precedence over legacy `API_TOKEN`. A rejected key never falls back to the owner token. In PostgreSQL mode, sign in as a workspace owner or platform administrator, select the intended workspace, and issue the key from API keys; see [API key setup](API_KEYS.md).
 - PostgreSQL account mode requires a scoped key for the bridge. `API_TOKEN` and `ADMIN_API_TOKEN` do not authenticate it; browser Auth sessions are not copied into MCP configuration. The key resolves its own workspace on the backend and survives browser sign-out until revoked, expired, or capped.
 - Without `APILAYER_API_KEY`, the bridge uses `API_TOKEN` for SQLite/local compatibility, matching the HTTP server when configured. The local browser owner token stays in tab memory; the bridge reads its environment.
-- Keep `npm start` running. The stdio bridge does not independently open either storage backend or start the HTTP server.
+- Keep the configured server available (`npm start` for local use). The stdio bridge does not open either storage backend or start a server. HTTPS connections require a scoped `oct_key_` credential and never forward `API_TOKEN` or retry a rejected key with owner access. Requests have one 135-second deadline and a 2 MB response limit; failures may represent work already submitted, so reuse the same request key and arguments when inspecting or retrying saved operations.
 - Provider keys may be configured while expired or invalid. Only actual execution verifies access.
 - Host tool timeouts should allow the configured provider timeout plus transport overhead. Codex supports `mcp_servers.apilayer.tool_timeout_sec`; 150 seconds covers APILayer’s maximum configurable provider deadline.
 - After changing MCP tools, rebuild and restart the client’s MCP process. An already-running client can keep an earlier catalog until restarted.
@@ -102,3 +102,16 @@ References: [MCP tools specification](https://modelcontextprotocol.io/specificat
 Send `discover_tools` a provider-neutral `operations` array plus the immediate `need` and relevant `context`; octolab includes the recorded intent and finds compatible candidates with costs and reputation evidence. Use `operation: "search"` with `query`, or `operation: "extract"` with a public HTTPS `url`. Legacy provider-specific `requests` are supported and expand into relevant alternatives. See [the complete discovery contract](TOOL_DISCOVERY.md).
 
 Every new provider call requires `statedReason`: a brief, non-empty explanation of the tool choice, not private reasoning. After upgrading, reconnect the MCP client so it reloads the required input schema. Historical calls remain readable with `get_evidence`; no explanation is invented for older calls.
+
+## Hosted stdio bridge
+
+Set these values in the MCP process environment (replace the example origin with the actual deployed service):
+
+```text
+APILAYER_URL=https://tools.example.com/api
+APILAYER_API_KEY=<scoped key issued by the workspace owner>
+```
+
+Use the existing local `build/mcp-stdio.js` entrypoint. The bridge process runs locally and connects to the configured hosted service; it does not require a local database or API server. Existing APILayer registrations and tool names remain unchanged. Grant only the scopes/tools needed by the agent, and revoke or rotate this key through the workspace. Do not put a browser session token, provider key, or owner token in `APILAYER_API_KEY`.
+
+Server errors are returned as bounded status explanations without reflecting raw remote error bodies or credentials. HTTPS requests are pinned to the configured origin; redirects require changing the explicit configuration rather than automatically forwarding a key. A connection failure never causes an automatic provider retry.

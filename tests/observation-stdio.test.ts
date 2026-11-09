@@ -184,7 +184,7 @@ it("returns an auth error through the protocol without leaking the server token"
   expect(JSON.stringify(result)).not.toContain("stdio-test-token");
   expect(await obs.db.list()).toHaveLength(0);
 });
-it("refuses a non-loopback bridge destination before sending requests", async () => {
+it("requires an explicit scoped key for an HTTPS bridge destination before sending requests", async () => {
   await expect(connect("https://example.com/api")).rejects.toThrow();
 });
 it("keeps independently observed Claude and Codex client connections", async () => {
