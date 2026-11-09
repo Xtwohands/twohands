@@ -145,7 +145,7 @@
 }
 .company-tabs [data-slot="tabs-trigger"]::after {
   bottom: 0 !important;
-  background: var(--brand-orange);
+  background: #bdbdbb;
 }
 .company-tabs [data-slot="tabs-content"] {
   display: grid;

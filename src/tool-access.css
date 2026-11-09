@@ -26,11 +26,11 @@
   color: #aaaab3;
 }
 .tool-access-list button[aria-pressed="true"] {
-  border-color: #a8b4cf;
+  border-color: #555;
   background: #232327;
 }
 .tool-access-list button:focus-visible {
-  outline: 2px solid #a8b4cf;
+  outline: 2px solid var(--ring);
   outline-offset: 2px;
 }
 .tool-access-fields {

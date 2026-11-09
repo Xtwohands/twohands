@@ -1,0 +1,377 @@
+/* Approved dark grid system. Cyan belongs to actions and keyboard focus. */
+:root {
+  --grid-gap: 16px;
+  --panel-surface: #1e1e1e;
+  --panel-subtle: #242424;
+  --panel-line: #303030;
+}
+
+/* White labels sit on a deeper cyan fill; the accent ring keeps the brand cyan. */
+[data-slot="button"][data-variant="default"] {
+  color: #fff;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background:
+    linear-gradient(var(--primary), var(--primary)) padding-box,
+    linear-gradient(180deg, #ffffff66, #ffffff0a) border-box;
+  box-shadow:
+    0 0 0 1px var(--brand-cyan),
+    0 3px 6px #0003,
+    inset 0 0 6px 2px #ffffff3d;
+  transition: transform 140ms ease-out;
+}
+[data-slot="button"][data-variant="default"]:hover:not(:disabled) {
+  filter: none;
+  box-shadow:
+    0 0 0 1px var(--brand-cyan),
+    0 3px 6px #0003,
+    inset 0 0 6px 2px #ffffff4a;
+}
+[data-slot="button"][data-variant="default"]:active:not(:disabled) {
+  transform: translateY(1px);
+}
+[data-slot="button"][data-variant="link"] {
+  color: var(--brand-cyan);
+}
+[data-slot="button"][data-variant="default"]:disabled {
+  background: #292929;
+  color: #a2a2a2;
+  box-shadow: none;
+  border-color: #3a3a3a;
+  opacity: 0.65;
+}
+[data-slot="button"][data-variant="outline"],
+[data-slot="button"][data-variant="secondary"] {
+  background: var(--panel-surface);
+  border: 1px solid var(--panel-line);
+  color: #dededc;
+  box-shadow: 0 1px 2px #0000000d;
+}
+[data-slot="button"][data-variant="outline"]:hover,
+[data-slot="button"][data-variant="secondary"]:hover {
+  background: #292929;
+  border-color: #454545;
+}
+
+.observation-shell .obs-sidebar {
+  background: #121212;
+  border-color: #292929;
+  padding: 24px 14px 16px;
+}
+.observation-shell .obs-brand {
+  padding: 0 12px 28px;
+}
+.observation-shell .obs-sidebar nav a.selected svg,
+.mobile-sidebar-content a.selected svg {
+  color: #dededc;
+}
+.obs-sidebar .sidebar-bottom {
+  padding-top: 20px;
+}
+.obs-sidebar .account-controls,
+.mobile-sidebar-content .account-controls,
+.portal-mobile-nav .account-controls {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
+}
+.observation-shell .obs-topbar {
+  background: #181818;
+  border-color: #2b2b2b;
+}
+.observation-shell .tool-workspace {
+  --ws-panel: var(--panel-surface);
+}
+.tool-workspace .ws-metrics,
+.tool-workspace .ws-chart-grid,
+.tool-workspace .ws-catalog-grid {
+  gap: var(--grid-gap);
+}
+.tool-workspace .ws-metrics,
+.tool-workspace .ws-panel {
+  margin-bottom: var(--grid-gap);
+}
+.tool-workspace .ws-metric,
+.tool-workspace .ws-panel,
+.tool-workspace .ws-tool-card {
+  border-color: var(--panel-line);
+  border-radius: 11px;
+  background: var(--panel-surface);
+}
+.tool-workspace .ws-chart-grid {
+  grid-template-columns: minmax(0, 1.85fr) minmax(235px, 1fr);
+}
+.tool-workspace .ws-panel > header {
+  padding: 19px 20px 16px;
+}
+.tool-workspace .ws-connect-banner {
+  background: var(--panel-surface);
+  border-color: var(--panel-line);
+  border-radius: 11px;
+  margin: 0 0 var(--grid-gap);
+}
+.tool-workspace .ws-metric:hover,
+.tool-workspace .ws-tool-card:hover {
+  border-color: #505050;
+}
+
+/* Soft pills stay quiet so tool results and charts remain the primary content. */
+[data-slot="badge"],
+.tool-workspace .ws-status,
+.portal-status {
+  min-height: 23px;
+  padding: 2px 8px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: var(--panel-subtle);
+  color: #c4c4c1;
+  font-size: 10px;
+  font-weight: 450;
+  line-height: 1.5;
+  gap: 6px;
+}
+.tool-workspace .ws-status-failed {
+  color: #edb3b3;
+}
+.tool-workspace .ws-category-tabs button[aria-pressed="true"] {
+  background: #303030;
+  border-color: transparent;
+  color: #eeeeec;
+}
+.tool-workspace .ws-category-tabs button {
+  align-items: center;
+  padding: 6px 11px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: #242424;
+}
+.tool-workspace .ws-category-tabs {
+  gap: 8px;
+  border: 0;
+  flex-wrap: wrap;
+}
+.tool-workspace .ws-category-tabs span {
+  border: 0;
+  border-radius: 999px;
+  background: #383838;
+}
+
+.account-menu-trigger {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+  min-height: 57px;
+  padding: 9px 10px;
+  border: 1px solid #303030;
+  border-radius: 9px;
+  background: #1b1b1b;
+  color: #dededc;
+  text-align: left;
+  cursor: pointer;
+}
+.account-menu-trigger:hover,
+.account-menu-trigger[data-state="open"] {
+  background: #242424;
+  border-color: #454545;
+}
+.account-menu-avatar {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid #3a3a3a;
+  border-radius: 8px;
+  background: #292929;
+  flex-shrink: 0;
+}
+.account-menu-avatar svg {
+  width: 16px;
+  height: 16px;
+}
+.account-menu-identity {
+  min-width: 0;
+  flex: 1;
+}
+.account-menu-identity strong,
+.account-menu-identity small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.account-menu-identity strong {
+  font-size: 11px;
+  font-weight: 500;
+}
+.account-menu-identity small {
+  font-size: 10px;
+  color: #9c9c99;
+  margin-top: 2px;
+}
+.account-menu-chevron {
+  width: 14px;
+  height: 14px;
+  color: #999995;
+  flex-shrink: 0;
+}
+.account-menu-popover {
+  width: 260px;
+  max-width: calc(100vw - 24px);
+  padding: 6px;
+  border: 1px solid #393939;
+  border-radius: 11px;
+  background: #202020;
+  color: #e7e7e5;
+  box-shadow:
+    0 12px 35px #0005,
+    0 2px 6px #0003;
+  z-index: 100;
+}
+.account-menu-heading {
+  padding: 10px 9px 13px;
+  border-bottom: 1px solid #333;
+  margin-bottom: 5px;
+}
+.account-menu-heading strong,
+.account-menu-heading small {
+  display: block;
+  overflow-wrap: anywhere;
+}
+.account-menu-heading strong {
+  font-size: 12px;
+  font-weight: 500;
+}
+.account-menu-heading small {
+  font-size: 11px;
+  color: #aaa;
+  margin-top: 3px;
+}
+.account-menu-popover nav {
+  display: grid;
+  gap: 2px;
+}
+.account-menu-popover nav a,
+.account-menu-popover nav button,
+.account-menu-signout {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #d5d5d3;
+  font: inherit;
+  font-size: 12px;
+  text-decoration: none;
+  cursor: pointer;
+}
+.account-menu-popover nav a:hover,
+.account-menu-popover nav button:hover,
+.account-menu-signout:hover {
+  background: #2e2e2e;
+  color: #fff;
+}
+.account-menu-popover nav svg,
+.account-menu-signout svg {
+  width: 16px;
+  height: 16px;
+  color: #aaa;
+}
+.account-menu-popover nav button {
+  text-align: left;
+}
+.account-help-topics {
+  display: grid;
+  gap: 10px;
+}
+.account-help-topics a {
+  display: grid;
+  gap: 6px;
+  padding: 16px;
+  border: 1px solid #363636;
+  border-radius: 9px;
+  background: #202020;
+  text-decoration: none;
+}
+.account-help-topics a:hover {
+  border-color: #555;
+  background: #252525;
+}
+.account-help-topics strong {
+  font-size: 13px;
+  font-weight: 500;
+  color: #eee;
+}
+.account-help-topics span {
+  font-size: 12px;
+  line-height: 1.7;
+  color: #aaa;
+}
+.account-menu-signout {
+  border-top: 1px solid #333;
+  border-radius: 0 0 6px 6px;
+  margin-top: 5px;
+}
+.account-menu-controls {
+  padding: 7px 9px 12px;
+  border-bottom: 1px solid #333;
+  margin-bottom: 5px;
+}
+.account-menu-controls label {
+  display: grid;
+  gap: 7px;
+  color: #aaa;
+  font-size: 11px;
+}
+.account-menu-controls select {
+  width: 100%;
+  min-width: 0;
+  background: #292929;
+  border: 1px solid #444;
+  border-radius: 6px;
+  color: #eee;
+  padding: 8px;
+  font: inherit;
+}
+
+@media (min-width: 701px) {
+  .observation-shell .obs-sidebar {
+    width: 240px;
+    transform: none;
+  }
+  .observation-shell .obs-body {
+    margin-left: 240px;
+    width: calc(100% - 240px);
+  }
+  .observation-shell .mobile-nav-button {
+    display: none;
+  }
+}
+@media (max-width: 1100px) {
+  .tool-workspace .ws-chart-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@media (max-width: 700px) {
+  .tool-workspace .ws-metrics {
+    gap: 10px;
+  }
+  .account-menu-trigger {
+    min-height: 56px;
+  }
+  .mobile-sidebar-content .sidebar-bottom {
+    margin-top: auto;
+    padding-top: 24px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-slot="button"],
+  .account-menu-trigger {
+    transition: none;
+  }
+}

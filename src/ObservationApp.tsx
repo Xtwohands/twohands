@@ -25,7 +25,6 @@ import {
   Grid01,
   BarChartSquare02,
   ShieldTick,
-  Settings01,
   Link01,
   Plus,
   SearchLg,
@@ -594,20 +593,19 @@ export function ObservationApp() {
         links={[]}
         adminPage={route.page}
       >
-        <Panel title="Select a workspace">
+        <Panel title="Select a customer account">
           <p>
-            Workspace operations, payment disputes, and provider tests are
-            scoped to a workspace. Select one to open this page.
+            Customer activity, payment disputes, and provider tests are scoped
+            to a customer account. Select one to open this page.
           </p>
           {account.profile.workspaces.length ? (
             <AccountControls showIdentity={false} />
           ) : (
             <>
               <p>
-                No workspaces are available yet. Company reviews and Tool access
-                remain available.
+                No customer accounts are available yet. Company reviews and Tool
+                access remain available.
               </p>
-              <Button onClick={account.create}>Create workspace</Button>
             </>
           )}
         </Panel>
@@ -625,13 +623,6 @@ export function ObservationApp() {
         <img src="/octolab.svg" alt="" width="32" height="32" />
         octolab
       </a>
-      <div className="portal-area">
-        {surface === "user"
-          ? "Dashboard"
-          : surface === "business"
-            ? "Tool company preview"
-            : "Administration"}
-      </div>
       <nav
         aria-label={
           surface === "user"
@@ -773,13 +764,6 @@ export function ObservationApp() {
         )}
       </nav>
       <div className="sidebar-bottom">
-        <a
-          href="#settings"
-          className={route.page === "settings" ? "selected" : ""}
-        >
-          <Settings01 />
-          Settings
-        </a>
         <AccountControls showWorkspace={false} />
       </div>
     </>

@@ -470,26 +470,6 @@ export function UserDashboardView({
         <>
           {(section === "overview" || section === "usage") && (
             <>
-              {section === "overview" && !connection?.clients.length && (
-                <div className="ws-connect-banner">
-                  <span className="ws-banner-icon">
-                    <TerminalSquare />
-                  </span>
-                  <div>
-                    <strong>Your tools are ready. Bring your agent.</strong>
-                    <p>
-                      Connect Claude, Codex, or any MCP client to start using{" "}
-                      {ready} available tools.
-                    </p>
-                  </div>
-                  <Button variant="outline" size="sm" asChild>
-                    <a href="#dashboard/connections">
-                      Set up connection
-                      <ArrowRight />
-                    </a>
-                  </Button>
-                </div>
-              )}
               <div className="ws-metrics">
                 <Metric
                   label="Estimated cost"
@@ -642,6 +622,26 @@ export function UserDashboardView({
                     ))}
                   </div>
                 </Section>
+              )}
+              {section === "overview" && !connection?.clients.length && (
+                <div className="ws-connect-banner">
+                  <span className="ws-banner-icon">
+                    <TerminalSquare />
+                  </span>
+                  <div>
+                    <strong>Your tools are ready. Bring your agent.</strong>
+                    <p>
+                      Connect Claude, Codex, or any MCP client to start using{" "}
+                      {ready} available tools.
+                    </p>
+                  </div>
+                  <Button variant="outline" size="sm" asChild>
+                    <a href="#dashboard/connections">
+                      Set up connection
+                      <ArrowRight />
+                    </a>
+                  </Button>
+                </div>
               )}
             </>
           )}
