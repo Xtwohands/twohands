@@ -16,6 +16,7 @@ const url = process.env.OCTOLAB_TEST_POSTGRES_URL;
 const suite = url ? describe : describe.skip;
 const intent = {
   title: "Allowance fixture",
+  constraints: "",
   objective: "Verify platform authority without paid network calls",
   criteria: [{ text: "Isolated evidence", weight: 1 }],
   model: "fixture",
@@ -327,7 +328,7 @@ suite("operator-owned hosted workspace allowances", () => {
           spentMicros: 7000,
           reservedMicros: 0,
         });
-        expect((await obs.execute(s.id, args)).replayed).toBe(true);
+        expect(await obs.execute(s.id, args)).toMatchObject({ replayed: true });
         expect(search).toHaveBeenCalledTimes(1);
         expect((await store.allowance.status()).spentMicros).toBe(7000);
       });
@@ -408,6 +409,118 @@ suite("operator-owned hosted workspace allowances", () => {
       await expect(
         lab.start({ requestKey: randomUUID(), providers: ["exa"] }),
       ).rejects.toThrow(/operator allowance/);
+    });
+  });
+  it("recovers interrupted observation receipts and key reservations in the same conservative settlement", async () => {
+    await store.scope.run(workspace, async () => {
+      await grantFixtureAllowance(store, 14000);
+      const session = await obs.createAgentSession(intent),
+        { key } = await obs.db.apiKeys.create({
+          name: "Recovery fixture",
+          requestKey: randomUUID(),
+          scopes: ["tools:execute"],
+          limitUsd: "1",
+        });
+      const id = randomUUID();
+      await store.db.transaction(async () => {
+        await store.allowance.reserve(id, "observation", 7000);
+        await obs.db.apiKeys.reserve(key.id, id, "exa_search", 7000);
+        session.reservedMicros = 7000;
+        await obs.db.save(session);
+        await obs.db.saveCall(
+          {
+            id,
+            sessionId: session.id,
+            requestKey: "interrupted-fixture",
+            tool: "exa_search",
+            provider: "exa",
+            arguments: { query: "fixture" },
+            statedReason: "Fixture recovery",
+            status: "running",
+            startedAt: new Date().toISOString(),
+            estimateMicros: 7000,
+            apiKeyId: key.id,
+          },
+          "fixture-signature",
+        );
+      });
+      const reopened = new Store(":unused:", url!, workspace);
+      try {
+        const recovered = new Observatory(reopened);
+        await recovered.ready;
+        await recovered.db.recover();
+        await reopened.allowance.recover();
+        await recovered.db.recover();
+        await reopened.allowance.recover();
+        expect(await reopened.allowance.status()).toMatchObject({
+          spentMicros: 7000,
+          reservedMicros: 0,
+        });
+        expect(await recovered.db.apiKeys.get(key.id)).toMatchObject({
+          spentMicros: 7000,
+          reservedMicros: 0,
+        });
+        expect(await recovered.require(session.id)).toMatchObject({
+          spentMicros: 7000,
+          reservedMicros: 0,
+        });
+        expect((await recovered.db.calls(session.id))[0].status).toBe(
+          "interrupted",
+        );
+        expect((await recovered.db.detail(session.id))?.integrity).toBe(true);
+      } finally {
+        await reopened.close();
+      }
+      expect(search).not.toHaveBeenCalled();
+    });
+  });
+  it("charges a controlled call once and blocks remaining lab transports when paused mid-run", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    search.mockImplementation(async () => {
+      await gate;
+      return { sources: [], httpStatus: 200 };
+    });
+    await store.scope.run(workspace, async () => {
+      await grantFixtureAllowance(store, 100000);
+      const lab = new ProviderLab(store, {
+        search,
+        scrape: async () => ({ text: "", httpStatus: 200 }),
+      });
+      try {
+        const run = await lab.start({
+          requestKey: randomUUID(),
+          providers: ["exa"],
+        });
+        await vi.waitFor(() => expect(search).toHaveBeenCalledTimes(1));
+        await store.allowance.change(
+          workspace,
+          admin.userId,
+          grant({ revision: 1, limitMicros: 100000, paused: true }),
+        );
+        release();
+        await vi.waitFor(() => expect(lab.active.size).toBe(0));
+        expect(await store.allowance.status()).toMatchObject({
+          state: "paused",
+          spentMicros: 7000,
+          reservedMicros: 0,
+        });
+        expect(search).toHaveBeenCalledTimes(1);
+        const finished = await lab.get(run.id);
+        expect(finished.spentMicros).toBe(7000);
+        expect(
+          finished.calls.filter((c) => c.status === "succeeded"),
+        ).toHaveLength(1);
+        expect(
+          finished.calls.filter((c) => c.status === "skipped"),
+        ).toHaveLength(4);
+        await lab.recover();
+        await store.allowance.recover();
+        expect((await store.allowance.status()).spentMicros).toBe(7000);
+      } finally {
+        release?.();
+        await vi.waitFor(() => expect(lab.active.size).toBe(0));
+      }
     });
   });
 });
