@@ -2,7 +2,7 @@ import { Accounts } from "./accounts.js";
 import { config } from "./config.js";
 import { PostgresDatabase } from "./database.js";
 import { claimRuntime } from "./migration.js";
-import { Store } from "./store.js";
+import { openConfiguredStore } from "./runtime-storage.js";
 import { Engine } from "./engine.js";
 import { createApp } from "./app.js";
 import { Observatory } from "./observation.js";
@@ -18,11 +18,7 @@ if (!["sqlite", "postgres"].includes(config.storageBackend))
   throw new Error("STORAGE_BACKEND must be sqlite or postgres.");
 if (config.storageBackend === "postgres" && !config.databaseUrl)
   throw new Error("Set DATABASE_URL before choosing Postgres.");
-const store = new Store(
-  config.dbPath,
-  config.storageBackend === "postgres" ? config.databaseUrl : undefined,
-  config.legacyWorkspaceId,
-);
+const store = openConfiguredStore();
 const releaseRuntime =
   store.db instanceof PostgresDatabase
     ? await claimRuntime(store.db)

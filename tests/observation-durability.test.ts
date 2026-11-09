@@ -184,7 +184,7 @@ it("retention deletes old evidence but retains open cases and recent sessions", 
   try {
     const result = await execute(
       process.execPath,
-      ["--import", "tsx", resolve("server/retention.ts")],
+      ["--import", "tsx", resolve("server/retention.ts"), "--apply"],
       { env: { ...process.env, DB_PATH: path, RETENTION_DAYS: "30" } },
     );
     expect(result.stdout).toContain("1 observation sessions");
