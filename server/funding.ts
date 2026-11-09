@@ -7,7 +7,6 @@ import {
   type DepositIntent,
   type FundingSummary,
 } from "./funding-types.js";
-
 export const address = z
   .string()
   .regex(/^0x[0-9a-fA-F]{40}$/, "Enter a valid EVM wallet address.")
@@ -127,7 +126,6 @@ const receiptSchema = z.object({
     )
     .max(5000),
 });
-
 export class FundingService {
   readonly active = new Set<string>();
   readonly ledger: FundingLedger;
@@ -137,20 +135,16 @@ export class FundingService {
     private rpc: Rpc = rpcClient(settings.rpcUrl),
     private now = () => Date.now(),
   ) {
-    store.db
-      .exec(`CREATE TABLE IF NOT EXISTS funding_intents(id TEXT PRIMARY KEY,request_key TEXT NOT NULL UNIQUE,body TEXT NOT NULL);
-      CREATE TABLE IF NOT EXISTS funding_credits(id TEXT PRIMARY KEY,intent_id TEXT NOT NULL UNIQUE REFERENCES funding_intents(id),chain_id INTEGER NOT NULL,transaction_hash TEXT NOT NULL,log_index TEXT NOT NULL,amount_units INTEGER NOT NULL CHECK(amount_units>0),created_at TEXT NOT NULL,UNIQUE(chain_id,transaction_hash));
-      CREATE TABLE IF NOT EXISTS funding_events(id INTEGER PRIMARY KEY AUTOINCREMENT,intent_id TEXT NOT NULL REFERENCES funding_intents(id),body TEXT NOT NULL);`);
     this.ledger = new FundingLedger(store);
   }
-  summary(): FundingSummary {
+  async summary(): Promise<FundingSummary> {
     const recipient = address.safeParse(this.settings.recipient);
     const enabled = this.settings.enabled && recipient.success;
-    const balance = this.store.db
+    const balance = (await this.store.db
       .prepare(
         "SELECT COALESCE(SUM(amount_units),0) AS balance, COUNT(*) AS count FROM funding_credits",
       )
-      .get()!;
+      .get())!;
     return {
       enabled,
       unavailableReason: !this.settings.enabled
@@ -160,32 +154,33 @@ export class FundingService {
           : null,
       network: BASE_SEPOLIA,
       recipient: recipient.success ? recipient.data : null,
-      balanceUnits: this.ledger.balance(),
+      balanceUnits: await this.ledger.balance(),
       onchainBalanceUnits: Number(balance.balance),
       onchainDeposits: Number(balance.count),
       totalDeposits: Number(balance.count),
-      intents: this.store.db
-        .prepare(
-          "SELECT body FROM funding_intents ORDER BY rowid DESC LIMIT 100",
-        )
-        .all()
-        .map((r) => JSON.parse(r.body as string)),
+      intents: (
+        await this.store.db
+          .prepare(
+            "SELECT body FROM funding_intents ORDER BY rowid DESC LIMIT 100",
+          )
+          .all()
+      ).map((r) => JSON.parse(r.body as string)),
       testnet: true,
       spendableForProviders: false,
     };
   }
-  get(id: string): DepositIntent {
-    const row = this.store.db
+  async get(id: string): Promise<DepositIntent> {
+    const row = await this.store.db
       .prepare("SELECT body FROM funding_intents WHERE id=?")
       .get(id);
     if (!row) throw new FundingError(404, "Deposit request not found.");
     return JSON.parse(row.body as string);
   }
-  private save(intent: DepositIntent, event: string) {
-    this.store.db
+  private async save(intent: DepositIntent, event: string) {
+    await this.store.db
       .prepare("UPDATE funding_intents SET body=? WHERE id=?")
       .run(JSON.stringify(intent), intent.id);
-    this.store.db
+    await this.store.db
       .prepare("INSERT INTO funding_events(intent_id,body) VALUES (?,?)")
       .run(
         intent.id,
@@ -204,9 +199,9 @@ export class FundingService {
       );
     return intent;
   }
-  create(raw: unknown) {
+  async create(raw: unknown) {
     const input = depositInput.parse(raw);
-    const existing = this.store.db
+    const existing = await this.store.db
       .prepare("SELECT body FROM funding_intents WHERE request_key=?")
       .get(input.requestKey);
     if (existing) {
@@ -218,7 +213,7 @@ export class FundingService {
         );
       return intent;
     }
-    const summary = this.summary();
+    const summary = await this.summary();
     if (!summary.enabled || !summary.recipient)
       throw new FundingError(409, summary.unavailableReason!);
     if (input.sender === summary.recipient)
@@ -226,10 +221,26 @@ export class FundingService {
         400,
         "Use a sending wallet different from the receiving address.",
       );
-    return this.store.transaction(() => {
-      const count = this.store.db
+    return await this.store.transaction(async () => {
+      const replay = await this.store.db
+        .prepare("SELECT body FROM funding_intents WHERE request_key=?")
+        .get(input.requestKey);
+      if (replay) {
+        const previous = JSON.parse(replay.body as string) as DepositIntent;
+        if (
+          previous.amountUnits !== input.amount ||
+          previous.sender !== input.sender
+        )
+          throw new FundingError(
+            409,
+            "This request key was already used with different deposit details.",
+          );
+        return previous;
+      }
+
+      const count = (await this.store.db
         .prepare("SELECT COUNT(*) AS n FROM funding_intents")
-        .get()!;
+        .get())!;
       if (Number(count.n) >= 1000)
         throw new FundingError(409, "Workspace deposit request limit reached.");
       const at = new Date(this.now()).toISOString();
@@ -251,18 +262,32 @@ export class FundingService {
         message:
           "Send the exact test USDC amount on Base Sepolia, then submit its transaction hash.",
       };
-      this.store.db
+      await this.store.db
         .prepare("INSERT INTO funding_intents VALUES (?,?,?)")
         .run(intent.id, input.requestKey, JSON.stringify(intent));
-      return this.save(intent, "deposit_created");
+      return await this.save(intent, "deposit_created");
     });
   }
   async verify(id: string, raw: unknown): Promise<DepositIntent> {
+    const operation = `${this.store.workspaceId}:${id}`;
+    if (this.active.has(operation))
+      throw new FundingError(409, "This deposit is already being checked.");
+    this.active.add(operation);
+    try {
+      return await this.verifyPayment(id, raw);
+    } finally {
+      this.active.delete(operation);
+    }
+  }
+  private async verifyPayment(
+    id: string,
+    raw: unknown,
+  ): Promise<DepositIntent> {
     const { transactionHash } = z
       .object({ transactionHash: txHash })
       .strict()
       .parse(raw);
-    const original = this.get(id);
+    const original = await this.get(id);
     if (original.status === "credited") {
       if (original.transactionHash !== transactionHash)
         throw new FundingError(
@@ -271,13 +296,11 @@ export class FundingService {
         );
       return original;
     }
-    if (!this.summary().enabled)
+    if (!(await this.summary()).enabled)
       throw new FundingError(
         409,
         "Testnet deposit verification is not enabled on this server.",
       );
-    if (this.active.has(id))
-      throw new FundingError(409, "This deposit is already being checked.");
     if (
       original.lastCheckedAt &&
       this.now() - Date.parse(original.lastCheckedAt) < 10000
@@ -287,7 +310,7 @@ export class FundingService {
         "Wait ten seconds before checking this deposit again.",
       );
     if (
-      this.store.db
+      await this.store.db
         .prepare(
           "SELECT id FROM funding_credits WHERE chain_id=? AND transaction_hash=?",
         )
@@ -297,13 +320,14 @@ export class FundingService {
         409,
         "This transaction has already been credited.",
       );
-    this.active.add(id);
     try {
       original.transactionHash = transactionHash;
       original.lastCheckedAt = new Date(this.now()).toISOString();
       original.status = "pending";
       original.message = "Checking the network.";
-      this.store.transaction(() => this.save(original, "verification_started"));
+      await this.store.transaction(
+        async () => await this.save(original, "verification_started"),
+      );
       const chain = quantity.parse(await this.rpc("eth_chainId", []));
       if (BigInt(chain) !== BigInt(BASE_SEPOLIA.chainId))
         throw new FundingError(
@@ -320,16 +344,16 @@ export class FundingService {
           original.status === "expired"
             ? "The transfer window expired. A transfer mined within the original window can still be verified."
             : "Transaction not found yet. Check the hash and network, then try again.";
-        return this.store.transaction(() =>
-          this.save(original, "receipt_not_found"),
+        return await this.store.transaction(
+          async () => await this.save(original, "receipt_not_found"),
         );
       }
       const receipt = receiptSchema.parse(rawReceipt);
-      const reject = (message: string) => {
+      const reject = async (message: string) => {
         original.status = "rejected";
         original.message = message;
-        return this.store.transaction(() =>
-          this.save(original, "verification_rejected"),
+        return await this.store.transaction(
+          async () => await this.save(original, "verification_rejected"),
         );
       };
       if (receipt.transactionHash.toLowerCase() !== transactionHash)
@@ -338,7 +362,9 @@ export class FundingService {
           "The RPC returned an inconsistent transaction receipt. No credit was added.",
         );
       if (BigInt(receipt.status) !== 1n)
-        return reject("This transaction reverted. No deposit was credited.");
+        return await reject(
+          "This transaction reverted. No deposit was credited.",
+        );
       const block = blockSchema.parse(
         await this.rpc("eth_getBlockByNumber", [receipt.blockNumber, false]),
       );
@@ -355,7 +381,7 @@ export class FundingService {
         timestamp < BigInt(Math.floor(Date.parse(original.createdAt) / 1000)) ||
         timestamp > BigInt(Math.floor(Date.parse(original.expiresAt) / 1000))
       )
-        return reject(
+        return await reject(
           "This transfer was mined outside the deposit request's 30-minute window.",
         );
       const recipientTopic = `0x${original.recipient.slice(2).padStart(64, "0")}`;
@@ -374,7 +400,7 @@ export class FundingService {
           BigInt(log.data) === BigInt(original.amountUnits),
       );
       if (matching.length !== 1)
-        return reject(
+        return await reject(
           "No single matching USDC transfer was found. Check the token, sending wallet, receiving address, and exact amount.",
         );
       original.blockNumber = BigInt(receipt.blockNumber).toString();
@@ -385,8 +411,8 @@ export class FundingService {
         original.status = "awaiting_finality";
         original.message =
           "Transfer matched. Waiting for the network's finalized block before adding test credits.";
-        return this.store.transaction(() =>
-          this.save(original, "awaiting_finality"),
+        return await this.store.transaction(
+          async () => await this.save(original, "awaiting_finality"),
         );
       }
       const canonical = blockSchema.parse(
@@ -403,11 +429,11 @@ export class FundingService {
         finalizedBlockNumber: BigInt(finalized.number).toString(),
         finalizedBlockHash: finalized.hash,
       };
-      return this.store.transaction(() => {
-        const latest = this.get(id);
+      return await this.store.transaction(async () => {
+        const latest = await this.get(id);
         if (latest.status === "credited") return latest;
         if (
-          this.store.db
+          await this.store.db
             .prepare(
               "SELECT id FROM funding_credits WHERE chain_id=? AND transaction_hash=?",
             )
@@ -421,7 +447,7 @@ export class FundingService {
         original.creditedAt = new Date(this.now()).toISOString();
         original.message =
           "Verified on Base Sepolia and added to the workspace's test balance.";
-        this.store.db
+        await this.store.db
           .prepare("INSERT INTO funding_credits VALUES (?,?,?,?,?,?,?)")
           .run(
             randomUUID(),
@@ -432,7 +458,7 @@ export class FundingService {
             original.amountUnits,
             original.creditedAt,
           );
-        this.ledger.settle(
+        await this.ledger.settle(
           "onchain",
           id,
           original.amountUnits,
@@ -440,7 +466,7 @@ export class FundingService {
           "deposit",
           original.creditedAt,
         );
-        return this.save(original, "deposit_credited");
+        return await this.save(original, "deposit_credited");
       });
     } catch (error) {
       const failure =
@@ -457,10 +483,10 @@ export class FundingService {
         failure instanceof FundingError
           ? failure.message
           : "Verification failed. No credit was added.";
-      this.store.transaction(() => this.save(original, "verification_failed"));
+      await this.store.transaction(
+        async () => await this.save(original, "verification_failed"),
+      );
       throw failure;
-    } finally {
-      this.active.delete(id);
     }
   }
 }

@@ -7,46 +7,51 @@ import { DisputeReviewService } from "./dispute-review.js";
 export function disputeReviewRoutes(
   app: Express,
   service: DisputeReviewService,
+  accountAccess?: express.RequestHandler,
 ) {
   const router = express.Router();
-  router.use((req, res, next) => {
-    if (!config.adminToken || config.adminToken === config.token) {
-      res.status(503).json({
-        error:
-          "Admin funding review is disabled. Configure a separate admin access token on the server.",
-      });
-      return;
-    }
-    const expected = Buffer.from(config.adminToken);
-    const actual = Buffer.from(
-      req.headers.authorization?.replace(/^Bearer /, "") || "",
-    );
-    if (
-      actual.length !== expected.length ||
-      !timingSafeEqual(actual, expected)
-    ) {
-      res.status(401).json({
-        error: "Enter the admin access token to review disputed payments.",
-      });
-      return;
-    }
-    if (!["GET", "HEAD", "OPTIONS"].includes(req.method)) {
-      const origin = req.header("origin");
-      try {
-        if (origin && new URL(origin).host !== req.headers.host)
-          throw new Error();
-      } catch {
-        res.status(403).json({ error: "Cross-origin writes are not allowed" });
+  if (accountAccess) router.use(accountAccess);
+  else
+    router.use((req, res, next) => {
+      if (!config.adminToken || config.adminToken === config.token) {
+        res.status(503).json({
+          error:
+            "Admin funding review is disabled. Configure a separate admin access token on the server.",
+        });
         return;
       }
-      if (!req.is("application/json")) {
-        res.status(415).json({ error: "JSON content type required" });
+      const expected = Buffer.from(config.adminToken);
+      const actual = Buffer.from(
+        req.headers.authorization?.replace(/^Bearer /, "") || "",
+      );
+      if (
+        actual.length !== expected.length ||
+        !timingSafeEqual(actual, expected)
+      ) {
+        res.status(401).json({
+          error: "Enter the admin access token to review disputed payments.",
+        });
         return;
       }
-    }
-    res.locals.adminActor = `admin credential ${createHash("sha256").update(config.adminToken).digest("hex").slice(0, 12)}`;
-    next();
-  });
+      if (!["GET", "HEAD", "OPTIONS"].includes(req.method)) {
+        const origin = req.header("origin");
+        try {
+          if (origin && new URL(origin).host !== req.headers.host)
+            throw new Error();
+        } catch {
+          res
+            .status(403)
+            .json({ error: "Cross-origin writes are not allowed" });
+          return;
+        }
+        if (!req.is("application/json")) {
+          res.status(415).json({ error: "JSON content type required" });
+          return;
+        }
+      }
+      res.locals.adminActor = `admin credential ${createHash("sha256").update(config.adminToken).digest("hex").slice(0, 12)}`;
+      next();
+    });
   router.use(express.json({ limit: "24kb" }));
   const handle =
     (fn: express.RequestHandler): express.RequestHandler =>
@@ -68,7 +73,7 @@ export function disputeReviewRoutes(
     };
   router.get(
     "/disputes",
-    handle((req, res) => {
+    handle(async (req, res) => {
       const q = z
         .object({
           status: z
@@ -79,20 +84,20 @@ export function disputeReviewRoutes(
         })
         .strict()
         .parse(req.query);
-      res.json(service.list(q.status, q.q, q.page));
+      res.json(await service.list(q.status, q.q, q.page));
     }),
   );
   router.get(
     "/disputes/:id",
-    handle((req, res) => {
-      res.json(service.detail(z.uuid().parse(req.params.id)));
+    handle(async (req, res) => {
+      res.json(await service.detail(z.uuid().parse(req.params.id)));
     }),
   );
   router.post(
     "/disputes/:id/review",
-    handle((req, res) => {
+    handle(async (req, res) => {
       res.json(
-        service.review(
+        await service.review(
           z.uuid().parse(req.params.id),
           req.body,
           res.locals.adminActor,
@@ -105,9 +110,9 @@ export function disputeReviewRoutes(
     handle(async (req, res) => {
       z.object({}).strict().parse(req.body);
       const id = z.uuid().parse(req.params.id);
-      service.get(id);
+      await service.get(id);
       await service.stripe.reconcile(id, true);
-      res.json(service.detail(id));
+      res.json(await service.detail(id));
     }),
   );
   router.use((_req, res) => {

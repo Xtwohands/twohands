@@ -6,42 +6,41 @@ import { connections } from "./observation-connections.js";
 import { Observatory, ObservationError } from "./observation.js";
 import { discoveryInput } from "./tool-discovery.js";
 import type { ActivityItem, WorkspaceUsage } from "./workspace-types.js";
-
 const period = z.coerce
   .number()
   .pipe(z.union([z.literal(7), z.literal(30), z.literal(90)]))
   .default(7);
 const nonnegative = (v: unknown): number | null =>
   typeof v === "number" && Number.isFinite(v) && v >= 0 ? v : null;
-
-export function workspaceActivity(
+export async function workspaceActivity(
   obs: Observatory,
   since: string,
-): ActivityItem[] {
-  return obs.db
-    .list()
-    .flatMap((session) =>
-      obs.db
-        .calls(session.id)
-        .filter((call) => call.startedAt >= since)
-        .map(({ result, ...call }) => {
-          const usage = result?.usage as Record<string, unknown> | undefined;
-          return {
-            ...call,
-            sessionTitle: session.title,
-            host: session.host,
-            model: session.model,
-            reportedUsd: nonnegative(usage?.providerReportedUsd),
-            reportedCredits: nonnegative(usage?.credits ?? result?.credits),
-          };
-        }),
+): Promise<ActivityItem[]> {
+  return (
+    await Promise.all(
+      (await obs.db.list()).flatMap(async (session) =>
+        (await obs.db.calls(session.id))
+          .filter((call) => call.startedAt >= since)
+          .map(({ result, ...call }) => {
+            const usage = result?.usage as Record<string, unknown> | undefined;
+            return {
+              ...call,
+              sessionTitle: session.title,
+              host: session.host,
+              model: session.model,
+              reportedUsd: nonnegative(usage?.providerReportedUsd),
+              reportedCredits: nonnegative(usage?.credits ?? result?.credits),
+            };
+          }),
+      ),
     )
+  )
+    .flat()
     .sort(
       (a, b) =>
         b.startedAt.localeCompare(a.startedAt) || b.id.localeCompare(a.id),
     );
 }
-
 export function workspaceUsage(
   items: ActivityItem[],
   days: number,
@@ -103,7 +102,6 @@ export function workspaceUsage(
     }),
   };
 }
-
 export function workspaceRoutes(app: Express, obs: Observatory) {
   const route =
     (
@@ -112,9 +110,9 @@ export function workspaceRoutes(app: Express, obs: Observatory) {
         res: import("express").Response,
       ) => unknown,
     ) =>
-    (req: import("express").Request, res: import("express").Response) => {
+    async (req: import("express").Request, res: import("express").Response) => {
       try {
-        fn(req, res);
+        await fn(req, res);
       } catch (error) {
         if (error instanceof z.ZodError)
           res
@@ -136,31 +134,35 @@ export function workspaceRoutes(app: Express, obs: Observatory) {
   };
   app.get(
     "/api/workspace/routing",
-    route((_req, res) => res.json(obs.routingPolicy())),
+    route(async (_req, res) => res.json(await obs.routingPolicy())),
   );
   app.post(
     "/api/workspace/routing",
-    route((req, res) => res.json(obs.updateRoutingPolicy(req.body))),
+    route(async (req, res) =>
+      res.json(await obs.updateRoutingPolicy(req.body)),
+    ),
   );
   app.post(
     "/api/workspace/preview",
-    route((req, res) =>
+    route(async (req, res) =>
       res.json(
-        obs.preview(discoveryInput.parse(req.body), res.locals.apiKeyId),
+        await obs.preview(discoveryInput.parse(req.body), res.locals.apiKeyId),
       ),
     ),
   );
   app.get(
     "/api/workspace/usage",
-    route((req, res) => {
+    route(async (req, res) => {
       const days = period.parse(req.query.days);
       const start = since(days);
-      res.json(workspaceUsage(workspaceActivity(obs, start), days, start));
+      res.json(
+        workspaceUsage(await workspaceActivity(obs, start), days, start),
+      );
     }),
   );
   app.get(
     "/api/workspace/activity",
-    route((req, res) => {
+    route(async (req, res) => {
       const input = z
         .object({
           days: period,
@@ -176,7 +178,7 @@ export function workspaceRoutes(app: Express, obs: Observatory) {
         })
         .parse(req.query);
       const query = input.q.trim().toLowerCase();
-      const items = workspaceActivity(obs, since(input.days)).filter(
+      const items = (await workspaceActivity(obs, since(input.days))).filter(
         (i) =>
           (input.provider === "all" || i.provider === input.provider) &&
           (input.status === "all" || i.status === input.status) &&
@@ -202,9 +204,9 @@ export function workspaceRoutes(app: Express, obs: Observatory) {
   );
   app.get(
     "/api/workspace/connection",
-    route((_req, res) =>
+    route(async (_req, res) =>
       res.json({
-        clients: connections(obs.db),
+        clients: await connections(obs.db),
         providers: Object.fromEntries(
           Object.entries(config.keys).map(([name, key]) => [
             name,

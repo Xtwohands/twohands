@@ -78,9 +78,10 @@ For ordinary use, keep the host’s interactive prompts. Do not use a blanket sa
 ## Configuration and troubleshooting
 
 - `APILAYER_URL` defaults to `http://127.0.0.1:3001/api`. Override it in the bridge environment for another local port. Only loopback HTTP addresses without URL credentials, query strings, or fragments are accepted.
-- `APILAYER_API_KEY` supplies a scoped bridge credential and takes precedence over legacy `API_TOKEN`. A rejected key never falls back to the owner token. Issue a key from API keys after configuring a server owner `API_TOKEN` of at least 24 characters; see [API key setup](API_KEYS.md).
-- Without `APILAYER_API_KEY`, the bridge uses `API_TOKEN`, which must match the HTTP server when authentication is enabled. The browser’s owner token stays in tab memory; the bridge reads its server-side environment.
-- Keep `npm start` running. The stdio bridge does not independently open the SQLite database or start the HTTP server.
+- `APILAYER_API_KEY` supplies a scoped workspace credential and takes precedence over legacy `API_TOKEN`. A rejected key never falls back to the owner token. In PostgreSQL mode, sign in as a workspace owner or platform administrator, select the intended workspace, and issue the key from API keys; see [API key setup](API_KEYS.md).
+- PostgreSQL account mode requires a scoped key for the bridge. `API_TOKEN` and `ADMIN_API_TOKEN` do not authenticate it; browser Auth sessions are not copied into MCP configuration. The key resolves its own workspace on the backend and survives browser sign-out until revoked, expired, or capped.
+- Without `APILAYER_API_KEY`, the bridge uses `API_TOKEN` for SQLite/local compatibility, matching the HTTP server when configured. The local browser owner token stays in tab memory; the bridge reads its environment.
+- Keep `npm start` running. The stdio bridge does not independently open either storage backend or start the HTTP server.
 - Provider keys may be configured while expired or invalid. Only actual execution verifies access.
 - Host tool timeouts should allow the configured provider timeout plus transport overhead. Codex supports `mcp_servers.apilayer.tool_timeout_sec`; 150 seconds covers APILayer’s maximum configurable provider deadline.
 - After changing MCP tools, rebuild and restart the client’s MCP process. An already-running client can keep an earlier catalog until restarted.
@@ -92,7 +93,7 @@ For ordinary use, keep the host’s interactive prompts. Do not use a blanket sa
 
 MCP does not give APILayer private chain of thought, the complete Claude/Codex conversation, or visibility into tools called outside this server. An explanation supplied with `statedReason` is labeled agent-reported. Returned catalog options do not establish that the model considered every alternative. Model identity remains reported unless a future trusted host integration provides verification.
 
-The HTTP workspace is a shared local trust boundary, not a multi-tenant approval system. Its operator API supports acceptance and evaluation; those operations are deliberately absent from the MCP catalog. A separately privileged local program may still access the operator API, so this is not an isolation guarantee against software already trusted with the workspace.
+PostgreSQL HTTP access uses [account sessions, membership, and platform roles](AUTH.md); scoped keys remain restricted to their machine-access allowlist. Operator acceptance and evaluation are deliberately absent from the MCP catalog and require platform administrator access in account mode. SQLite retains its shared local trust boundary. Neither mode protects against software already trusted with server credentials or database access.
 
 References: [MCP tools specification](https://modelcontextprotocol.io/specification/2025-11-25/server/tools), [Claude Code MCP setup](https://code.claude.com/docs/en/mcp), [Codex MCP configuration](https://learn.chatgpt.com/docs/extend/mcp).
 

@@ -1,3 +1,4 @@
+import { AccountControls, useAccount } from "./AccountGate";
 import { DisputeReviewView } from "./DisputeReviewView";
 import { ToolOptions } from "./components/ToolOptions";
 import { OutcomeContent } from "./components/DeferredOutcomeContent";
@@ -126,8 +127,8 @@ type Summary = {
     published: boolean;
   };
 };
-type Catalog = ReturnType<
-  import("../server/observation").Observatory["catalog"]
+type Catalog = Awaited<
+  ReturnType<import("../server/observation").Observatory["catalog"]>
 >;
 
 const pages = [
@@ -292,6 +293,7 @@ function eventText(e: ObservationEvent) {
 }
 
 export function ObservationApp() {
+  const account = useAccount();
   const [route, setRoute] = useState(readRoute);
   const [sessions, setSessions] = useState<ObservationListItem[]>([]);
   const [summary, setSummary] = useState<Summary>();
@@ -361,7 +363,7 @@ export function ObservationApp() {
       if (current === generation.current) {
         setError((e as Error).message);
         setHealth(undefined);
-        if (e instanceof ApiError && e.status === 401) {
+        if (e instanceof ApiError && (e.status === 401 || e.status === 403)) {
           detailGeneration.current++;
           setSessions([]);
           setSummary(undefined);
@@ -461,6 +463,22 @@ export function ObservationApp() {
             ? "Connections & settings"
             : pages.find((p) => p.id === route.page)?.label || "Sessions";
   if (route.page === "home") return <LandingView />;
+  if (
+    account.enabled &&
+    !account.profile?.isAdmin &&
+    !["dashboard", "company"].includes(route.page)
+  )
+    return (
+      <main className="account-page">
+        <section className="account-card">
+          <h1>Administrator access required</h1>
+          <p>This area is reserved for workspace operations.</p>
+          <Button asChild>
+            <a href="#dashboard">Open your dashboard</a>
+          </Button>
+        </section>
+      </main>
+    );
   const surface =
     route.page === "dashboard"
       ? "user"
@@ -630,6 +648,7 @@ export function ObservationApp() {
           <Settings01 />
           Connections & settings
         </a>
+        <AccountControls />
         <div className="workspace-status">
           <span className={health ? "status-dot online" : "status-dot"} />
           {health ? "Local server ready" : "Connecting to server"}
@@ -690,7 +709,7 @@ export function ObservationApp() {
           <div className="topbar-right">
             <span className="local-label">
               <span className="status-dot online" />
-              Local workspace
+              {account.enabled ? "Workspace" : "Local workspace"}
             </span>
             <Button
               variant="outline"
@@ -711,8 +730,13 @@ export function ObservationApp() {
         <main id="main-content" tabIndex={-1} className="obs-main">
           <InlineError message={error} />
           {error && (
-            <Button variant="outline" onClick={() => setConnectOpen(true)}>
-              Enter access token
+            <Button
+              variant="outline"
+              onClick={() =>
+                account.enabled ? account.signOut() : setConnectOpen(true)
+              }
+            >
+              {account.enabled ? "Sign out" : "Enter access token"}
             </Button>
           )}
           {notice && (
@@ -1306,9 +1330,11 @@ export function ObservationApp() {
                   </div>
                   <Button
                     variant="outline"
-                    onClick={() => setConnectOpen(true)}
+                    onClick={() =>
+                      account.enabled ? account.signOut() : setConnectOpen(true)
+                    }
                   >
-                    Workspace access token
+                    {account.enabled ? "Sign out" : "Workspace access token"}
                   </Button>
                 </Panel>
               </div>
@@ -1371,7 +1397,10 @@ export function ObservationApp() {
           navigate("sessions", s.id);
         }}
       />
-      <Dialog open={connectOpen} onOpenChange={setConnectOpen}>
+      <Dialog
+        open={!account.enabled && connectOpen}
+        onOpenChange={setConnectOpen}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Workspace access</DialogTitle>

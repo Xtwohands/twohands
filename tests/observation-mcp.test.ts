@@ -63,7 +63,7 @@ beforeEach(async () => {
 afterEach(async () => {
   await client.close();
   await server.close();
-  store.close();
+  await store.close();
   Object.assign(config.keys, oldKeys);
   config.token = oldToken;
   config.agentSessionBudgetMicros = oldBudget;
@@ -98,10 +98,10 @@ it("runs from intent to provider evidence and output without consumer approval",
   expect(s.dashboardPath).toBeUndefined();
   expect(s.budgetMicros).toBeUndefined();
   expect(s.modelSource).toBe("agent_reported");
-  expect(obs.require(s.id).authorizationSource).toBe("backend_policy");
-  expect(obs.db.events(s.id).some((e) => e.type === "intent_approved")).toBe(
-    false,
-  );
+  expect((await obs.require(s.id)).authorizationSource).toBe("backend_policy");
+  expect(
+    (await obs.db.events(s.id)).some((e) => e.type === "intent_approved"),
+  ).toBe(false);
   const offered = parse(
     await client.callTool({
       name: "discover_tools",
@@ -156,20 +156,20 @@ it("runs from intent to provider evidence and output without consumer approval",
   expect(read.outcomes).toHaveLength(1);
   expect(read.evaluations).toHaveLength(0);
   expect(read.calls[0].result).toBeUndefined();
-  expect(obs.db.detail(s.id)?.integrity).toBe(true);
+  expect((await obs.db.detail(s.id))?.integrity).toBe(true);
 });
 it("uses server policy, enforces its cap, and records authorization without human approval", async () => {
   config.agentSessionBudgetMicros = 1000;
   const s = parse(
     await client.callTool({ name: "record_intent", arguments: intent }),
   );
-  expect(obs.require(s.id)).toMatchObject({
+  expect(await obs.require(s.id)).toMatchObject({
     budgetMicros: 1000,
     authorizationSource: "backend_policy",
     commercialConsent: true,
   });
   expect(
-    obs.db.events(s.id).find((e) => e.type === "intent_authorized"),
+    (await obs.db.events(s.id)).find((e) => e.type === "intent_authorized"),
   ).toMatchObject({ provenance: "observed", data: { budgetMicros: 1000 } });
   const args = {
     sessionId: s.id,
@@ -190,15 +190,15 @@ it("uses server policy, enforces its cap, and records authorization without huma
     arguments: { ...args, requestKey: "two" },
   });
   expect(blocked.isError).toBe(true);
-  expect(obs.require(s.id).spentMicros).toBe(1000);
-  expect(obs.db.calls(s.id)).toHaveLength(1);
+  expect((await obs.require(s.id)).spentMicros).toBe(1000);
+  expect(await obs.db.calls(s.id)).toHaveLength(1);
 });
 it("rejects client budget overrides and keeps a zero server budget effective", async () => {
   await request(app)
     .post("/api/observations/agent-sessions")
-    .send({ ...intent, budgetMicros: 5_000_000 })
+    .send({ ...intent, budgetMicros: 5000000 })
     .expect(400);
-  expect(obs.db.list()).toHaveLength(0);
+  expect(await obs.db.list()).toHaveLength(0);
   config.agentSessionBudgetMicros = 0;
   const s = parse(
     await client.callTool({ name: "record_intent", arguments: intent }),
@@ -213,8 +213,8 @@ it("rejects client budget overrides and keeps a zero server budget effective", a
     },
   });
   expect(blocked.isError).toBe(true);
-  expect(obs.db.calls(s.id)).toHaveLength(0);
-  expect(obs.require(s.id).budgetMicros).toBe(0);
+  expect(await obs.db.calls(s.id)).toHaveLength(0);
+  expect((await obs.require(s.id)).budgetMicros).toBe(0);
 });
 it("preserves backend authorization provenance in summary exports", async () => {
   const s = parse(
@@ -224,27 +224,29 @@ it("preserves backend authorization provenance in summary exports", async () => 
     .get(`/api/observations/${s.id}/export`)
     .expect(200);
   expect(exported.body.authorizationSource).toBe("backend_policy");
-  const recorded = obs.db
-    .events(s.id)
-    .find((e) => e.type === "intent_recorded");
+  const recorded = (await obs.db.events(s.id)).find(
+    (e) => e.type === "intent_recorded",
+  );
   expect(recorded?.provenance).toBe("agent_reported");
   expect(recorded?.data).not.toHaveProperty("budgetMicros");
 });
 it("rolls back automatic session creation if its authorization event cannot be saved", async () => {
   const original = obs.db.event.bind(obs.db);
-  const record = vi.spyOn(obs.db, "event").mockImplementation((...args) => {
-    if (args[1] === "intent_authorized")
-      throw new Error("Synthetic audit write failure");
-    return original(...args);
-  });
+  const record = vi
+    .spyOn(obs.db, "event")
+    .mockImplementation(async (...args) => {
+      if (args[1] === "intent_authorized")
+        throw new Error("Synthetic audit write failure");
+      return await original(...args);
+    });
   try {
     const response = await request(app)
       .post("/api/observations/agent-sessions")
       .send(intent)
       .expect(500);
     expect(response.body.error).not.toContain("Synthetic audit write failure");
-    expect(obs.db.list()).toHaveLength(0);
-    const rows = store.db
+    expect(await obs.db.list()).toHaveLength(0);
+    const rows = await store.db
       .prepare("SELECT count(*) AS count FROM observation_events")
       .get();
     expect(rows?.count).toBe(0);
@@ -258,7 +260,7 @@ it("validates tool arguments before bridge execution", async () => {
     arguments: { sessionId: "not-a-uuid" },
   });
   expect(r.isError).toBe(true);
-  expect(obs.db.list()).toHaveLength(0);
+  expect(await obs.db.list()).toHaveLength(0);
 });
 it("does not expose configured provider key values through the catalog or tool errors", async () => {
   const s = parse(
@@ -310,14 +312,16 @@ it("sanitizes summary export and retains private evidence only in the local deta
     /PRIVATE_INTENT_MARKER|PRIVATE_OUTPUT_MARKER/,
   );
   expect(exported.body.includesResearchContent).toBe(false);
-  expect(obs.db.detail(s.id)?.outcomes[0].text).toBe("PRIVATE_OUTPUT_MARKER");
+  expect((await obs.db.detail(s.id))?.outcomes[0].text).toBe(
+    "PRIVATE_OUTPUT_MARKER",
+  );
 });
 it("rejects oversized payloads without creating a session", async () => {
   await request(app)
     .post("/api/observations")
     .send({ ...intent, objective: "x".repeat(170000) })
     .expect(413);
-  expect(obs.db.list()).toHaveLength(0);
+  expect(await obs.db.list()).toHaveLength(0);
 });
 it("deletion needs the exact ID and removes associated audit and call records", async () => {
   const s = (await request(app).post("/api/observations").send(intent)).body;
@@ -330,18 +334,17 @@ it("deletion needs the exact ID and removes associated audit and call records", 
     .send({ confirmSessionId: s.id })
     .expect(200);
   await request(app).get(`/api/observations/${s.id}`).expect(404);
-  expect(obs.db.events(s.id)).toHaveLength(0);
+  expect(await obs.db.events(s.id)).toHaveLength(0);
 });
-
 it("keeps full output text and evaluation notes out of list polling responses", async () => {
   const s = (await request(app).post("/api/observations").send(intent)).body;
-  obs.approve(s.id, s.intentHash);
-  const out = obs.outcome(s.id, {
+  await obs.approve(s.id, s.intentHash);
+  const out = await obs.outcome(s.id, {
     requestKey: "output",
     text: "PRIVATE_LONG_OUTPUT",
     evidenceCallIds: [],
   });
-  obs.evaluate(s.id, {
+  await obs.evaluate(s.id, {
     outcomeId: out.outcomes[0].id,
     criteria: s.criteria.map((c: any) => ({
       criterionId: c.id,
@@ -356,9 +359,10 @@ it("keeps full output text and evaluation notes out of list polling responses", 
   );
   expect(list.body[0].outcomes[0].id).toBe(out.outcomes[0].id);
   expect(list.body[0].evaluations[0].outcomeId).toBe(out.outcomes[0].id);
-  expect(obs.db.detail(s.id)?.outcomes[0].text).toBe("PRIVATE_LONG_OUTPUT");
+  expect((await obs.db.detail(s.id))?.outcomes[0].text).toBe(
+    "PRIVATE_LONG_OUTPUT",
+  );
 });
-
 it("quotes concrete candidate requests through MCP without spending and executes matching options", async () => {
   const s = parse(
     await client.callTool({ name: "record_intent", arguments: intent }),
@@ -383,7 +387,7 @@ it("quotes concrete candidate requests through MCP without spending and executes
     .requestEstimates[0];
   expect(quoted.estimatedMicros).toBe(config.prices.tavily * 2);
   expect(quoted.withinBudget).toBe(true);
-  expect(obs.db.calls(s.id)).toHaveLength(0);
+  expect(await obs.db.calls(s.id)).toHaveLength(0);
   const { tool: _tool, ...args } = candidate;
   const receipt = parse(
     await client.callTool({
@@ -400,7 +404,6 @@ it("quotes concrete candidate requests through MCP without spending and executes
   expect(receipt.arguments).toMatchObject(args);
   expect(receipt.costEstimate.request).toMatchObject(candidate);
 });
-
 it("requires a selection explanation in every provider schema and rejects missing or blank values", async () => {
   const listed = await client.listTools();
   for (const name of ["exa_search", "tavily_search", "firecrawl_extract"]) {
@@ -423,10 +426,9 @@ it("requires a selection explanation in every provider schema and rejects missin
     });
     expect(result.isError).toBe(true);
   }
-  expect(obs.db.calls(s.id)).toHaveLength(0);
-  expect(obs.require(s.id).spentMicros).toBe(0);
+  expect(await obs.db.calls(s.id)).toHaveLength(0);
+  expect((await obs.require(s.id)).spentMicros).toBe(0);
 });
-
 it("discovers alternatives from provider-neutral operations through MCP", async () => {
   const s = parse(
     await client.callTool({ name: "record_intent", arguments: intent }),

@@ -4,7 +4,6 @@ import { Store } from "../server/store";
 import { Observatory } from "../server/observation";
 import { createApp } from "../server/app";
 import { config } from "../server/config";
-
 const originalKeys = { ...config.keys };
 let store: Store;
 let obs: Observatory;
@@ -14,8 +13,8 @@ const search = vi.fn(async () => ({
   usage: { providerReportedUsd: 0.007, credits: 1, source: "fixture" },
 }));
 const scrape = vi.fn(async () => ({ text: "fixture", httpStatus: 200 }));
-const create = () =>
-  obs.createAgentSession({
+const create = async () =>
+  await obs.createAgentSession({
     title: "Workspace fixture",
     objective: "Find supporting sources",
     criteria: [{ text: "Sources", weight: 1 }],
@@ -40,34 +39,43 @@ beforeEach(() => {
   scrape.mockClear();
   obs = new Observatory(store, { search, scrape });
 });
-afterEach(() => {
-  store.close();
+afterEach(async () => {
+  await store.close();
   Object.assign(config.keys, originalKeys);
 });
-
 describe("workspace tool routing", () => {
-  it("persists policy across instances, rejects stale writes, and validates tools", () => {
-    const policy = obs.updateRoutingPolicy({
+  it("persists policy across instances, rejects stale writes, and validates tools", async () => {
+    const policy = await obs.updateRoutingPolicy({
       revision: 0,
       disabledTools: ["exa_search"],
     });
-    expect(new Observatory(store).routingPolicy()).toEqual(policy);
-    expect(() =>
-      obs.updateRoutingPolicy({ revision: 0, disabledTools: [] }),
-    ).toThrow(/changed elsewhere/);
-    expect(() =>
-      obs.updateRoutingPolicy({ revision: 1, disabledTools: ["unknown"] }),
-    ).toThrow();
+    expect(await new Observatory(store).routingPolicy()).toEqual(policy);
+    await expect(
+      (async () =>
+        await obs.updateRoutingPolicy({ revision: 0, disabledTools: [] }))(),
+    ).rejects.toThrow(/changed elsewhere/);
+    await expect(
+      (async () =>
+        await obs.updateRoutingPolicy({
+          revision: 1,
+          disabledTools: ["unknown"],
+        }))(),
+    ).rejects.toThrow();
     expect(
-      store.db
-        .prepare("SELECT COUNT(*) AS n FROM workspace_policy_events")
-        .get()?.n,
+      (
+        await store.db
+          .prepare("SELECT COUNT(*) AS n FROM workspace_policy_events")
+          .get()
+      )?.n,
     ).toBe(1);
   });
   it("excludes paused tools from discovery and rejects calls before spending", async () => {
-    const s = create();
-    obs.updateRoutingPolicy({ revision: 0, disabledTools: ["exa_search"] });
-    const result = obs.discover(s.id, {
+    const s = await create();
+    await obs.updateRoutingPolicy({
+      revision: 0,
+      disabledTools: ["exa_search"],
+    });
+    const result = await obs.discover(s.id, {
       need: "fixture",
       operations: [{ operation: "search", query: "fixture" }],
     });
@@ -78,22 +86,25 @@ describe("workspace tool routing", () => {
     ).toBe("disabled");
     await expect(obs.execute(s.id, call())).rejects.toThrow(/paused/);
     expect(search).not.toHaveBeenCalled();
-    expect(obs.require(s.id).spentMicros).toBe(0);
-    expect(obs.require(s.id).reservedMicros).toBe(0);
-    expect(obs.db.calls(s.id)).toEqual([]);
+    expect((await obs.require(s.id)).spentMicros).toBe(0);
+    expect((await obs.require(s.id)).reservedMicros).toBe(0);
+    expect(await obs.db.calls(s.id)).toEqual([]);
   });
   it("replays old receipts after pausing, but rejects new calls until re-enabled", async () => {
-    const s = create();
+    const s = await create();
     const first = await obs.execute(s.id, call());
-    obs.updateRoutingPolicy({ revision: 0, disabledTools: ["exa_search"] });
+    await obs.updateRoutingPolicy({
+      revision: 0,
+      disabledTools: ["exa_search"],
+    });
     expect((await obs.execute(s.id, call())).id).toBe(first.id);
     await expect(obs.execute(s.id, call("next"))).rejects.toThrow(/paused/);
-    obs.updateRoutingPolicy({ revision: 1, disabledTools: [] });
+    await obs.updateRoutingPolicy({ revision: 1, disabledTools: [] });
     await obs.execute(s.id, call("next"));
     expect(search).toHaveBeenCalledTimes(2);
   });
-  it("previews operation compatibility without sessions, provider calls, or events", () => {
-    const result = obs.preview({
+  it("previews operation compatibility without sessions, provider calls, or events", async () => {
+    const result = await obs.preview({
       need: "fixture",
       operations: [
         { operation: "search", query: "fixture", content: "page_text" },
@@ -104,15 +115,17 @@ describe("workspace tool routing", () => {
       result.tools.find((t) => t.tool === "exa_search")?.requestEstimates[0]
         .estimatedMicros,
     ).toBeGreaterThan(0);
-    expect(obs.db.list()).toEqual([]);
+    expect(await obs.db.list()).toEqual([]);
     expect(search).not.toHaveBeenCalled();
     expect(
-      obs.preview({
-        need: "fixture",
-        operations: [
-          { operation: "search", query: "fixture", content: "complete_page" },
-        ],
-      }).candidateTools,
+      (
+        await obs.preview({
+          need: "fixture",
+          operations: [
+            { operation: "search", query: "fixture", content: "complete_page" },
+          ],
+        })
+      ).candidateTools,
     ).toEqual([]);
   });
   it("returns actionable validation for unsupported extraction URLs", async () => {
@@ -129,21 +142,20 @@ describe("workspace tool routing", () => {
     expect(result.body.error).toMatch(/https/i);
     expect(search).not.toHaveBeenCalled();
   });
-  it("unconfigured providers cannot be made eligible by enabling a tool", () => {
+  it("unconfigured providers cannot be made eligible by enabling a tool", async () => {
     config.keys.exa = "";
-    const result = obs.preview({
+    const result = await obs.preview({
       need: "fixture",
       operations: [{ operation: "search", query: "fixture" }],
     });
     expect(result.candidateTools).not.toContain("exa_search");
   });
 });
-
 describe("workspace API", () => {
   it("paginates activity and exports the full filtered snapshot", async () => {
-    const s = create();
+    const s = await create();
     for (let i = 0; i < 23; i++)
-      obs.db.saveCall(
+      await obs.db.saveCall(
         {
           id: crypto.randomUUID(),
           sessionId: s.id,
@@ -182,7 +194,7 @@ describe("workspace API", () => {
   });
   it("returns scoped usage, separated reported units, and filtered paginated activity", async () => {
     const app = createApp(store, undefined, obs);
-    const s = create();
+    const s = await create();
     const c = await obs.execute(s.id, call());
     const usage = await request(app)
       .get("/api/workspace/usage?days=7")
@@ -215,9 +227,9 @@ describe("workspace API", () => {
     ).toBe(400);
   });
   it("returns an honest empty state and does not include old calls", async () => {
-    const s = create();
+    const s = await create();
     await obs.execute(s.id, call());
-    store.db
+    await store.db
       .prepare(
         "UPDATE observation_calls SET body=json_set(body,'$.startedAt','2020-01-01T00:00:00.000Z')",
       )

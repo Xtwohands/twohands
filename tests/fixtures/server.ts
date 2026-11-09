@@ -8,7 +8,7 @@ import { createApp } from "../../server/app.js";
 config.keys.exa = "TEST_ONLY_EXA_KEY";
 config.keys.tavily = "TEST_ONLY_TAVILY_KEY";
 config.keys.firecrawl = "TEST_ONLY_FIRECRAWL_KEY";
-config.providerTestDailyBudgetMicros = 50_000_000;
+config.providerTestDailyBudgetMicros = 50000000;
 config.rpm = 1000;
 if (process.env.FIXTURE_API_KEYS === "true")
   config.token = "fixture-owner-token-0000000000001";
@@ -145,7 +145,7 @@ const app = createApp(
 // Fixture control exists only in this dedicated in-memory test process.
 app.post("/__fixture/stripe/:id", async (req, res) => {
   try {
-    const intent = stripeFunding.get(String(req.params.id));
+    const intent = await stripeFunding.get(String(req.params.id));
     const payment = stripeGateway.pay(
       intent.checkoutSessionId!,
       Number(req.body.refundedCents || 0),
@@ -198,8 +198,8 @@ const server = app.listen(
     ),
 );
 process.on("SIGTERM", () =>
-  server.close(() => {
-    store.close();
+  server.close(async () => {
+    await store.close();
     process.exit(0);
   }),
 );

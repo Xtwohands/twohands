@@ -8,7 +8,6 @@ import type {
   ObservationEvent,
   SessionDetail,
 } from "./observation-types.js";
-
 export function digest(value: unknown): string {
   function canonical(v: any): any {
     if (Array.isArray(v)) return v.map(canonical);
@@ -28,20 +27,11 @@ export function digest(value: unknown): string {
 export class ObservationStore {
   readonly apiKeys: ApiKeyService;
   constructor(public store: Store) {
-    store.db.exec(`
-      CREATE TABLE IF NOT EXISTS observation_clients(id TEXT PRIMARY KEY,body TEXT NOT NULL);
-      CREATE TABLE IF NOT EXISTS workspace_settings(key TEXT PRIMARY KEY,body TEXT NOT NULL);
-      CREATE TABLE IF NOT EXISTS workspace_policy_events(id INTEGER PRIMARY KEY AUTOINCREMENT,body TEXT NOT NULL);
-      CREATE TABLE IF NOT EXISTS observation_sessions(id TEXT PRIMARY KEY, body TEXT NOT NULL);
-      CREATE TABLE IF NOT EXISTS observation_calls(id TEXT PRIMARY KEY,session_id TEXT NOT NULL REFERENCES observation_sessions(id) ON DELETE CASCADE,request_key TEXT NOT NULL,signature TEXT NOT NULL,body TEXT NOT NULL,UNIQUE(session_id,request_key));
-      CREATE TABLE IF NOT EXISTS observation_events(id INTEGER PRIMARY KEY AUTOINCREMENT,session_id TEXT NOT NULL REFERENCES observation_sessions(id) ON DELETE CASCADE,body TEXT NOT NULL);
-      CREATE INDEX IF NOT EXISTS observation_events_session ON observation_events(session_id,id);
-    `);
     this.apiKeys = new ApiKeyService(store);
   }
-  applySharingPolicy() {
-    this.transaction(() => {
-      for (const session of this.list()) {
+  async applySharingPolicy() {
+    await this.transaction(async () => {
+      for (const session of await this.list()) {
         if (
           session.sharingPolicy === SHARING_POLICY &&
           session.commercialConsent
@@ -51,10 +41,10 @@ export class ObservationStore {
         session.commercialConsent = true;
         session.sharingPolicy = SHARING_POLICY;
         // Preserve research activity timestamps; append, never rewrite audit history.
-        this.store.db
+        await this.store.db
           .prepare("UPDATE observation_sessions SET body=? WHERE id=?")
           .run(JSON.stringify(session), session.id);
-        this.event(
+        await this.event(
           session.id,
           "sharing_policy_applied",
           "observed",
@@ -63,42 +53,50 @@ export class ObservationStore {
       }
     });
   }
-  transaction<T>(fn: () => T) {
-    return this.store.transaction(fn);
+  async transaction<T>(fn: () => T) {
+    return await this.store.transaction(fn);
   }
-  save(s: ObservationSession) {
+  async save(s: ObservationSession) {
     s.updatedAt = new Date().toISOString();
-    this.store.db
+    await this.store.db
       .prepare(
         "INSERT INTO observation_sessions VALUES (?,?) ON CONFLICT(id) DO UPDATE SET body=excluded.body",
       )
       .run(s.id, JSON.stringify(s));
   }
-  get(id: string): ObservationSession | undefined {
-    const row = this.store.db
+  async get(id: string): Promise<ObservationSession | undefined> {
+    const row = await this.store.db
       .prepare("SELECT body FROM observation_sessions WHERE id=?")
       .get(id);
     return row ? JSON.parse(row.body as string) : undefined;
   }
-  list(): ObservationSession[] {
-    return this.store.db
-      .prepare("SELECT body FROM observation_sessions ORDER BY rowid DESC")
-      .all()
-      .map((r) => JSON.parse(r.body as string));
+  async list(): Promise<ObservationSession[]> {
+    return (
+      await this.store.db
+        .prepare("SELECT body FROM observation_sessions ORDER BY rowid DESC")
+        .all()
+    ).map((r) => JSON.parse(r.body as string));
   }
-  calls(id: string): ObservedCall[] {
-    return this.store.db
-      .prepare(
-        "SELECT body FROM observation_calls WHERE session_id=? ORDER BY rowid",
-      )
-      .all(id)
-      .map((r) => JSON.parse(r.body as string));
+  async calls(id: string): Promise<ObservedCall[]> {
+    return (
+      await this.store.db
+        .prepare(
+          "SELECT body FROM observation_calls WHERE session_id=? ORDER BY rowid",
+        )
+        .all(id)
+    ).map((r) => JSON.parse(r.body as string));
   }
-  receipt(
+  async receipt(
     sessionId: string,
     key: string,
-  ): { signature: string; call: ObservedCall } | undefined {
-    const row = this.store.db
+  ): Promise<
+    | {
+        signature: string;
+        call: ObservedCall;
+      }
+    | undefined
+  > {
+    const row = await this.store.db
       .prepare(
         "SELECT signature,body FROM observation_calls WHERE session_id=? AND request_key=?",
       )
@@ -110,49 +108,57 @@ export class ObservationStore {
         }
       : undefined;
   }
-  saveCall(c: ObservedCall, signature: string) {
-    this.store.db
+  async saveCall(c: ObservedCall, signature: string) {
+    await this.store.db
       .prepare(
         "INSERT INTO observation_calls VALUES (?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET body=excluded.body",
       )
       .run(c.id, c.sessionId, c.requestKey, signature, JSON.stringify(c));
   }
-  events(id: string): ObservationEvent[] {
-    return this.store.db
-      .prepare(
-        "SELECT id,body FROM observation_events WHERE session_id=? ORDER BY id",
-      )
-      .all(id)
-      .map((r) => ({ ...JSON.parse(r.body as string), id: Number(r.id) }));
+  async events(id: string): Promise<ObservationEvent[]> {
+    return (
+      await this.store.db
+        .prepare(
+          "SELECT id,body FROM observation_events WHERE session_id=? ORDER BY id",
+        )
+        .all(id)
+    ).map((r) => ({ ...JSON.parse(r.body as string), id: Number(r.id) }));
   }
-  event(
+  async event(
     sessionId: string,
     type: string,
     provenance: ObservationEvent["provenance"],
     data: Record<string, unknown>,
   ) {
-    const row = this.store.db
-      .prepare(
-        "SELECT body FROM observation_events WHERE session_id=? ORDER BY id DESC LIMIT 1",
-      )
-      .get(sessionId);
-    const previousHash = row ? JSON.parse(row.body as string).hash : "genesis";
-    const payload = {
-      sessionId,
-      type,
-      provenance,
-      data,
-      at: new Date().toISOString(),
-      previousHash,
-    };
-    this.store.db
-      .prepare("INSERT INTO observation_events(session_id,body) VALUES (?,?)")
-      .run(sessionId, JSON.stringify({ ...payload, hash: digest(payload) }));
+    await this.store.db.atomic(async () => {
+      const row = await this.store.db
+        .prepare(
+          "SELECT body FROM observation_events WHERE session_id=? ORDER BY id DESC LIMIT 1",
+        )
+        .get(sessionId);
+      const previousHash = row
+        ? JSON.parse(row.body as string).hash
+        : "genesis";
+      const payload = {
+        ...(this.store.actorScope.getStore()
+          ? { actor: this.store.actorScope.getStore() }
+          : {}),
+        sessionId,
+        type,
+        provenance,
+        data,
+        at: new Date().toISOString(),
+        previousHash,
+      };
+      await this.store.db
+        .prepare("INSERT INTO observation_events(session_id,body) VALUES (?,?)")
+        .run(sessionId, JSON.stringify({ ...payload, hash: digest(payload) }));
+    });
   }
-  detail(id: string): SessionDetail | undefined {
-    const s = this.get(id);
+  async detail(id: string): Promise<SessionDetail | undefined> {
+    const s = await this.get(id);
     if (!s) return undefined;
-    const events = this.events(id);
+    const events = await this.events(id);
     let previous = "genesis";
     const integrity = events.every(({ id: _id, hash, ...payload }) => {
       const valid =
@@ -160,12 +166,12 @@ export class ObservationStore {
       previous = hash;
       return valid;
     });
-    return { ...s, calls: this.calls(id), events, integrity };
+    return { ...s, calls: await this.calls(id), events, integrity };
   }
-  recover() {
-    this.transaction(() => {
-      for (const s of this.list()) {
-        const interrupted = this.calls(s.id).filter(
+  async recover() {
+    await this.transaction(async () => {
+      for (const s of await this.list()) {
+        const interrupted = (await this.calls(s.id)).filter(
           (c) => c.status === "running",
         );
         for (const c of interrupted) {
@@ -173,24 +179,24 @@ export class ObservationStore {
           c.finishedAt = new Date().toISOString();
           c.error =
             "Server restarted before the result was recorded. The provider may have processed this call; it will not be retried automatically.";
-          const receipt = this.receipt(s.id, c.requestKey)!;
-          this.saveCall(c, receipt.signature);
-          this.apiKeys.settle(c.id);
+          const receipt = (await this.receipt(s.id, c.requestKey))!;
+          await this.saveCall(c, receipt.signature);
+          await this.apiKeys.settle(c.id);
           s.reservedMicros = Math.max(0, s.reservedMicros - c.estimateMicros);
           s.spentMicros += c.estimateMicros;
-          this.event(s.id, "call_interrupted", "observed", {
+          await this.event(s.id, "call_interrupted", "observed", {
             callId: c.id,
             estimatedMicros: c.estimateMicros,
             settlement: "conservative_estimate",
             error: c.error,
           });
         }
-        if (interrupted.length) this.save(s);
+        if (interrupted.length) await this.save(s);
       }
     });
   }
-  remove(id: string) {
-    this.store.db
+  async remove(id: string) {
+    await this.store.db
       .prepare("DELETE FROM observation_sessions WHERE id=?")
       .run(id);
   }

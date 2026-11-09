@@ -17,13 +17,37 @@ export class ApiError extends Error {
   }
 }
 let accessToken = "";
+let workspaceId = "",
+  accountId = "",
+  contextEpoch = 0;
+export function setAccountSession(
+  token: string,
+  workspace: string,
+  userId: string,
+) {
+  if (workspaceId !== workspace || accountId !== userId) contextEpoch++;
+  accessToken = token;
+  workspaceId = workspace;
+  accountId = userId;
+}
+export function apiHeaders(): Record<string, string> {
+  return {
+    ...(accessToken ? { Authorization: "Bearer " + accessToken } : {}),
+    ...(workspaceId ? { "X-Octolab-Workspace": workspaceId } : {}),
+  };
+}
 export function setToken(value: string) {
+  contextEpoch++;
   accessToken = value;
+  workspaceId = "";
+  accountId = "";
 }
 export async function api<T = any>(path: string, body?: unknown): Promise<T> {
+  const epoch = contextEpoch,
+    token = accessToken;
   const response = await fetch(`/api${path}`, {
     headers: {
-      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+      ...apiHeaders(),
       ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
       ...(/\/(run|fetch)$/.test(path) && body !== undefined
         ? { "Idempotency-Key": crypto.randomUUID() }
@@ -34,6 +58,13 @@ export async function api<T = any>(path: string, body?: unknown): Promise<T> {
       : {}),
   });
   const data = await response.json();
+  if (epoch !== contextEpoch)
+    throw new ApiError(
+      "Workspace changed. The earlier response was discarded.",
+      409,
+    );
+  if (response.status === 401 && accountId && token === accessToken)
+    window.dispatchEvent(new Event("octolab-session-invalid"));
   if (!response.ok)
     throw new ApiError(
       data.error || `Request failed (${response.status})`,

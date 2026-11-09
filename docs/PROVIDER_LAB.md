@@ -1,6 +1,6 @@
 # Provider lab and tool company demo
 
-The sidebar switches between the operator workspace and a tool company preview. Open [Tool company](http://127.0.0.1:3001/#company/exa) to explore Exa, Tavily, and Firecrawl. No company account or additional permission is required for this local demo.
+The sidebar switches between the operator workspace and a tool company preview. Open [Tool company](http://127.0.0.1:3001/#company/exa) to explore Exa, Tavily, and Firecrawl. No separate company account is implemented. The API uses the selected authorized workspace; PostgreSQL provider-lab operations require an explicitly allowlisted platform administrator account.
 
 ## Two sources, visibly separate
 
@@ -54,7 +54,7 @@ Discovery exposes a separately labeled `controlledTestSample` with its source, s
 
 ## Receipts and recovery
 
-The lab stores runs and plans in separate SQLite tables, `provider_lab_runs` and `provider_experiments`. Each run snapshots cases, suite version and hash, adapter settings, the rate card, backend authorization, and estimated budget. Requests reserve their estimate before network I/O. Failures retain a conservative estimate because billing status may be uncertain.
+The lab stores runs and plans in separate tables, `provider_lab_runs` and `provider_experiments`, on the selected SQLite or PostgreSQL backend. Each run snapshots cases, suite version and hash, adapter settings, the rate card, backend authorization, and estimated budget. Requests reserve their estimate before network I/O. Short database transactions serialize admission, reservations, and saved run mutations; provider requests execute outside those transactions. Failures retain a conservative estimate because billing status may be uncertain.
 
 Run creation is idempotent by `requestKey` and normalized provider selection. Exact replays return the original run; changed arguments with the same key are rejected. Stop requests allow the current call to settle and skip remaining calls. Graceful shutdown stops new work and drains the current request. After a process kill, startup marks the outstanding call interrupted, consumes its reserved estimate once, and never silently repeats it.
 
@@ -64,7 +64,7 @@ Recurring dashboard reads omit captured page bodies. Full receipts are loaded on
 
 ## API
 
-These endpoints inherit the workspace token, host validation, and same-origin JSON-write checks. They are operator APIs, not additional MCP tools.
+These endpoints enforce same-origin JSON writes and workspace access. In PostgreSQL account mode, every `/api/provider-lab` route requires a platform administrator from `SUPABASE_ADMIN_USER_IDS`; workspace ownership alone is insufficient. SQLite retains its workspace-token boundary. These are operator APIs, not additional MCP tools.
 
 | Endpoint                                                 | Behavior                                                                              |
 | -------------------------------------------------------- | ------------------------------------------------------------------------------------- |

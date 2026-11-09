@@ -1,3 +1,5 @@
+import { useAccount } from "./AccountGate";
+import { apiHeaders } from "./api";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowRight, RefreshCw01, ShieldTick } from "@untitledui/icons";
 import { Button } from "./components/ui/button";
@@ -27,6 +29,8 @@ const usd = (cents: number) =>
     cents / 100,
   );
 export function DisputeReviewView() {
+  const account = useAccount();
+  const accountAccess = account.enabled && !!account.profile?.isAdmin;
   const [token, setToken] = useState("");
   const [draftToken, setDraftToken] = useState("");
   const [queue, setQueue] = useState<DisputeReviewQueue>();
@@ -67,7 +71,9 @@ export function DisputeReviewView() {
       const sessionEpoch = epoch.current;
       const response = await fetch(`/api/admin/funding${path}`, {
         headers: {
-          Authorization: `Bearer ${token}`,
+          ...(account.enabled
+            ? apiHeaders()
+            : { Authorization: "Bearer " + token }),
           ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
         },
         ...(body !== undefined
@@ -78,7 +84,9 @@ export function DisputeReviewView() {
         .json()
         .catch(() => ({ error: "Admin request failed." }));
       if (
-        (response.status === 401 || response.status === 503) &&
+        (response.status === 401 ||
+          response.status === 403 ||
+          response.status === 503) &&
         sessionEpoch === epoch.current
       )
         lock(data.error);
@@ -88,10 +96,10 @@ export function DisputeReviewView() {
         });
       return data;
     },
-    [token, lock],
+    [token, lock, account.enabled],
   );
   useEffect(() => {
-    if (!token) return;
+    if (!token && !accountAccess) return;
     let active = true;
     setLoading(true);
     setError("");
@@ -104,7 +112,8 @@ export function DisputeReviewView() {
       .catch((e: Error & { status?: number }) => {
         if (active) {
           setError(e.message);
-          if (e.status === 401 || e.status === 503) setQueue(undefined);
+          if (e.status === 401 || e.status === 403 || e.status === 503)
+            setQueue(undefined);
         }
       })
       .finally(() => {
@@ -113,7 +122,7 @@ export function DisputeReviewView() {
     return () => {
       active = false;
     };
-  }, [admin, token, filter, query, page, refresh]);
+  }, [admin, token, accountAccess, filter, query, page, refresh]);
   useEffect(
     () => () => {
       epoch.current++;
@@ -187,7 +196,29 @@ export function DisputeReviewView() {
         </p>
       </div>
       <InlineError message={error} />
-      {!queue ? (
+      {!queue && account.enabled ? (
+        <section className="ws-panel">
+          <header>
+            <div>
+              <h2>
+                {accountAccess
+                  ? "Dispute queue"
+                  : "Administrator access required"}
+              </h2>
+              <p>
+                {accountAccess
+                  ? "Loading this workspace’s review queue…"
+                  : "This account is not authorized for payment review."}
+              </p>
+            </div>
+          </header>
+          {accountAccess && (
+            <Button variant="outline" onClick={() => setRefresh((v) => v + 1)}>
+              Retry queue
+            </Button>
+          )}
+        </section>
+      ) : !queue ? (
         <section className="ws-panel">
           <header>
             <div>

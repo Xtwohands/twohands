@@ -20,7 +20,7 @@ beforeEach(async () => {
       text: "Synthetic source evidence",
     }),
   });
-  const s = obs.create(
+  const s = await obs.create(
     sessionInput.parse({
       title: "Export verification fixture",
       objective: "Validate preserved evidence and review records.",
@@ -30,7 +30,7 @@ beforeEach(async () => {
     "operator_entered",
   );
   id = s.id;
-  obs.approve(id, s.intentHash);
+  await obs.approve(id, s.intentHash);
   const call = await obs.execute(id, {
     tool: "firecrawl_extract",
     url: "https://example.com",
@@ -38,12 +38,12 @@ beforeEach(async () => {
     domains: [],
     statedReason: "Read the known source",
   });
-  const out = obs.outcome(id, {
+  const out = await obs.outcome(id, {
     requestKey: "final",
     text: "Synthetic output",
     evidenceCallIds: [call.id],
   });
-  const review = obs.evaluate(id, {
+  const review = await obs.evaluate(id, {
     outcomeId: out.outcomes[0].id,
     reviewer: { kind: "assistant_reported" },
     criteria: [
@@ -55,48 +55,48 @@ beforeEach(async () => {
       },
     ],
   });
-  const opened = obs.openCase(
+  const opened = await obs.openCase(
     id,
     review.evaluations[0].id,
     "Synthetic review needs additional verification.",
   );
-  obs.resolveCase(
+  await obs.resolveCase(
     id,
     opened.cases[0].id,
     "resolved",
     "Fixture recorded without any financial transaction.",
   );
 });
-afterEach(() => {
-  store.close();
+afterEach(async () => {
+  await store.close();
   Object.assign(config.keys, keys);
 });
-const exported = () => ({
+const exported = async () => ({
   version: "private-evidence-v1",
-  session: obs.db.detail(id)!,
+  session: (await obs.db.detail(id))!,
 });
-it("verifies a complete exported workflow without trusting its claimed integrity flag", () => {
-  const e = exported();
+it("verifies a complete exported workflow without trusting its claimed integrity flag", async () => {
+  const e = await exported();
   e.session.integrity = false;
   expect(verifyPrivateEvidence(e).valid).toBe(true);
 });
-it("detects changed output text even when the audit chain itself is intact", () => {
-  const e = exported();
+it("detects changed output text even when the audit chain itself is intact", async () => {
+  const e = await exported();
   e.session.outcomes[0].text = "Changed answer";
   expect(verifyPrivateEvidence(e)).toMatchObject({ valid: false });
   expect(verifyPrivateEvidence(e).errors.join(" ")).toContain(
     "recorded submission",
   );
 });
-it("detects changed source content in the materialized receipt", () => {
-  const e = exported();
+it("detects changed source content in the materialized receipt", async () => {
+  const e = await exported();
   e.session.calls[0].result!.text = "Changed source";
   expect(verifyPrivateEvidence(e).errors.join(" ")).toContain(
     "recorded result",
   );
 });
-it("detects altered criterion judgments and a rewritten budget ledger", () => {
-  const e = exported();
+it("detects altered criterion judgments and a rewritten budget ledger", async () => {
+  const e = await exported();
   e.session.evaluations[0].score = 100;
   e.session.spentMicros = 0;
   const result = verifyPrivateEvidence(e);
@@ -104,8 +104,8 @@ it("detects altered criterion judgments and a rewritten budget ledger", () => {
   expect(result.errors.join(" ")).toContain("recorded review");
   expect(result.errors.join(" ")).toContain("budget ledger");
 });
-it("detects chain edits, missing evidence, and changed consent", () => {
-  const e = exported();
+it("detects chain edits, missing evidence, and changed consent", async () => {
+  const e = await exported();
   e.session.events[0].data.objective = "Changed intent";
   e.session.calls = [];
   e.session.commercialConsent = false;
@@ -114,15 +114,15 @@ it("detects chain edits, missing evidence, and changed consent", () => {
   expect(errors).toContain("missing evidence");
   expect(errors).toContain("Sharing preference");
 });
-it("detects a changed accepted intent and closed-case resolution", () => {
-  const e = exported();
+it("detects a changed accepted intent and closed-case resolution", async () => {
+  const e = await exported();
   e.session.budgetMicros = 2000;
   e.session.cases[0].resolution = "A different resolution";
   const errors = verifyPrivateEvidence(e).errors.join(" ");
   expect(errors).toContain("fingerprint");
   expect(errors).toContain("recorded resolution");
 });
-it("rejects malformed and summary exports without exposing source content", () => {
+it("rejects malformed and summary exports without exposing source content", async () => {
   for (const input of [
     null,
     {},
@@ -130,12 +130,12 @@ it("rejects malformed and summary exports without exposing source content", () =
     { version: "private-evidence-v1", session: { id: "incomplete" } },
   ])
     expect(verifyPrivateEvidence(input).valid).toBe(false);
-  expect(JSON.stringify(verifyPrivateEvidence(exported()))).not.toContain(
+  expect(JSON.stringify(verifyPrivateEvidence(await exported()))).not.toContain(
     "Synthetic source evidence",
   );
 });
-it("accepts a session still awaiting approval and treats it as an incomplete workflow", () => {
-  const s = obs.create(
+it("accepts a session still awaiting approval and treats it as an incomplete workflow", async () => {
+  const s = await obs.create(
     sessionInput.parse({
       title: "Unapproved fixture",
       objective: "Record an intent without starting work.",
@@ -147,13 +147,12 @@ it("accepts a session still awaiting approval and treats it as an incomplete wor
   expect(
     verifyPrivateEvidence({
       version: "private-evidence-v1",
-      session: obs.db.detail(s.id),
+      session: await obs.db.detail(s.id),
     }).valid,
   ).toBe(true);
 });
-
 it("verifies backend authorization and detects changes to its source or policy", async () => {
-  const s = obs.createAgentSession(
+  const s = await obs.createAgentSession(
     agentSessionInput.parse({
       title: "Automatic authorization fixture",
       objective: "Research without a consumer approval step.",
@@ -167,14 +166,14 @@ it("verifies backend authorization and detects changes to its source or policy",
     domains: [],
     statedReason: "Read the fixture source",
   });
-  obs.outcome(s.id, {
+  await obs.outcome(s.id, {
     requestKey: "auto-final",
     text: "Synthetic automatic output",
     evidenceCallIds: [call.id],
   });
   const clean = {
     version: "private-evidence-v1",
-    session: obs.db.detail(s.id)!,
+    session: (await obs.db.detail(s.id))!,
   };
   expect(verifyPrivateEvidence(clean)).toMatchObject({
     valid: true,
@@ -197,9 +196,8 @@ it("verifies backend authorization and detects changes to its source or policy",
     "Backend authorization",
   );
 });
-
-it("detects altered workspace sharing policy metadata", () => {
-  const e = exported();
+it("detects altered workspace sharing policy metadata", async () => {
+  const e = await exported();
   e.session.sharingPolicy = "unrecorded-policy";
   expect(verifyPrivateEvidence(e).errors.join(" ")).toContain("Sharing policy");
 });

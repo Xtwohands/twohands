@@ -14,8 +14,8 @@ beforeEach(() => {
   engine = new Engine(store);
   app = createApp(store, engine);
 });
-afterEach(() => {
-  store.close();
+afterEach(async () => {
+  await store.close();
   vi.restoreAllMocks();
 });
 describe("workspace API", () => {
@@ -27,7 +27,7 @@ describe("workspace API", () => {
     const good = await request(app).post("/api/tasks").send(intent);
     expect(good.status).toBe(201);
     expect(good.body.status).toBe("ready");
-    expect(store.events(good.body.id)[0].type).toBe("intent_created");
+    expect((await store.events(good.body.id))[0].type).toBe("intent_created");
   });
   it("blocks live execution when credentials are missing", async () => {
     vi.spyOn(engine, "available").mockReturnValue({
@@ -35,14 +35,14 @@ describe("workspace API", () => {
       tavily: false,
       firecrawl: false,
     });
-    const t = createTask(store);
+    const t = await createTask(store);
     const r = await request(app).post(`/api/tasks/${t.id}/run`).send({});
     expect(r.status).toBe(409);
     expect(r.body.error).toContain("API_KEY");
-    expect(store.events(t.id)).toHaveLength(0);
+    expect(await store.events(t.id)).toHaveLength(0);
   });
   it("rejects duplicate in-flight operations", async () => {
-    const t = createTask(store);
+    const t = await createTask(store);
     engine.active.add(t.id);
     expect(
       (await request(app).post(`/api/tasks/${t.id}/run`).send({})).status,
@@ -78,7 +78,7 @@ describe("workspace API", () => {
     }
   });
   it("does not accept an organization with unknown criteria or without evidence notes", async () => {
-    const t = createTask(store);
+    const t = await createTask(store);
     const sourceId = randomUUID();
     t.sources.push({
       id: sourceId,
@@ -88,7 +88,7 @@ describe("workspace API", () => {
       provider: "exa",
       callId: "c1",
     });
-    store.save(t);
+    await store.save(t);
     const r = await request(app)
       .post(`/api/tasks/${t.id}/assessments`)
       .send({
@@ -101,18 +101,18 @@ describe("workspace API", () => {
     expect(r.status).toBe(400);
   });
   it("exports an allowlisted summary without prompts, URLs, payloads or reviewer notes", async () => {
-    const t = createTask(store);
-    store.event(t.id, "provider_request", {
+    const t = await createTask(store);
+    await store.event(t.id, "provider_request", {
       provider: "exa",
       arguments: { query: "private company strategy" },
     });
-    store.event(t.id, "provider_response", {
+    await store.event(t.id, "provider_response", {
       provider: "exa",
       httpStatus: 200,
       returnedRefs: ["https://sensitive.example"],
       secret: "key",
     });
-    store.event(t.id, "user_feedback", {
+    await store.event(t.id, "user_feedback", {
       note: "private reviewer note",
       organization: "secret org",
     });
@@ -130,13 +130,13 @@ describe("workspace API", () => {
     expect(json).toContain("httpStatus");
   });
   it("suppresses analytics until the minimum consented task cohort", async () => {
-    for (let i = 0; i < 10; i++) createTask(store);
+    for (let i = 0; i < 10; i++) await createTask(store);
     expect((await request(app).get("/api/analytics")).body).toMatchObject({
       suppressed: true,
       cohortSize: 0,
       minCohort: 5,
     });
-    for (let i = 0; i < 5; i++) createTask(store, { consent: true });
+    for (let i = 0; i < 5; i++) await createTask(store, { consent: true });
     const r = await request(app).get("/api/analytics");
     expect(r.body.suppressed).toBe(false);
     expect(r.body.providers.every((p: any) => p.suppressed)).toBe(true);

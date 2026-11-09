@@ -13,7 +13,6 @@ import {
   compareProviderRuns,
   providerUsage,
 } from "../server/provider-lab-metrics";
-
 let store: Store, lab: ProviderLab, obs: Observatory;
 const previous = {
   keys: { ...config.keys },
@@ -70,7 +69,7 @@ beforeEach(() => {
 });
 afterEach(async () => {
   await vi.waitFor(() => expect(lab.active.size).toBe(0));
-  store.close();
+  await store.close();
   Object.assign(config.keys, previous.keys);
   config.providerTestBudgetMicros = previous.cap;
   config.providerTestDailyBudgetMicros = previous.daily;
@@ -79,14 +78,15 @@ afterEach(async () => {
   Object.assign(config.prices, previous.prices);
 });
 async function finish(run: LabRun) {
-  await vi.waitFor(() => expect(lab.get(run.id).status).not.toBe("running"));
+  await vi.waitFor(async () =>
+    expect((await lab.get(run.id)).status).not.toBe("running"),
+  );
   await vi.waitFor(() => expect(lab.active.size).toBe(0));
-  return lab.get(run.id);
+  return await lab.get(run.id);
 }
-
 it("forces matched queries through both search providers and keeps organic data unchanged", async () => {
   const run = await finish(
-    lab.start({
+    await lab.start({
       requestKey: "paired",
       providers: ["exa", "tavily", "firecrawl"],
     }),
@@ -111,9 +111,9 @@ it("forces matched queries through both search providers and keeps organic data 
     "exa",
   ]);
   expect(scrape).toHaveBeenCalledTimes(5);
-  expect(obs.db.list()).toHaveLength(0);
-  expect(obs.catalog().every((c) => c.sampleCount === 0)).toBe(true);
-  expect(obs.summary().models).toHaveLength(0);
+  expect(await obs.db.list()).toHaveLength(0);
+  expect((await obs.catalog()).every((c) => c.sampleCount === 0)).toBe(true);
+  expect((await obs.summary()).models).toHaveLength(0);
   const app = createApp(store, undefined, obs, lab);
   const catalog = await request(app).get("/api/observations/catalog");
   expect(catalog.body.find((t: any) => t.provider === "exa")).toMatchObject({
@@ -148,65 +148,77 @@ it("replays one request key, rejects changed plans, and prevents concurrent inde
     await new Promise<void>((r) => (release = r));
     return { httpStatus: 200, sources: [] };
   });
-  const run = lab.start({ requestKey: "same", providers: ["exa", "tavily"] });
+  const run = await lab.start({
+    requestKey: "same",
+    providers: ["exa", "tavily"],
+  });
   expect(
-    lab.start({ requestKey: "same", providers: ["tavily", "exa"] }).id,
+    (await lab.start({ requestKey: "same", providers: ["tavily", "exa"] })).id,
   ).toBe(run.id);
-  expect(() => lab.start({ requestKey: "same", providers: ["exa"] })).toThrow(
-    /different test plan/,
-  );
-  expect(() => lab.start({ requestKey: "other", providers: ["exa"] })).toThrow(
-    /already running/,
-  );
+  await expect(
+    (async () => await lab.start({ requestKey: "same", providers: ["exa"] }))(),
+  ).rejects.toThrow(/different test plan/);
+  await expect(
+    (async () =>
+      await lab.start({ requestKey: "other", providers: ["exa"] }))(),
+  ).rejects.toThrow(/already running/);
   release();
   await finish(run);
   expect(
-    lab.start({ requestKey: "same", providers: ["exa", "tavily"] }).id,
+    (await lab.start({ requestKey: "same", providers: ["exa", "tavily"] })).id,
   ).toBe(run.id);
   expect(search).toHaveBeenCalledTimes(10);
 });
 it("enforces the backend cap and daily allowance before starting provider work", async () => {
   config.providerTestBudgetMicros = 100000;
-  expect(() =>
-    lab.start({
-      requestKey: "too-much",
-      providers: ["exa", "tavily", "firecrawl"],
-    }),
-  ).toThrow(/backend test budget/);
+  await expect(
+    (async () =>
+      await lab.start({
+        requestKey: "too-much",
+        providers: ["exa", "tavily", "firecrawl"],
+      }))(),
+  ).rejects.toThrow(/backend test budget/);
   expect(search).not.toHaveBeenCalled();
-  expect(lab.list()).toHaveLength(0);
+  expect(await lab.list()).toHaveLength(0);
   config.providerTestBudgetMicros = 150000;
   config.providerTestDailyBudgetMicros = 130000;
   await finish(
-    lab.start({
+    await lab.start({
       requestKey: "within",
       providers: ["exa", "tavily", "firecrawl"],
     }),
   );
-  expect(() =>
-    lab.start({ requestKey: "over-day", providers: ["firecrawl"] }),
-  ).toThrow(/daily test allowance/);
+  await expect(
+    (async () =>
+      await lab.start({ requestKey: "over-day", providers: ["firecrawl"] }))(),
+  ).rejects.toThrow(/daily test allowance/);
   expect(scrape).toHaveBeenCalledTimes(5);
-  expect(lab.overview()).toMatchObject({
+  expect(await lab.overview()).toMatchObject({
     dailyCommittedMicros: 130000,
     dailyRemainingMicros: 0,
   });
 });
-it("rejects consumer-style budget overrides, duplicate providers, and missing configuration", () => {
-  expect(() =>
-    lab.start({
-      requestKey: "override",
-      providers: ["exa"],
-      budgetMicros: 999999,
-    }),
-  ).toThrow();
-  expect(() =>
-    lab.start({ requestKey: "duplicate", providers: ["exa", "exa"] }),
-  ).toThrow();
+it("rejects consumer-style budget overrides, duplicate providers, and missing configuration", async () => {
+  await expect(
+    (async () =>
+      await lab.start({
+        requestKey: "override",
+        providers: ["exa"],
+        budgetMicros: 999999,
+      }))(),
+  ).rejects.toThrow();
+  await expect(
+    (async () =>
+      await lab.start({
+        requestKey: "duplicate",
+        providers: ["exa", "exa"],
+      }))(),
+  ).rejects.toThrow();
   config.keys.exa = "";
-  expect(() =>
-    lab.start({ requestKey: "missing", providers: ["exa"] }),
-  ).toThrow(/Configure/);
+  await expect(
+    (async () =>
+      await lab.start({ requestKey: "missing", providers: ["exa"] }))(),
+  ).rejects.toThrow(/Configure/);
   expect(search).not.toHaveBeenCalled();
 });
 it("stops after the current call and never silently retries a provider error", async () => {
@@ -215,8 +227,8 @@ it("stops after the current call and never silently retries a provider error", a
     await new Promise<void>((r) => (release = r));
     throw new ProviderError("http", 503);
   });
-  const run = lab.start({ requestKey: "stop", providers: ["exa"] });
-  lab.cancel(run.id);
+  const run = await lab.start({ requestKey: "stop", providers: ["exa"] });
+  await lab.cancel(run.id);
   release();
   const done = await finish(run);
   expect(done.status).toBe("cancelled");
@@ -230,7 +242,7 @@ it("uses shared provider admission instead of bypassing the organic rate limiter
   const shared = new Map([["exa" as const, [Date.now()]]]);
   lab = new ProviderLab(store, { search, scrape }, shared);
   const done = await finish(
-    lab.start({ requestKey: "rate", providers: ["exa"] }),
+    await lab.start({ requestKey: "rate", providers: ["exa"] }),
   );
   expect(done.calls.every((c) => c.status === "skipped")).toBe(true);
   expect(done.spentMicros).toBe(0);
@@ -238,7 +250,7 @@ it("uses shared provider admission instead of bypassing the organic rate limiter
 });
 it("recovers an interrupted reservation conservatively without repeating the request", async () => {
   const done = await finish(
-    lab.start({ requestKey: "recover", providers: ["firecrawl"] }),
+    await lab.start({ requestKey: "recover", providers: ["firecrawl"] }),
   );
   done.status = "running";
   done.finishedAt = undefined;
@@ -248,13 +260,13 @@ it("recovers an interrupted reservation conservatively without repeating the req
   done.calls.slice(1).forEach((c) => (c.status = "pending"));
   done.spentMicros = 0;
   done.reservedMicros = 1000;
-  store.db
+  await store.db
     .prepare("UPDATE provider_lab_runs SET body=? WHERE id=?")
     .run(JSON.stringify(done), done.id);
   scrape.mockClear();
   const restarted = new ProviderLab(store, { search, scrape });
-  restarted.recover();
-  const recovered = restarted.get(done.id);
+  await restarted.recover();
+  const recovered = await restarted.get(done.id);
   expect(recovered.status).toBe("interrupted");
   expect(recovered.spentMicros).toBe(1000);
   expect(recovered.reservedMicros).toBe(0);
@@ -263,7 +275,8 @@ it("recovers an interrupted reservation conservatively without repeating the req
     true,
   );
   expect(
-    restarted.start({ requestKey: "recover", providers: ["firecrawl"] }).id,
+    (await restarted.start({ requestKey: "recover", providers: ["firecrawl"] }))
+      .id,
   ).toBe(done.id);
   expect(scrape).not.toHaveBeenCalled();
 });
@@ -275,34 +288,35 @@ it("separates request success, reference checks, partial capture, and attributed
     truncated: true,
   }));
   const run = await finish(
-    lab.start({ requestKey: "review", providers: ["firecrawl"] }),
+    await lab.start({ requestKey: "review", providers: ["firecrawl"] }),
   );
   expect(run.calls[0]).toMatchObject({
     status: "succeeded",
     measurements: { pageStatus: 404, referenceCheck: false, truncated: true },
   });
-  lab.review(run.id, run.calls[0].id, {
+  await lab.review(run.id, run.calls[0].id, {
     verdict: "not_useful",
     note: "The receipt contains a missing page, not usable evidence.",
     author: "assistant_reported",
   });
-  lab.review(run.id, run.calls[0].id, {
+  await lab.review(run.id, run.calls[0].id, {
     verdict: "unknown",
     note: "Further source verification is still needed.",
     author: "human_reported",
   });
-  const updated = lab.get(run.id);
+  const updated = await lab.get(run.id);
   expect(updated.calls[0].reviews).toHaveLength(2);
   expect(
     labMeasurements([updated]).find((m) => m.provider === "firecrawl")
       ?.reviewed,
   ).toBe(0);
-  expect(() =>
-    lab.review(run.id, "missing", {
-      verdict: "useful",
-      note: "Enough detail for the fixture.",
-    }),
-  ).toThrow(/not found/);
+  await expect(
+    (async () =>
+      await lab.review(run.id, "missing", {
+        verdict: "useful",
+        note: "Enough detail for the fixture.",
+      }))(),
+  ).rejects.toThrow(/not found/);
 });
 it("does not mistake a hostname, missing status, or a low-ranked page for the reference check", () => {
   const test = suiteCases[0];
@@ -334,10 +348,10 @@ it("does not mistake a hostname, missing status, or a low-ranked page for the re
 });
 it("persists actionable plans and rejects nonexistent or duplicate comparison runs", async () => {
   const first = await finish(
-    lab.start({ requestKey: "first", providers: ["tavily"] }),
+    await lab.start({ requestKey: "first", providers: ["tavily"] }),
   );
   const second = await finish(
-    lab.start({ requestKey: "second", providers: ["tavily"] }),
+    await lab.start({ requestKey: "second", providers: ["tavily"] }),
   );
   const input = {
     provider: "tavily",
@@ -349,19 +363,21 @@ it("persists actionable plans and rejects nonexistent or duplicate comparison ru
     baselineRunId: first.id,
     followupRunId: second.id,
   };
-  const plan = lab.saveExperiment(input);
-  expect(lab.experiments()).toHaveLength(1);
+  const plan = await lab.saveExperiment(input);
+  expect(await lab.experiments()).toHaveLength(1);
   expect(plan.status).toBe("planned");
-  expect(() =>
-    lab.saveExperiment({ ...input, followupRunId: first.id }),
-  ).toThrow(/different runs/);
-  expect(() => lab.saveExperiment({ ...input, status: "reviewed" })).toThrow(
-    /Record what/,
-  );
-  expect(() =>
-    lab.saveExperiment({ ...input, verification: "agent_choice" }),
-  ).toThrow(/cannot verify agent choice/);
-  const revised = lab.saveExperiment(
+  await expect(
+    (async () =>
+      await lab.saveExperiment({ ...input, followupRunId: first.id }))(),
+  ).rejects.toThrow(/different runs/);
+  await expect(
+    (async () => await lab.saveExperiment({ ...input, status: "reviewed" }))(),
+  ).rejects.toThrow(/Record what/);
+  await expect(
+    (async () =>
+      await lab.saveExperiment({ ...input, verification: "agent_choice" }))(),
+  ).rejects.toThrow(/cannot verify agent choice/);
+  const revised = await lab.saveExperiment(
     {
       ...input,
       status: "reviewed",
@@ -371,23 +387,23 @@ it("persists actionable plans and rejects nonexistent or duplicate comparison ru
     plan.id,
   );
   expect(revised.id).toBe(plan.id);
-  expect(lab.experiments()).toHaveLength(1);
+  expect(await lab.experiments()).toHaveLength(1);
 });
 it("keeps dashboard summaries small without losing receipts or review history", async () => {
   const run = await finish(
-    lab.start({ requestKey: "summary", providers: ["exa"] }),
+    await lab.start({ requestKey: "summary", providers: ["exa"] }),
   );
-  lab.review(run.id, run.calls[0].id, {
+  await lab.review(run.id, run.calls[0].id, {
     verdict: "partial",
     note: "The fixture is only a synthetic reference match.",
     author: "assistant_reported",
   });
-  const summary = lab.summaries()[0];
+  const summary = (await lab.summaries())[0];
   expect(summary.calls[0].result).toBeUndefined();
   expect(summary.calls[0].reviews).toHaveLength(1);
   expect(summary.calls[0].measurements?.referenceCheck).toBe(true);
-  expect(lab.get(run.id).calls[0].result).toBeDefined();
-  expect(lab.overview().measurements[0]).toMatchObject({
+  expect((await lab.get(run.id)).calls[0].result).toBeDefined();
+  expect((await lab.overview()).measurements[0]).toMatchObject({
     reviewed: 1,
     partial: 1,
     useful: 0,
@@ -395,10 +411,10 @@ it("keeps dashboard summaries small without losing receipts or review history", 
 });
 it("compares provider-specific cases across runs and exposes incompatible settings", async () => {
   const before = await finish(
-    lab.start({ requestKey: "before", providers: ["exa"] }),
+    await lab.start({ requestKey: "before", providers: ["exa"] }),
   );
   const after = await finish(
-    lab.start({
+    await lab.start({
       requestKey: "after",
       providers: ["exa", "tavily", "firecrawl"],
     }),
@@ -420,7 +436,7 @@ it("compares provider-specific cases across runs and exposes incompatible settin
 });
 it("preserves provider USD and credit units without inventing an invoice", async () => {
   const run = await finish(
-    lab.start({ requestKey: "usage", providers: ["exa"] }),
+    await lab.start({ requestKey: "usage", providers: ["exa"] }),
   );
   run.calls[0].result!.usage = { providerReportedUsd: 0.007 };
   run.calls[1].result!.usage = { credits: 1 };
@@ -433,19 +449,19 @@ it("preserves provider USD and credit units without inventing an invoice", async
     creditCalls: 2,
     credits: 1,
   });
-  store.db
+  await store.db
     .prepare("UPDATE provider_lab_runs SET body=? WHERE id=?")
     .run(JSON.stringify(run), run.id);
-  const report = companyReport("exa", "local", obs, lab);
+  const report = await companyReport("exa", "local", obs, lab);
   expect(
     report.opportunities.find((o) => o.id === "cost-calibration")?.evidence,
   ).toContain("$0.017");
   expect(report.usage?.reportedUsd).toBe(0.007);
-  expect(companyReport("exa", "demo", obs, lab).usage).toBeNull();
+  expect((await companyReport("exa", "demo", obs, lab)).usage).toBeNull();
 });
 it("retains active, reviewed-recently, and linked lab evidence during retention", async () => {
   const template = await finish(
-    lab.start({ requestKey: "retention", providers: ["firecrawl"] }),
+    await lab.start({ requestKey: "retention", providers: ["firecrawl"] }),
   );
   const clone = (kind: string) => {
     const run = structuredClone(template);
@@ -467,7 +483,7 @@ it("retains active, reviewed-recently, and linked lab evidence during retention"
     at: new Date().toISOString(),
   });
   for (const run of [expired, active, recentReview, linked, reviewedPlan])
-    store.db
+    await store.db
       .prepare("INSERT INTO provider_lab_runs VALUES(?,?,?)")
       .run(run.id, run.requestKey, JSON.stringify(run));
   const plan = {
@@ -478,29 +494,33 @@ it("retains active, reviewed-recently, and linked lab evidence during retention"
     successMeasure: "The evidence should remain available after retention.",
     baselineRunId: linked.id,
   };
-  lab.saveExperiment(plan);
-  const oldPlan = lab.saveExperiment({
+  await lab.saveExperiment(plan);
+  const oldPlan = await lab.saveExperiment({
     ...plan,
     baselineRunId: reviewedPlan.id,
     status: "reviewed",
     conclusion: "This old synthetic plan is complete and may expire.",
   });
-  store.db
+  await store.db
     .prepare(
       "UPDATE provider_experiments SET body=json_set(body,'$.updatedAt',?) WHERE id=?",
     )
     .run("2000-01-01T00:00:00.000Z", oldPlan.id);
-  expect(lab.pruneOlderThan("2001-01-01T00:00:00.000Z")).toEqual({
+  expect(await lab.pruneOlderThan("2001-01-01T00:00:00.000Z")).toEqual({
     runs: 2,
     plans: 1,
   });
-  expect(() => lab.get(expired.id)).toThrow(/not found/);
-  expect(() => lab.get(reviewedPlan.id)).toThrow(/not found/);
+  await expect((async () => await lab.get(expired.id))()).rejects.toThrow(
+    /not found/,
+  );
+  await expect((async () => await lab.get(reviewedPlan.id))()).rejects.toThrow(
+    /not found/,
+  );
   for (const run of [template, active, recentReview, linked])
-    expect(lab.get(run.id)).toBeDefined();
+    expect(await lab.get(run.id)).toBeDefined();
 });
 it("keeps demo metrics out of storage and suppresses company exports below the minimum cohort", async () => {
-  const session = obs.createAgentSession({
+  const session = await obs.createAgentSession({
     title: "PRIVATE title",
     objective: "PRIVATE objective",
     criteria: [{ text: "PRIVATE criterion", weight: 1 }],
@@ -508,7 +528,7 @@ it("keeps demo metrics out of storage and suppresses company exports below the m
     model: "PRIVATE model",
     host: "PRIVATE host",
   });
-  obs.discover(session.id, "PRIVATE need");
+  await obs.discover(session.id, "PRIVATE need");
   await obs.execute(session.id, {
     tool: "tavily_search",
     query: "PRIVATE query",
@@ -516,22 +536,22 @@ it("keeps demo metrics out of storage and suppresses company exports below the m
     requestKey: "organic",
     statedReason: "PRIVATE explanation",
   });
-  expect(companyReport("tavily", "local", obs, lab).organic).toBeNull();
-  const demo = companyReport("exa", "demo", obs, lab);
+  expect((await companyReport("tavily", "local", obs, lab)).organic).toBeNull();
+  const demo = await companyReport("exa", "demo", obs, lab);
   expect(demo.organic?.selectedSessions).toBe(54);
-  expect(lab.list()).toHaveLength(0);
-  expect(obs.db.list()).toHaveLength(1);
+  expect(await lab.list()).toHaveLength(0);
+  expect(await obs.db.list()).toHaveLength(1);
   expect(
-    JSON.stringify(companyReport("tavily", "local", obs, lab)),
+    JSON.stringify(await companyReport("tavily", "local", obs, lab)),
   ).not.toContain("PRIVATE");
-  expect(obs.catalog().find((t) => t.provider === "tavily")?.sampleCount).toBe(
-    1,
-  );
+  expect(
+    (await obs.catalog()).find((t) => t.provider === "tavily")?.sampleCount,
+  ).toBe(1);
 });
 it("keeps all-session sharing enabled and suppresses exports when deletion reduces the provider cohort", async () => {
   const ids: string[] = [];
   for (let i = 0; i < 5; i++) {
-    const s = obs.createAgentSession({
+    const s = await obs.createAgentSession({
       title: "PRIVATE title",
       objective: "PRIVATE objective",
       criteria: [{ text: "PRIVATE criterion", weight: 1 }],
@@ -540,7 +560,7 @@ it("keeps all-session sharing enabled and suppresses exports when deletion reduc
       host: "PRIVATE",
     });
     ids.push(s.id);
-    obs.discover(s.id, "PRIVATE");
+    await obs.discover(s.id, "PRIVATE");
     await obs.execute(s.id, {
       tool: "tavily_search",
       query: "PRIVATE query",
@@ -548,24 +568,28 @@ it("keeps all-session sharing enabled and suppresses exports when deletion reduc
       requestKey: "organic",
       statedReason: "PRIVATE",
     });
-    obs.consent(s.id, true);
+    await obs.consent(s.id, true);
   }
-  expect(companyReport("tavily", "local", obs, lab).organic).toMatchObject({
+  expect(
+    (await companyReport("tavily", "local", obs, lab)).organic,
+  ).toMatchObject({
     offeredSessions: 5,
     selectedSessions: 5,
     calls: 5,
   });
   expect(
-    JSON.stringify(companyReport("tavily", "local", obs, lab)),
+    JSON.stringify(await companyReport("tavily", "local", obs, lab)),
   ).not.toContain("PRIVATE");
-  expect(() => obs.consent(ids[0], false)).toThrow(/workspace policy/);
-  obs.db.remove(ids[0]);
-  expect(companyReport("tavily", "local", obs, lab).organic).toBeNull();
+  await expect(
+    (async () => await obs.consent(ids[0], false))(),
+  ).rejects.toThrow(/workspace policy/);
+  await obs.db.remove(ids[0]);
+  expect((await companyReport("tavily", "local", obs, lab)).organic).toBeNull();
 });
 it("does not credit selections that happened before the tool was offered", async () => {
   const sessions = [];
   for (let i = 0; i < 5; i++) {
-    const s = obs.createAgentSession({
+    const s = await obs.createAgentSession({
       title: "Chronology fixture",
       objective: "Check offered-before-selected event order.",
       constraints: "",
@@ -581,21 +605,23 @@ it("does not credit selections that happened before the tool was offered", async
       requestKey: "before-offer",
     };
     await obs.execute(s.id, args);
-    obs.discover(s.id, "Offer after the first choice");
-    obs.consent(s.id, true);
+    await obs.discover(s.id, "Offer after the first choice");
+    await obs.consent(s.id, true);
     sessions.push({ s, args });
   }
-  expect(companyReport("tavily", "local", obs, lab).organic).toBeNull();
+  expect((await companyReport("tavily", "local", obs, lab)).organic).toBeNull();
   for (const { s, args } of sessions)
     await obs.execute(s.id, { ...args, requestKey: "after-offer" });
-  expect(companyReport("tavily", "local", obs, lab).organic).toMatchObject({
+  expect(
+    (await companyReport("tavily", "local", obs, lab)).organic,
+  ).toMatchObject({
     offeredSessions: 5,
     selectedSessions: 5,
     calls: 5,
   });
-  expect(obs.catalog().find((t) => t.provider === "tavily")?.sampleCount).toBe(
-    10,
-  );
+  expect(
+    (await obs.catalog()).find((t) => t.provider === "tavily")?.sampleCount,
+  ).toBe(10);
 });
 it("protects lab and company endpoints with workspace authentication and validates inputs", async () => {
   config.token = "fixture-access-token";
@@ -626,9 +652,8 @@ it("protects lab and company endpoints with workspace authentication and validat
     (await request(app).get("/api/provider-lab").set(auth)).body.runs,
   ).toHaveLength(1);
 });
-
 it("shows private workspace execution below the export threshold only when explicitly requested", async () => {
-  const s = obs.createAgentSession({
+  const s = await obs.createAgentSession({
     title: "PRIVATE title",
     objective: "PRIVATE objective",
     criteria: [{ text: "PRIVATE criterion", weight: 1 }],
@@ -636,7 +661,7 @@ it("shows private workspace execution below the export threshold only when expli
     host: "Unit test",
     constraints: "",
   });
-  obs.discover(s.id, "Find public evidence");
+  await obs.discover(s.id, "Find public evidence");
   await obs.execute(s.id, {
     tool: "exa_search",
     query: "PRIVATE query",
@@ -644,10 +669,10 @@ it("shows private workspace execution below the export threshold only when expli
     domains: [],
     statedReason: "PRIVATE explanation",
   });
-  const aggregate = companyReport("exa", "local", obs, lab);
+  const aggregate = await companyReport("exa", "local", obs, lab);
   expect(aggregate.organic).toBeNull();
   expect(aggregate.privateActivity).toBeNull();
-  const local = companyReport("exa", "local", obs, lab, true);
+  const local = await companyReport("exa", "local", obs, lab, true);
   expect(local.privateActivity).toMatchObject({
     calls: 1,
     successfulCalls: 1,
@@ -657,9 +682,8 @@ it("shows private workspace execution below the export threshold only when expli
   expect(local.organic).toBeNull();
   expect(JSON.stringify(local)).not.toContain("PRIVATE");
 });
-
 it("does not count incompatible tools as offered candidates in new discovery events", async () => {
-  const s = obs.createAgentSession({
+  const s = await obs.createAgentSession({
     title: "Candidate scope fixture",
     objective: "Find pages",
     criteria: [{ text: "Finds sources", weight: 1 }],
@@ -667,16 +691,59 @@ it("does not count incompatible tools as offered candidates in new discovery eve
     host: "Unit test",
     constraints: "",
   });
-  obs.discover(s.id, {
+  await obs.discover(s.id, {
     need: "Search",
     operations: [{ operation: "search", query: "fixture" }],
   });
   expect(
-    companyReport("exa", "local", obs, lab, true).privateActivity
+    (await companyReport("exa", "local", obs, lab, true)).privateActivity
       ?.offeredSessions,
   ).toBe(1);
   expect(
-    companyReport("firecrawl", "local", obs, lab, true).privateActivity
+    (await companyReport("firecrawl", "local", obs, lab, true)).privateActivity
       ?.offeredSessions,
   ).toBe(0);
+});
+
+it("preserves cancellation and review during concurrent provider settlement", async () => {
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const defaultSearch = search.getMockImplementation()!;
+  search
+    .mockImplementationOnce(defaultSearch)
+    .mockImplementationOnce(async () => {
+      await gate;
+      return { httpStatus: 200, sources: [] };
+    });
+  const run = await lab.start({
+    requestKey: "concurrent-cancel-review",
+    providers: ["exa"],
+  });
+  try {
+    await vi.waitFor(() => expect(search).toHaveBeenCalledTimes(2));
+    const settled = (await lab.get(run.id)).calls.find(
+      (c) => c.status === "succeeded",
+    )!;
+    await Promise.all([
+      lab.cancel(run.id),
+      lab.review(run.id, settled.id, {
+        verdict: "useful",
+        note: "Fixture receipt reviewed while the next call is running.",
+        author: "human_reported",
+      }),
+    ]);
+    release();
+    const result = await finish(run);
+    expect(result.cancelRequested).toBe(true);
+    expect(result.status).toBe("cancelled");
+    expect(result.calls.find((c) => c.id === settled.id)!.reviews).toHaveLength(
+      1,
+    );
+    expect(search).toHaveBeenCalledTimes(2);
+    expect(result.reservedMicros).toBe(0);
+  } finally {
+    release();
+  }
 });

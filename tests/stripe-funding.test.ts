@@ -34,14 +34,14 @@ beforeEach(() => {
     () => now,
   );
 });
-afterEach(() => store.close());
-const ledgerCount = () => funding.ledger.entries().length;
-const eventCount = () =>
+afterEach(async () => await store.close());
+const ledgerCount = async () => (await funding.ledger.entries()).length;
+const eventCount = async () =>
   Number(
-    store.db.prepare("SELECT COUNT(*) AS n FROM stripe_webhook_receipts").get()!
-      .n,
+    (await store.db
+      .prepare("SELECT COUNT(*) AS n FROM stripe_webhook_receipts")
+      .get())!.n,
   );
-
 describe("Stripe sandbox funding integrity", () => {
   it("parses cents exactly and rejects malformed or out-of-range amounts", () => {
     expect(stripeDepositInput.parse(input("5.01")).amount).toBe(501);
@@ -105,7 +105,7 @@ describe("Stripe sandbox funding integrity", () => {
     await expect(stripe.create({ ...body, amount: "11" })).rejects.toThrow(
       /different amount/,
     );
-    expect(funding.ledger.balance()).toBe(0);
+    expect(await funding.ledger.balance()).toBe(0);
   });
   it("recovers a lost create response with the original Stripe idempotency key", async () => {
     const create = gateway.create.bind(gateway);
@@ -182,7 +182,7 @@ describe("Stripe sandbox funding integrity", () => {
       mutate(changed);
       gateway.sessions.set(intent.checkoutSessionId!, changed);
       await expect(stripe.reconcile(intent.id)).rejects.toThrow();
-      expect(funding.ledger.balance()).toBe(0);
+      expect(await funding.ledger.balance()).toBe(0);
     }
   });
   it("never credits an unpaid redirect or an expired checkout", async () => {
@@ -193,7 +193,7 @@ describe("Stripe sandbox funding integrity", () => {
       url: null,
     });
     expect((await stripe.reconcile(intent.id)).status).toBe("expired");
-    expect(funding.ledger.balance()).toBe(0);
+    expect(await funding.ledger.balance()).toBe(0);
   });
   it("credits a verified payment once under concurrent retries and across restarts", async () => {
     const intent = await stripe.create(input("12.34"));
@@ -203,16 +203,16 @@ describe("Stripe sandbox funding integrity", () => {
       stripe.reconcile(intent.id),
     ]);
     expect(results[0].status).toBe("credited");
-    expect(funding.ledger.balance()).toBe(12340000);
-    expect(ledgerCount()).toBe(1);
+    expect(await funding.ledger.balance()).toBe(12340000);
+    expect(await ledgerCount()).toBe(1);
     stripe = new StripeFundingService(
       funding,
       { ...fixtureStripeSettings },
       gateway,
     );
     await stripe.reconcile(intent.id);
-    expect(ledgerCount()).toBe(1);
-    expect(funding.summary().spendableForProviders).toBe(false);
+    expect(await ledgerCount()).toBe(1);
+    expect((await funding.summary()).spendableForProviders).toBe(false);
   });
   it("deduplicates signed webhooks and refuses invalid, stale and live signatures/events", async () => {
     const intent = await stripe.create(input());
@@ -239,8 +239,8 @@ describe("Stripe sandbox funding integrity", () => {
     expect(await stripe.webhook(event.payload, event.signature)).toMatchObject({
       replayed: true,
     });
-    expect(ledgerCount()).toBe(1);
-    expect(eventCount()).toBe(1);
+    expect(await ledgerCount()).toBe(1);
+    expect(await eventCount()).toBe(1);
   });
   it("does not acknowledge failed verification so Stripe can retry delivery", async () => {
     const intent = await stripe.create(input());
@@ -252,11 +252,11 @@ describe("Stripe sandbox funding integrity", () => {
     await expect(
       stripe.webhook(event.payload, event.signature),
     ).rejects.toThrow();
-    expect(eventCount()).toBe(0);
-    expect(ledgerCount()).toBe(0);
+    expect(await eventCount()).toBe(0);
+    expect(await ledgerCount()).toBe(0);
     await stripe.webhook(event.payload, event.signature);
-    expect(eventCount()).toBe(1);
-    expect(funding.ledger.balance()).toBe(10000000);
+    expect(await eventCount()).toBe(1);
+    expect(await funding.ledger.balance()).toBe(10000000);
     retrieve.mockRestore();
   });
   it("reconciles refunds monotonically and holds disputed credits without accidental restoration", async () => {
@@ -267,19 +267,18 @@ describe("Stripe sandbox funding integrity", () => {
     expect((await stripe.reconcile(intent.id)).status).toBe(
       "partially_refunded",
     );
-    expect(funding.ledger.balance()).toBe(7500000);
+    expect(await funding.ledger.balance()).toBe(7500000);
     gateway.pay(intent.checkoutSessionId!, 0);
     await stripe.reconcile(intent.id); // Stale snapshot must not restore a refund.
-    expect(funding.ledger.balance()).toBe(7500000);
+    expect(await funding.ledger.balance()).toBe(7500000);
     gateway.pay(intent.checkoutSessionId!, 250, true);
     expect((await stripe.reconcile(intent.id)).status).toBe("disputed");
-    expect(funding.ledger.balance()).toBe(0);
+    expect(await funding.ledger.balance()).toBe(0);
     gateway.pay(intent.checkoutSessionId!, 250, false);
     await stripe.reconcile(intent.id);
-    expect(funding.ledger.balance()).toBe(0);
+    expect(await funding.ledger.balance()).toBe(0);
     expect(
-      funding.ledger
-        .entries()
+      (await funding.ledger.entries())
         .map((e) => e.deltaUnits)
         .sort((a, b) => a - b),
     ).toEqual([-7500000, -2500000, 10000000]);
@@ -314,13 +313,13 @@ describe("Stripe sandbox funding integrity", () => {
     release();
     await older;
     await delivery;
-    expect(stripe.get(intent.id).status).toBe("refunded");
-    expect(funding.ledger.balance()).toBe(0);
-    expect(eventCount()).toBe(1);
+    expect((await stripe.get(intent.id)).status).toBe("refunded");
+    expect(await funding.ledger.balance()).toBe(0);
+    expect(await eventCount()).toBe(1);
     expect(await stripe.webhook(event.payload, event.signature)).toMatchObject({
       replayed: true,
     });
-    expect(ledgerCount()).toBe(2);
+    expect(await ledgerCount()).toBe(2);
   });
   it("finds a disputed payment by verified PaymentIntent metadata before checkout completion arrives", async () => {
     const intent = await stripe.create(input());
@@ -334,9 +333,9 @@ describe("Stripe sandbox funding integrity", () => {
       received: true,
       replayed: false,
     });
-    expect(stripe.get(intent.id).disputed).toBe(true);
-    expect(stripe.get(intent.id).netCreditUnits).toBe(0);
-    expect(eventCount()).toBe(1);
+    expect((await stripe.get(intent.id)).disputed).toBe(true);
+    expect((await stripe.get(intent.id)).netCreditUnits).toBe(0);
+    expect(await eventCount()).toBe(1);
   });
   it("records full refunds and processes charge events using the saved payment identity", async () => {
     const intent = await stripe.create(input());
@@ -348,8 +347,8 @@ describe("Stripe sandbox funding integrity", () => {
       payment_intent: paid.payment_intent.id,
     });
     await stripe.webhook(event.payload, event.signature);
-    expect(stripe.get(intent.id).status).toBe("refunded");
-    expect(funding.ledger.balance()).toBe(0);
+    expect((await stripe.get(intent.id)).status).toBe("refunded");
+    expect(await funding.ledger.balance()).toBe(0);
   });
   it("recovers checkout completion racing the create response without duplicate credits", async () => {
     const create = gateway.create.bind(gateway);
@@ -363,20 +362,20 @@ describe("Stripe sandbox funding integrity", () => {
     const intent = await stripe.create(input());
     expect(intent.status).toBe("credited");
     expect(intent.checkoutUrl).toBeNull();
-    expect(ledgerCount()).toBe(1);
+    expect(await ledgerCount()).toBe(1);
   });
   it("retains both ledger and receipt if settlement fails atomically", async () => {
     const intent = await stripe.create(input());
     gateway.pay(intent.checkoutSessionId!);
-    store.db.exec(
+    await store.db.exec(
       "CREATE TRIGGER fail_test_receipt BEFORE UPDATE ON stripe_deposits WHEN NEW.payment_intent_id IS NOT NULL BEGIN SELECT RAISE(ABORT,'fixture failure'); END;",
     );
     await expect(stripe.reconcile(intent.id)).rejects.toThrow();
-    expect(funding.ledger.balance()).toBe(0);
-    expect(stripe.get(intent.id).paymentIntentId).toBeNull();
-    store.db.exec("DROP TRIGGER fail_test_receipt");
+    expect(await funding.ledger.balance()).toBe(0);
+    expect((await stripe.get(intent.id)).paymentIntentId).toBeNull();
+    await store.db.exec("DROP TRIGGER fail_test_receipt");
     await stripe.reconcile(intent.id);
-    expect(funding.ledger.balance()).toBe(10000000);
+    expect(await funding.ledger.balance()).toBe(10000000);
   });
   it("imports historical on-chain credits once and preserves them when a Stripe payment is refunded", async () => {
     const id = randomUUID();
@@ -386,12 +385,12 @@ describe("Stripe sandbox funding integrity", () => {
       recipient: `0x${"22".repeat(20)}`,
       rpcUrl: "https://fixture.invalid",
     });
-    const onchain = f.create({
+    const onchain = await f.create({
       requestKey: id,
       amount: "5",
       sender: `0x${"11".repeat(20)}`,
     });
-    store.db
+    await store.db
       .prepare("INSERT INTO funding_credits VALUES (?,?,?,?,?,?,?)")
       .run(
         randomUUID(),
@@ -404,14 +403,14 @@ describe("Stripe sandbox funding integrity", () => {
       );
     new FundingLedger(store);
     new FundingLedger(store);
-    expect(funding.ledger.balance()).toBe(5000000);
+    expect(await funding.ledger.balance()).toBe(5000000);
     const card = await stripe.create(input());
     gateway.pay(card.checkoutSessionId!);
     await stripe.reconcile(card.id);
-    expect(funding.ledger.balance()).toBe(15000000);
+    expect(await funding.ledger.balance()).toBe(15000000);
     gateway.pay(card.checkoutSessionId!, 1000);
     await stripe.reconcile(card.id);
-    expect(funding.ledger.balance()).toBe(5000000);
+    expect(await funding.ledger.balance()).toBe(5000000);
   });
   it("allows reconciliation after creation is disabled and limits manual polling", async () => {
     const intent = await stripe.create(input());
@@ -424,7 +423,7 @@ describe("Stripe sandbox funding integrity", () => {
     await stripe.reconcile(intent.id); // Webhooks bypass UI polling cooldown.
     now += 10001;
     await stripe.reconcile(intent.id, true);
-    expect(ledgerCount()).toBe(1);
+    expect(await ledgerCount()).toBe(1);
     await expect(stripe.create(input())).rejects.toThrow(/not enabled/);
   });
   it("requires workspace auth for creation while accepting only signed raw webhooks on the exact exemption", async () => {
@@ -474,7 +473,7 @@ describe("Stripe sandbox funding integrity", () => {
         .set("stripe-signature", event.signature)
         .send(event.payload.toString());
       expect(response.status).toBe(200);
-      expect(funding.ledger.balance()).toBe(10000000);
+      expect(await funding.ledger.balance()).toBe(10000000);
       expect(JSON.stringify(response.body)).not.toContain("sk_test_");
     } finally {
       config.token = old;

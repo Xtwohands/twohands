@@ -17,7 +17,6 @@ import type {
   Experiment,
   ControlledSample,
 } from "./provider-lab-types.js";
-
 const provider = z.enum(["exa", "tavily", "firecrawl"]);
 export const labRunInput = z
   .object({
@@ -54,41 +53,39 @@ export const experimentInput = z
     conclusion: z.string().trim().max(3000).default(""),
   })
   .strict();
-
 export { measure, labMeasurements } from "./provider-lab-metrics.js";
 import { measure, labMeasurements } from "./provider-lab-metrics.js";
-
 export class ProviderLab {
   active = new Set<string>();
   constructor(
     private store: Store,
     private adapters = { search, scrape },
     private timestamps = new Map<ProviderId, number[]>(),
-  ) {
-    store.db.exec(
-      "CREATE TABLE IF NOT EXISTS provider_lab_runs(id TEXT PRIMARY KEY,request_key TEXT UNIQUE NOT NULL,body TEXT NOT NULL); CREATE TABLE IF NOT EXISTS provider_experiments(id TEXT PRIMARY KEY,body TEXT NOT NULL);",
-    );
+  ) {}
+  async list(): Promise<LabRun[]> {
+    return (
+      await this.store.db
+        .prepare("SELECT body FROM provider_lab_runs ORDER BY rowid DESC")
+        .all()
+    ).map((r) => JSON.parse(r.body as string));
   }
-  list(): LabRun[] {
-    return this.store.db
-      .prepare("SELECT body FROM provider_lab_runs ORDER BY rowid DESC")
-      .all()
-      .map((r) => JSON.parse(r.body as string));
-  }
-  summaries(): LabRun[] {
+  async summaries(): Promise<LabRun[]> {
     // Keep large captured pages out of recurring dashboard reads.
-    return this.store.db
-      .prepare(
-        `SELECT json_set(body,'$.calls',json((
+    return (
+      await this.store.db
+        .prepare(
+          `SELECT json_set(body,'$.calls',json((
       SELECT json_group_array(json_remove(value,'$.result'))
       FROM json_each(provider_lab_runs.body,'$.calls')
     ))) AS body FROM provider_lab_runs ORDER BY rowid DESC`,
-      )
-      .all()
-      .map((r) => JSON.parse(r.body as string));
+        )
+        .all()
+    ).map((r) => JSON.parse(r.body as string));
   }
-  controlledSamples(): Partial<Record<ProviderId, ControlledSample>> {
-    const runs = this.summaries();
+  async controlledSamples(): Promise<
+    Partial<Record<ProviderId, ControlledSample>>
+  > {
+    const runs = await this.summaries();
     return Object.fromEntries(
       (["exa", "tavily", "firecrawl"] as ProviderId[]).flatMap((provider) => {
         const run = runs.find(
@@ -125,23 +122,25 @@ export class ProviderLab {
       }),
     );
   }
-  get(id: string): LabRun {
-    const row = this.store.db
+  async get(id: string): Promise<LabRun> {
+    const row = await this.store.db
       .prepare("SELECT body FROM provider_lab_runs WHERE id=?")
       .get(id);
     if (!row) throw new ObservationError(404, "Test run not found.");
     return JSON.parse(row.body as string);
   }
-  private save(run: LabRun) {
+  private async save(run: LabRun) {
     run.revision = (run.revision ?? 0) + 1;
-    this.store.db
+    await this.store.db
       .prepare(
         "INSERT INTO provider_lab_runs VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET body=excluded.body",
       )
       .run(run.id, run.requestKey, JSON.stringify(run));
   }
-  recover() {
-    for (const run of this.list().filter((r) => r.status === "running")) {
+  async recover() {
+    for (const run of (await this.list()).filter(
+      (r) => r.status === "running",
+    )) {
       for (const c of run.calls) {
         if (c.status === "running") {
           c.status = "interrupted";
@@ -154,11 +153,11 @@ export class ProviderLab {
       run.reservedMicros = 0;
       run.status = "interrupted";
       run.finishedAt = new Date().toISOString();
-      this.save(run);
+      await this.save(run);
     }
   }
-  overview() {
-    const runs = this.summaries();
+  async overview() {
+    const runs = await this.summaries();
     const dailyCommittedMicros = this.committedToday(runs);
     return {
       suiteVersion,
@@ -179,7 +178,7 @@ export class ProviderLab {
       })),
       runs,
       measurements: labMeasurements(runs),
-      experiments: this.experiments(),
+      experiments: await this.experiments(),
     };
   }
   private committedToday(runs: LabRun[]) {
@@ -192,109 +191,116 @@ export class ProviderLab {
         0,
       );
   }
-  start(raw: unknown) {
-    const input = labRunInput.parse(raw);
-    const providers = [...input.providers].sort() as ProviderId[];
-    const signature = digest({ providers, suiteVersion });
-    const existing = this.store.db
-      .prepare("SELECT body FROM provider_lab_runs WHERE request_key=?")
-      .get(input.requestKey);
-    if (existing) {
-      const run = JSON.parse(existing.body as string) as LabRun;
-      if (run.signature !== signature)
+  async start(raw: unknown) {
+    const admitted = await this.store.transaction(async () => {
+      const input = labRunInput.parse(raw);
+      const providers = [...input.providers].sort() as ProviderId[];
+      const signature = digest({ providers, suiteVersion });
+      const existing = await this.store.db
+        .prepare("SELECT body FROM provider_lab_runs WHERE request_key=?")
+        .get(input.requestKey);
+      if (existing) {
+        const run = JSON.parse(existing.body as string) as LabRun;
+        if (run.signature !== signature)
+          throw new ObservationError(
+            409,
+            "This request key belongs to a different test plan.",
+          );
+        return { run, created: false };
+      }
+      const priorRuns = await this.summaries();
+      if (this.active.size || priorRuns.some((r) => r.status === "running"))
         throw new ObservationError(
           409,
-          "This request key belongs to a different test plan.",
+          "A controlled test is already running. Wait for it to finish or stop it.",
         );
-      return run;
-    }
-    const priorRuns = this.summaries();
-    if (this.active.size || priorRuns.some((r) => r.status === "running"))
-      throw new ObservationError(
-        409,
-        "A controlled test is already running. Wait for it to finish or stop it.",
+      if (providers.some((p) => !config.keys[p]))
+        throw new ObservationError(
+          409,
+          "Configure every selected provider on the backend before running a live test.",
+        );
+      const cases = suiteCases.filter((c) =>
+        c.kind === "search"
+          ? providers.some((p) => p !== "firecrawl")
+          : providers.includes("firecrawl"),
       );
-    if (providers.some((p) => !config.keys[p]))
-      throw new ObservationError(
-        409,
-        "Configure every selected provider on the backend before running a live test.",
-      );
-    const cases = suiteCases.filter((c) =>
-      c.kind === "search"
-        ? providers.some((p) => p !== "firecrawl")
-        : providers.includes("firecrawl"),
-    );
-    const offset = priorRuns.length % 2;
-    const calls = cases.flatMap((c, i) => {
-      const order =
-        c.kind === "extract"
-          ? ["firecrawl" as const]
-          : providers.filter((p) => p !== "firecrawl");
-      if ((i + offset) % 2) order.reverse();
-      return order.map((p) => ({
+      const offset = priorRuns.length % 2;
+      const calls = cases.flatMap((c, i) => {
+        const order =
+          c.kind === "extract"
+            ? ["firecrawl" as const]
+            : providers.filter((p) => p !== "firecrawl");
+        if ((i + offset) % 2) order.reverse();
+        return order.map((p) => ({
+          id: randomUUID(),
+          caseId: c.id,
+          provider: p,
+          status: "pending" as const,
+          estimateMicros: providerEstimate(p),
+          reviews: [],
+        }));
+      });
+      const plannedMicros = calls.reduce((n, c) => n + c.estimateMicros, 0);
+      if (plannedMicros > config.providerTestBudgetMicros)
+        throw new ObservationError(
+          409,
+          "The test plan exceeds the backend test budget. Choose fewer providers or have the operator adjust backend policy.",
+        );
+      const daily = this.committedToday(priorRuns);
+      if (daily + plannedMicros > config.providerTestDailyBudgetMicros)
+        throw new ObservationError(
+          409,
+          "The backend daily test allowance is exhausted. No provider calls were started.",
+        );
+      const run: LabRun = {
         id: randomUUID(),
-        caseId: c.id,
-        provider: p,
-        status: "pending" as const,
-        estimateMicros: providerEstimate(p),
-        reviews: [],
-      }));
+        requestKey: input.requestKey,
+        signature,
+        title: "Public reference checks",
+        source: "live_controlled",
+        suiteVersion,
+        suiteHash: digest(cases),
+        status: "running",
+        cancelRequested: false,
+        providers,
+        createdAt: new Date().toISOString(),
+        authorizationSource: "backend_policy",
+        budgetMicros: config.providerTestBudgetMicros,
+        plannedMicros,
+        spentMicros: 0,
+        reservedMicros: 0,
+        rateCardVersion: config.rateCardVersion,
+        adapterSnapshot: Object.fromEntries(
+          Object.entries(toolCapabilities).map(([k, v]) => [k, v.adapter]),
+        ),
+        cases,
+        calls,
+      };
+      await this.save(run);
+      return { run, created: true };
     });
-    const plannedMicros = calls.reduce((n, c) => n + c.estimateMicros, 0);
-    if (plannedMicros > config.providerTestBudgetMicros)
-      throw new ObservationError(
-        409,
-        "The test plan exceeds the backend test budget. Choose fewer providers or have the operator adjust backend policy.",
-      );
-    const daily = this.committedToday(priorRuns);
-    if (daily + plannedMicros > config.providerTestDailyBudgetMicros)
-      throw new ObservationError(
-        409,
-        "The backend daily test allowance is exhausted. No provider calls were started.",
-      );
-    const run: LabRun = {
-      id: randomUUID(),
-      requestKey: input.requestKey,
-      signature,
-      title: "Public reference checks",
-      source: "live_controlled",
-      suiteVersion,
-      suiteHash: digest(cases),
-      status: "running",
-      cancelRequested: false,
-      providers,
-      createdAt: new Date().toISOString(),
-      authorizationSource: "backend_policy",
-      budgetMicros: config.providerTestBudgetMicros,
-      plannedMicros,
-      spentMicros: 0,
-      reservedMicros: 0,
-      rateCardVersion: config.rateCardVersion,
-      adapterSnapshot: Object.fromEntries(
-        Object.entries(toolCapabilities).map(([k, v]) => [k, v.adapter]),
-      ),
-      cases,
-      calls,
-    };
-    this.save(run);
+    const { run, created } = admitted;
+    if (!created) return run;
     this.active.add(run.id);
     void this.execute(run.id)
-      .catch(() => {
+      .catch(async () => {
         try {
-          const failed = this.get(run.id);
-          failed.status = "interrupted";
-          failed.finishedAt = new Date().toISOString();
-          for (const c of failed.calls) {
-            if (c.status === "running") {
-              c.status = "interrupted";
-              c.finishedAt = new Date().toISOString();
-              c.error =
-                "Execution stopped before settlement could be saved. No automatic retry.";
-              failed.spentMicros += c.estimateMicros;
-            } else if (c.status === "pending") c.status = "skipped";
-          }
-          failed.reservedMicros = 0;
-          this.save(failed);
+          await this.store.db.atomic(async () => {
+            const failed = await this.get(run.id);
+            failed.status = "interrupted";
+            failed.finishedAt = new Date().toISOString();
+            for (const c of failed.calls) {
+              if (c.status === "running") {
+                c.status = "interrupted";
+                c.finishedAt = new Date().toISOString();
+                c.error =
+                  "Execution stopped before settlement could be saved. No automatic retry.";
+                failed.spentMicros += c.estimateMicros;
+              } else if (c.status === "pending") c.status = "skipped";
+            }
+            failed.reservedMicros = 0;
+            await this.save(failed);
+          });
         } catch {
           // Preserve the durable reservation for startup recovery if storage is unavailable.
           console.error(
@@ -303,40 +309,50 @@ export class ProviderLab {
         }
       })
       .finally(() => this.active.delete(run.id));
-    return this.get(run.id);
+    return await this.get(run.id);
   }
   private async execute(id: string) {
-    for (const planned of this.get(id).calls) {
-      let run = this.get(id);
-      if (run.cancelRequested) break;
-      const call = run.calls.find((c) => c.id === planned.id)!;
-      const now = Date.now();
-      this.timestamps.set(
-        call.provider,
-        (this.timestamps.get(call.provider) || []).filter(
-          (t) => now - t < 60000,
-        ),
-      );
-      if (this.timestamps.get(call.provider)!.length >= config.rpm) {
-        call.status = "skipped";
-        call.error = "Shared provider rate limit reached. Not retried.";
-        this.save(run);
-        continue;
-      }
-      if (
-        run.spentMicros + run.reservedMicros + call.estimateMicros >
-        run.budgetMicros
-      )
-        throw new Error("Test ledger would exceed its cap");
-      call.status = "running";
-      call.startedAt = new Date().toISOString();
-      run.reservedMicros += call.estimateMicros;
-      this.save(run);
-      this.timestamps.get(call.provider)!.push(now);
-      const test = run.cases.find((c) => c.id === call.caseId)!;
-      let result: Record<string, unknown> | undefined;
-      let error: string | undefined;
-      let httpStatus: number | undefined;
+    for (const planned of (await this.get(id)).calls) {
+      const admission = await this.store.db.atomic(async () => {
+        const run = await this.get(id);
+        if (run.cancelRequested) return { cancelled: true } as const;
+        const call = run.calls.find((c) => c.id === planned.id)!;
+        if (call.status !== "pending") return { skipped: true } as const;
+        const now = Date.now();
+        this.timestamps.set(
+          call.provider,
+          (this.timestamps.get(call.provider) || []).filter(
+            (t) => now - t < 60000,
+          ),
+        );
+        if (this.timestamps.get(call.provider)!.length >= config.rpm) {
+          call.status = "skipped";
+          call.error = "Shared provider rate limit reached. Not retried.";
+          await this.save(run);
+          return { skipped: true } as const;
+        }
+        if (
+          run.spentMicros + run.reservedMicros + call.estimateMicros >
+          run.budgetMicros
+        )
+          throw new Error("Test ledger would exceed its cap");
+        call.status = "running";
+        call.startedAt = new Date().toISOString();
+        run.reservedMicros += call.estimateMicros;
+        await this.save(run);
+        this.timestamps.get(call.provider)!.push(now);
+        return {
+          call: { ...call },
+          test: run.cases.find((c) => c.id === call.caseId)!,
+          now,
+        };
+      });
+      if ("cancelled" in admission) break;
+      if ("skipped" in admission) continue;
+      const { call, test, now } = admission;
+      let result: Record<string, unknown> | undefined,
+        error: string | undefined,
+        httpStatus: number | undefined;
       try {
         result = (call.provider === "firecrawl"
           ? await this.adapters.scrape(test.input)
@@ -352,68 +368,79 @@ export class ProviderLab {
           e instanceof ProviderError ? e.message : "Provider request failed.";
         httpStatus = e instanceof ProviderError ? e.httpStatus : undefined;
       }
-      run = this.get(id);
-      const settled = run.calls.find((c) => c.id === call.id)!;
-      Object.assign(settled, {
-        status: error ? "failed" : "succeeded",
-        finishedAt: new Date().toISOString(),
-        latencyMs: Date.now() - now,
-        error,
-        httpStatus,
-        ...(result ? { result, measurements: measure(test, result) } : {}),
+      await this.store.db.atomic(async () => {
+        const run = await this.get(id),
+          settled = run.calls.find((c) => c.id === call.id)!;
+        if (settled.status !== "running") return;
+        Object.assign(settled, {
+          status: error ? "failed" : "succeeded",
+          finishedAt: new Date().toISOString(),
+          latencyMs: Date.now() - now,
+          error,
+          httpStatus,
+          ...(result ? { result, measurements: measure(test, result) } : {}),
+        });
+        run.reservedMicros -= call.estimateMicros;
+        run.spentMicros += call.estimateMicros;
+        await this.save(run);
       });
-      run.reservedMicros -= call.estimateMicros;
-      run.spentMicros += call.estimateMicros;
-      this.save(run);
     }
-    const run = this.get(id);
-    for (const c of run.calls) if (c.status === "pending") c.status = "skipped";
-    run.status = run.cancelRequested ? "cancelled" : "completed";
-    run.finishedAt = new Date().toISOString();
-    this.save(run);
+    await this.store.db.atomic(async () => {
+      const run = await this.get(id);
+      for (const c of run.calls)
+        if (c.status === "pending") c.status = "skipped";
+      run.status = run.cancelRequested ? "cancelled" : "completed";
+      run.finishedAt = new Date().toISOString();
+      await this.save(run);
+    });
   }
-  cancel(id: string) {
-    const run = this.get(id);
-    if (run.status === "running") {
-      run.cancelRequested = true;
-      this.save(run);
-    }
-    return run;
+  async cancel(id: string) {
+    return this.store.db.atomic(async () => {
+      const run = await this.get(id);
+      if (run.status === "running") {
+        run.cancelRequested = true;
+        await this.save(run);
+      }
+      return run;
+    });
   }
-  review(id: string, callId: string, raw: unknown) {
-    const input = labReviewInput.parse(raw);
-    const run = this.get(id);
-    const call = run.calls.find((c) => c.id === callId);
-    if (!call) throw new ObservationError(404, "Test receipt not found.");
-    if (["pending", "running", "skipped"].includes(call.status))
-      throw new ObservationError(
-        409,
-        "This call has no settled receipt to review.",
-      );
-    call.reviews.push({ ...input, at: new Date().toISOString() });
-    this.save(run);
-    return run;
+  async review(id: string, callId: string, raw: unknown) {
+    return this.store.db.atomic(async () => {
+      const input = labReviewInput.parse(raw);
+      const run = await this.get(id);
+      const call = run.calls.find((c) => c.id === callId);
+      if (!call) throw new ObservationError(404, "Test receipt not found.");
+      if (["pending", "running", "skipped"].includes(call.status))
+        throw new ObservationError(
+          409,
+          "This call has no settled receipt to review.",
+        );
+      call.reviews.push({ ...input, at: new Date().toISOString() });
+      await this.save(run);
+      return run;
+    });
   }
-  experiments(): Experiment[] {
-    return this.store.db
-      .prepare("SELECT body FROM provider_experiments ORDER BY rowid DESC")
-      .all()
-      .map((r) => JSON.parse(r.body as string));
+  async experiments(): Promise<Experiment[]> {
+    return (
+      await this.store.db
+        .prepare("SELECT body FROM provider_experiments ORDER BY rowid DESC")
+        .all()
+    ).map((r) => JSON.parse(r.body as string));
   }
-  pruneOlderThan(cutoff: string) {
-    return this.store.transaction(() => {
-      const plans = this.store.db
+  async pruneOlderThan(cutoff: string) {
+    return await this.store.transaction(async () => {
+      const plans = await this.store.db
         .prepare(
           "DELETE FROM provider_experiments WHERE json_extract(body,'$.status')='reviewed' AND json_extract(body,'$.updatedAt') < ?",
         )
         .run(cutoff);
       const linked = new Set(
-        this.experiments()
+        (await this.experiments())
           .flatMap((p) => [p.baselineRunId, p.followupRunId])
           .filter(Boolean),
       );
       let runs = 0;
-      for (const run of this.summaries()) {
+      for (const run of await this.summaries()) {
         const updated = [
           run.createdAt,
           run.finishedAt ?? run.createdAt,
@@ -426,7 +453,7 @@ export class ProviderLab {
           !linked.has(run.id) &&
           updated < cutoff
         ) {
-          this.store.db
+          await this.store.db
             .prepare("DELETE FROM provider_lab_runs WHERE id=?")
             .run(run.id);
           runs++;
@@ -435,9 +462,11 @@ export class ProviderLab {
       return { runs, plans: Number(plans.changes) };
     });
   }
-  saveExperiment(raw: unknown, id?: string) {
+  async saveExperiment(raw: unknown, id?: string) {
     const input = experimentInput.parse(raw);
-    const old = id ? this.experiments().find((e) => e.id === id) : undefined;
+    const old = id
+      ? (await this.experiments()).find((e) => e.id === id)
+      : undefined;
     if (id && !old) throw new ObservationError(404, "Test plan not found.");
     if (
       input.verification === "agent_choice" &&
@@ -454,7 +483,7 @@ export class ProviderLab {
       );
     for (const rid of [input.baselineRunId, input.followupRunId])
       if (rid) {
-        const run = this.get(rid);
+        const run = await this.get(rid);
         if (
           run.status !== "completed" ||
           !run.providers.includes(input.provider)
@@ -476,7 +505,7 @@ export class ProviderLab {
       createdAt: old?.createdAt || at,
       updatedAt: at,
     };
-    this.store.db
+    await this.store.db
       .prepare(
         "INSERT INTO provider_experiments VALUES(?,?) ON CONFLICT(id) DO UPDATE SET body=excluded.body",
       )

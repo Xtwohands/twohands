@@ -9,7 +9,6 @@ import type {
 } from "./provider-lab-types.js";
 import { providerUsage } from "./provider-lab-metrics.js";
 import type { ObservedCall } from "./observation-types.js";
-
 export interface Opportunity {
   id: string;
   title: string;
@@ -117,52 +116,58 @@ const demoBenchmarks: ProviderMeasurement[] = [
     truncated: 6,
   },
 ];
-
-export function companyReport(
+export async function companyReport(
   provider: ProviderId,
   source: "demo" | "local",
   obs: Observatory,
   lab: ProviderLab,
   workspacePreview = false,
-): CompanyReport {
+): Promise<CompanyReport> {
   // Never return objectives, queries, notes, outputs, model names, or session IDs.
   const sessions =
-    source === "local" ? obs.db.list().filter((s) => s.commercialConsent) : [];
+    source === "local"
+      ? (await obs.db.list()).filter((s) => s.commercialConsent)
+      : [];
   const callsAfterOffer = new Map<string, ObservedCall[]>();
-  const eligible = sessions.filter((s) => {
-    const events = obs.db.events(s.id);
-    const offered = events.find(
-      (e) =>
-        e.type === "tools_offered" &&
-        Array.isArray(e.data.tools) &&
-        (
-          e.data.tools as {
-            provider: string;
-            available: boolean;
-            discoveryMatches?: { status: string }[];
-          }[]
-        ).some(
-          (t) =>
-            t.provider === provider &&
-            t.available &&
-            (!t.discoveryMatches?.length ||
-              t.discoveryMatches.some((m) => m.status === "eligible")),
+  const eligibility = await Promise.all(
+    sessions.map(async (s) => {
+      const events = await obs.db.events(s.id);
+      const offered = events.find(
+        (e) =>
+          e.type === "tools_offered" &&
+          Array.isArray(e.data.tools) &&
+          (
+            e.data.tools as {
+              provider: string;
+              available: boolean;
+              discoveryMatches?: {
+                status: string;
+              }[];
+            }[]
+          ).some(
+            (t) =>
+              t.provider === provider &&
+              t.available &&
+              (!t.discoveryMatches?.length ||
+                t.discoveryMatches.some((m) => m.status === "eligible")),
+          ),
+      );
+      if (!offered) return false;
+      const callIds = new Set(
+        events
+          .filter((e) => e.id > offered.id && e.type === "tool_called")
+          .map((e) => e.data.callId),
+      );
+      callsAfterOffer.set(
+        s.id,
+        (await obs.db.calls(s.id)).filter(
+          (c) => c.provider === provider && callIds.has(c.id),
         ),
-    );
-    if (!offered) return false;
-    const callIds = new Set(
-      events
-        .filter((e) => e.id > offered.id && e.type === "tool_called")
-        .map((e) => e.data.callId),
-    );
-    callsAfterOffer.set(
-      s.id,
-      obs.db
-        .calls(s.id)
-        .filter((c) => c.provider === provider && callIds.has(c.id)),
-    );
-    return true;
-  });
+      );
+      return true;
+    }),
+  );
+  const eligible = sessions.filter((_, i) => eligibility[i]);
   const selected = eligible.filter(
     (s) => callsAfterOffer.get(s.id)!.length > 0,
   );
@@ -195,9 +200,14 @@ export function companyReport(
         : null;
   const workspaceCalls =
     source === "local" && workspacePreview
-      ? obs.db
-          .list()
-          .flatMap((s) => obs.db.calls(s.id))
+      ? (
+          await Promise.all(
+            (await obs.db.list()).flatMap(
+              async (s) => await obs.db.calls(s.id),
+            ),
+          )
+        )
+          .flat()
           .filter(
             (c) =>
               c.provider === provider &&
@@ -206,9 +216,9 @@ export function companyReport(
       : [];
   const allReferenced = new Set(
     source === "local" && workspacePreview
-      ? obs.db
-          .list()
-          .flatMap((s) => s.outcomes.flatMap((o) => o.evidenceCallIds))
+      ? (await obs.db.list()).flatMap((s) =>
+          s.outcomes.flatMap((o) => o.evidenceCallIds),
+        )
       : [],
   );
   const privateActivity =
@@ -224,8 +234,9 @@ export function companyReport(
             .length,
         }
       : null;
-  const latestSummary = (source === "local" ? lab.summaries() : []).find(
+  const latestSummary = (source === "local" ? await lab.summaries() : []).find(
     (r) =>
+      r.source === "live_controlled" &&
       r.status === "completed" &&
       r.calls.some(
         (c) =>
@@ -233,7 +244,9 @@ export function companyReport(
       ),
   );
   const latest =
-    source === "local" && latestSummary ? lab.get(latestSummary.id) : undefined;
+    source === "local" && latestSummary
+      ? await lab.get(latestSummary.id)
+      : undefined;
   const benchmarks =
     source === "demo"
       ? demoBenchmarks

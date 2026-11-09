@@ -14,7 +14,7 @@ const obs = new Observatory(store, {
     return { httpStatus: 200, text: "Never committed" };
   },
 });
-const s = obs.create(
+const s = await obs.create(
   sessionInput.parse({
     title: "Crash fixture",
     objective: "Validate recovery of an interrupted synthetic request.",
@@ -23,8 +23,8 @@ const s = obs.create(
   }),
   "operator_entered",
 );
-obs.approve(s.id, s.intentHash);
-const key = obs.db.apiKeys.create({
+await obs.approve(s.id, s.intentHash);
+const key = await obs.db.apiKeys.create({
   name: "Crash scoped key",
   requestKey: randomUUID(),
   scopes: ["tools:execute"],
@@ -42,4 +42,4 @@ await obs.execute(
   },
   key.key.id,
 );
-store.close();
+await store.close();

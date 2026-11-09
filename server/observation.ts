@@ -25,7 +25,6 @@ import type {
   Evaluation,
   Outcome,
 } from "./observation-types.js";
-
 const text = (max: number) => z.string().trim().min(1).max(max);
 export const sessionInput = z
   .object({
@@ -43,7 +42,7 @@ export const sessionInput = z
       .min(1)
       .max(20),
     constraints: z.string().max(4000).default(""),
-    budgetMicros: z.number().int().min(0).max(5_000_000).default(100000),
+    budgetMicros: z.number().int().min(0).max(5000000).default(100000),
     model: text(160).default("Not reported"),
     host: text(100).default("External agent"),
   })
@@ -118,9 +117,12 @@ const names = {
 } as const;
 export class Observatory {
   db: ObservationStore;
+  readonly ready: Promise<void>;
   active = new Set<string>();
-  controlledSamples?: () => Partial<
-    Record<ProviderId, import("./provider-lab-types.js").ControlledSample>
+  controlledSamples?: () => Promise<
+    Partial<
+      Record<ProviderId, import("./provider-lab-types.js").ControlledSample>
+    >
   >;
   constructor(
     store: Store,
@@ -128,22 +130,22 @@ export class Observatory {
     public timestamps = new Map<ProviderId, number[]>(),
   ) {
     this.db = new ObservationStore(store);
-    this.db.applySharingPolicy();
+    this.ready = this.db.applySharingPolicy();
   }
-  require(id: string) {
-    const s = this.db.get(id);
+  async require(id: string) {
+    const s = await this.db.get(id);
     if (!s) throw new ObservationError(404, "Session not found.");
     return s;
   }
-  routingPolicy(): RoutingPolicy {
-    const row = this.db.store.db
+  async routingPolicy(): Promise<RoutingPolicy> {
+    const row = await this.db.store.db
       .prepare("SELECT body FROM workspace_settings WHERE key='routing'")
       .get();
     return row
       ? JSON.parse(row.body as string)
       : { revision: 0, disabledTools: [], updatedAt: null };
   }
-  updateRoutingPolicy(raw: unknown): RoutingPolicy {
+  async updateRoutingPolicy(raw: unknown): Promise<RoutingPolicy> {
     const input = z
       .object({
         revision: z.number().int().min(0),
@@ -153,8 +155,8 @@ export class Observatory {
       })
       .strict()
       .parse(raw);
-    return this.db.transaction(() => {
-      const previous = this.routingPolicy();
+    return await this.db.transaction(async () => {
+      const previous = await this.routingPolicy();
       if (previous.revision !== input.revision)
         throw new ObservationError(
           409,
@@ -165,12 +167,12 @@ export class Observatory {
         disabledTools: [...new Set(input.disabledTools)].sort(),
         updatedAt: new Date().toISOString(),
       };
-      this.db.store.db
+      await this.db.store.db
         .prepare(
           "INSERT INTO workspace_settings VALUES ('routing',?) ON CONFLICT(key) DO UPDATE SET body=excluded.body",
         )
         .run(JSON.stringify(policy));
-      this.db.store.db
+      await this.db.store.db
         .prepare("INSERT INTO workspace_policy_events(body) VALUES (?)")
         .run(
           JSON.stringify({
@@ -183,10 +185,10 @@ export class Observatory {
       return policy;
     });
   }
-  preview(input: DiscoveryInput, apiKeyId?: string) {
-    const catalog = this.catalog(apiKeyId);
-    const policy = this.routingPolicy();
-    const key = apiKeyId ? this.db.apiKeys.active(apiKeyId) : undefined;
+  async preview(input: DiscoveryInput, apiKeyId?: string) {
+    const catalog = await this.catalog(apiKeyId);
+    const policy = await this.routingPolicy();
+    const key = apiKeyId ? await this.db.apiKeys.active(apiKeyId) : undefined;
     const previewBudgetMicros = Math.min(
       config.agentSessionBudgetMicros,
       key?.remainingMicros ?? Infinity,
@@ -239,7 +241,7 @@ export class Observatory {
       policyRevision: policy.revision,
     };
   }
-  create(
+  async create(
     input: z.infer<typeof sessionInput>,
     source: ObservationSession["modelSource"],
     backendAuthorized = false,
@@ -281,9 +283,9 @@ export class Observatory {
       evaluations: [],
       cases: [],
     };
-    this.db.transaction(() => {
-      this.db.save(s);
-      this.db.event(
+    await this.db.transaction(async () => {
+      await this.db.save(s);
+      await this.db.event(
         s.id,
         "intent_recorded",
         source === "agent_reported" ? "agent_reported" : "workspace_review",
@@ -299,14 +301,14 @@ export class Observatory {
           host: s.host,
         },
       );
-      this.db.event(
+      await this.db.event(
         s.id,
         "sharing_policy_applied",
         "observed",
         sharingPolicyEvent(false),
       );
       if (backendAuthorized)
-        this.db.event(s.id, "intent_authorized", "observed", {
+        await this.db.event(s.id, "intent_authorized", "observed", {
           intentHash: s.intentHash,
           budgetMicros: s.budgetMicros,
           policy: "agent-session-budget-v1",
@@ -315,21 +317,21 @@ export class Observatory {
     });
     return s;
   }
-  createAgentSession(
+  async createAgentSession(
     input: z.infer<typeof agentSessionInput>,
     apiKeyId?: string,
   ) {
     const data = agentSessionInput.parse(input);
-    return this.create(
+    return await this.create(
       { ...data, budgetMicros: config.agentSessionBudgetMicros },
       "agent_reported",
       true,
       apiKeyId,
     );
   }
-  approve(id: string, intentHash: string) {
-    return this.db.transaction(() => {
-      const s = this.require(id);
+  async approve(id: string, intentHash: string) {
+    return await this.db.transaction(async () => {
+      const s = await this.require(id);
       if (intentHash !== s.intentHash)
         throw new ObservationError(
           409,
@@ -339,8 +341,8 @@ export class Observatory {
         s.approvedAt = new Date().toISOString();
         s.status = "active";
         s.authorizationSource = "workspace_operator";
-        this.db.save(s);
-        this.db.event(id, "intent_approved", "workspace_review", {
+        await this.db.save(s);
+        await this.db.event(id, "intent_approved", "workspace_review", {
           intentHash,
           budgetMicros: s.budgetMicros,
           reviewer: "Local workspace operator",
@@ -349,123 +351,133 @@ export class Observatory {
       return s;
     });
   }
-  catalog(apiKeyId?: string) {
-    const sessions = this.db.list();
-    const calls = sessions.flatMap((s) => this.db.calls(s.id));
-    const controlled = this.controlledSamples?.() ?? {};
-    return (Object.keys(names) as ToolName[]).map((tool) => {
-      const provider = names[tool];
-      const samples = calls.filter(
-        (c) => c.tool === tool && ["succeeded", "failed"].includes(c.status),
-      );
-      const callIds = new Set(samples.map((c) => c.id));
-      const linkedCriteria = { pass: 0, fail: 0, unknown: 0 };
-      let reviewedSessions = 0;
-      let multiToolCriteria = 0;
-      const reviewSources: Record<string, number> = {};
-      for (const session of sessions) {
-        const review = session.evaluations
-          .filter((e) => e.outcomeId === session.outcomes.at(-1)?.id)
-          .at(-1);
-        const linked =
-          review?.criteria.filter((c) =>
-            c.evidenceCallIds.some((id) => callIds.has(id)),
-          ) ?? [];
-        if (!linked.length) continue;
-        reviewedSessions++;
-        const source = review?.reviewer?.kind ?? "unspecified";
-        reviewSources[source] = (reviewSources[source] ?? 0) + 1;
-        for (const criterion of linked) {
-          linkedCriteria[criterion.verdict]++;
-          if (criterion.evidenceCallIds.some((id) => !callIds.has(id)))
-            multiToolCriteria++;
+  async catalog(apiKeyId?: string) {
+    const sessions = await this.db.list();
+    const calls = (
+      await Promise.all(
+        sessions.flatMap(async (s) => await this.db.calls(s.id)),
+      )
+    ).flat();
+    const controlled = (await this.controlledSamples?.()) ?? {};
+    return await Promise.all(
+      (Object.keys(names) as ToolName[]).map(async (tool) => {
+        const provider = names[tool];
+        const samples = calls.filter(
+          (c) => c.tool === tool && ["succeeded", "failed"].includes(c.status),
+        );
+        const callIds = new Set(samples.map((c) => c.id));
+        const linkedCriteria = { pass: 0, fail: 0, unknown: 0 };
+        let reviewedSessions = 0;
+        let multiToolCriteria = 0;
+        const reviewSources: Record<string, number> = {};
+        for (const session of sessions) {
+          const review = session.evaluations
+            .filter((e) => e.outcomeId === session.outcomes.at(-1)?.id)
+            .at(-1);
+          const linked =
+            review?.criteria.filter((c) =>
+              c.evidenceCallIds.some((id) => callIds.has(id)),
+            ) ?? [];
+          if (!linked.length) continue;
+          reviewedSessions++;
+          const source = review?.reviewer?.kind ?? "unspecified";
+          reviewSources[source] = (reviewSources[source] ?? 0) + 1;
+          for (const criterion of linked) {
+            linkedCriteria[criterion.verdict]++;
+            if (criterion.evidenceCallIds.some((id) => !callIds.has(id)))
+              multiToolCriteria++;
+          }
         }
-      }
-      const latencySamples = samples
-        .flatMap((c) => (typeof c.latencyMs === "number" ? [c.latencyMs] : []))
-        .sort((a, b) => a - b);
-      const medianLatencyMs = latencySamples.length
-        ? latencySamples.length % 2
-          ? latencySamples[Math.floor(latencySamples.length / 2)]
-          : (latencySamples[latencySamples.length / 2 - 1] +
-              latencySamples[latencySamples.length / 2]) /
-            2
-        : null;
-      return {
-        tool,
-        provider,
-        enabled:
-          !this.routingPolicy().disabledTools.includes(tool) &&
-          (!apiKeyId ||
-            this.db.apiKeys.active(apiKeyId).allowedTools.includes(tool)),
-        reputation: {
-          organic: {
-            source: "observed_workspace_calls",
-            sampleCount: samples.length,
-            succeeded: samples.filter((c) => c.status === "succeeded").length,
-            failed: samples.filter((c) => c.status === "failed").length,
-            interrupted: calls.filter(
-              (c) => c.tool === tool && c.status === "interrupted",
-            ).length,
-            latencySampleCount: latencySamples.length,
-            medianLatencyMs,
-            successRate:
-              samples.length >= 5
-                ? samples.filter((c) => c.status === "succeeded").length /
-                  samples.length
-                : null,
-            minimumRateSamples: 5,
-            lastObservedAt:
-              samples
-                .map((c) => c.finishedAt ?? c.startedAt)
-                .sort()
-                .at(-1) ?? null,
-            scope:
-              "Same tool across workspace tasks; not a task-specific prediction or answer-quality score. API success can include an unusable page.",
+        const latencySamples = samples
+          .flatMap((c) =>
+            typeof c.latencyMs === "number" ? [c.latencyMs] : [],
+          )
+          .sort((a, b) => a - b);
+        const medianLatencyMs = latencySamples.length
+          ? latencySamples.length % 2
+            ? latencySamples[Math.floor(latencySamples.length / 2)]
+            : (latencySamples[latencySamples.length / 2 - 1] +
+                latencySamples[latencySamples.length / 2]) /
+              2
+          : null;
+        return {
+          tool,
+          provider,
+          enabled:
+            !(await this.routingPolicy()).disabledTools.includes(tool) &&
+            (!apiKeyId ||
+              (await this.db.apiKeys.active(apiKeyId)).allowedTools.includes(
+                tool,
+              )),
+          reputation: {
+            organic: {
+              source: "observed_workspace_calls",
+              sampleCount: samples.length,
+              succeeded: samples.filter((c) => c.status === "succeeded").length,
+              failed: samples.filter((c) => c.status === "failed").length,
+              interrupted: calls.filter(
+                (c) => c.tool === tool && c.status === "interrupted",
+              ).length,
+              latencySampleCount: latencySamples.length,
+              medianLatencyMs,
+              successRate:
+                samples.length >= 5
+                  ? samples.filter((c) => c.status === "succeeded").length /
+                    samples.length
+                  : null,
+              minimumRateSamples: 5,
+              lastObservedAt:
+                samples
+                  .map((c) => c.finishedAt ?? c.startedAt)
+                  .sort()
+                  .at(-1) ?? null,
+              scope:
+                "Same tool across workspace tasks; not a task-specific prediction or answer-quality score. API success can include an unusable page.",
+            },
+            outcomeEvidence: {
+              source: "workspace_review",
+              reviewedSessions,
+              linkedCriteria,
+              multiToolCriteria,
+              reviewSources,
+              scope:
+                "Latest reviews of latest outputs with explicit evidence links to this tool. Criterion verdicts assess answers, not provider causation or task-specific accuracy.",
+            },
+            controlled: controlled[provider] ?? null,
           },
-          outcomeEvidence: {
-            source: "workspace_review",
-            reviewedSessions,
-            linkedCriteria,
-            multiToolCriteria,
-            reviewSources,
-            scope:
-              "Latest reviews of latest outputs with explicit evidence links to this tool. Criterion verdicts assess answers, not provider causation or task-specific accuracy.",
-          },
-          controlled: controlled[provider] ?? null,
-        },
-        ...toolCapabilities[tool],
-        available: Boolean(config.keys[provider]),
-        estimatedMicros: providerEstimate(provider),
-        rateCardVersion: config.rateCardVersion,
-        sampleCount: samples.length,
-        sampleScope:
-          "Completed organic calls across this workspace; includes successes and failures. Controlled tests are excluded. Usage is not quality.",
-        controlledTestSample: controlled[provider] ?? null,
-        averageLatencyMs:
-          samples.length >= 5
-            ? Math.round(
-                samples.reduce((n, c) => n + (c.latencyMs || 0), 0) /
-                  samples.length,
-              )
-            : null,
-        successRate:
-          samples.length >= 5
-            ? samples.filter((c) => c.status === "succeeded").length /
-              samples.length
-            : null,
-        quality: null,
-      };
-    });
+          ...toolCapabilities[tool],
+          available: Boolean(config.keys[provider]),
+          estimatedMicros: providerEstimate(provider),
+          rateCardVersion: config.rateCardVersion,
+          sampleCount: samples.length,
+          sampleScope:
+            "Completed organic calls across this workspace; includes successes and failures. Controlled tests are excluded. Usage is not quality.",
+          controlledTestSample: controlled[provider] ?? null,
+          averageLatencyMs:
+            samples.length >= 5
+              ? Math.round(
+                  samples.reduce((n, c) => n + (c.latencyMs || 0), 0) /
+                    samples.length,
+                )
+              : null,
+          successRate:
+            samples.length >= 5
+              ? samples.filter((c) => c.status === "succeeded").length /
+                samples.length
+              : null,
+          quality: null,
+        };
+      }),
+    );
   }
-  discover(
+  async discover(
     id: string,
     needOrInput: string | DiscoveryInput,
     requests?: z.input<typeof costRequest>[],
     apiKeyId?: string,
   ) {
-    const session = this.require(id);
-    const key = apiKeyId ? this.db.apiKeys.active(apiKeyId) : undefined;
+    const session = await this.require(id);
+    const key = apiKeyId ? await this.db.apiKeys.active(apiKeyId) : undefined;
     const remainingBudgetMicros = Math.max(
       0,
       Math.min(
@@ -473,7 +485,7 @@ export class Observatory {
         key?.remainingMicros ?? Infinity,
       ),
     );
-    const catalog = this.catalog(apiKeyId);
+    const catalog = await this.catalog(apiKeyId);
     const input =
       typeof needOrInput === "string"
         ? { need: needOrInput, requests }
@@ -540,7 +552,7 @@ export class Observatory {
       meaning:
         "Server-matched options returned to the client; does not prove the model considered every option. Candidate quotes are alternatives, not a batch authorization.",
     };
-    this.db.event(id, "tools_offered", "observed", data);
+    await this.db.event(id, "tools_offered", "observed", data);
     return {
       ...data,
       note: "Choose explicitly. No provider is selected automatically. Performance is local observed execution, not an accuracy benchmark.",
@@ -549,7 +561,7 @@ export class Observatory {
   }
   async execute(id: string, raw: unknown, apiKeyId?: string) {
     const input = legacyCallInput.parse(raw);
-    if (apiKeyId) this.db.apiKeys.toolAccess(apiKeyId, input.tool);
+    if (apiKeyId) await this.db.apiKeys.toolAccess(apiKeyId, input.tool);
     const provider = names[input.tool];
     if (
       provider === "firecrawl"
@@ -583,7 +595,7 @@ export class Observatory {
       ...input,
       statedReason: input.statedReason.trim(),
     });
-    const receipt = this.db.receipt(id, input.requestKey);
+    const receipt = await this.db.receipt(id, input.requestKey);
     if (receipt) {
       if (
         receipt.signature !== historicalSignature &&
@@ -598,9 +610,21 @@ export class Observatory {
     input.statedReason = callInput.parse(input).statedReason;
     const signature = digest(input);
     let call!: ObservedCall;
-    this.db.transaction(() => {
-      const s = this.require(id);
-      if (this.routingPolicy().disabledTools.includes(input.tool))
+    const replay = await this.db.transaction(async () => {
+      const existing = await this.db.receipt(id, input.requestKey);
+      if (existing) {
+        if (
+          existing.signature !== historicalSignature &&
+          existing.signature !== normalizedSignature
+        )
+          throw new ObservationError(
+            409,
+            "This request key was used with different arguments.",
+          );
+        return { ...existing.call, replayed: true };
+      }
+      const s = await this.require(id);
+      if ((await this.routingPolicy()).disabledTools.includes(input.tool))
         throw new ObservationError(
           409,
           "This tool is paused by workspace routing settings. Discover another enabled tool.",
@@ -615,7 +639,7 @@ export class Observatory {
           409,
           "This provider is not configured on the server.",
         );
-      if (this.db.calls(id).length >= 50)
+      if ((await this.db.calls(id)).length >= 50)
         throw new ObservationError(
           409,
           "Session limit of 50 provider calls reached.",
@@ -663,19 +687,24 @@ export class Observatory {
         estimateMicros,
       };
       if (apiKeyId)
-        this.db.apiKeys.reserve(apiKeyId, call.id, input.tool, estimateMicros);
+        await this.db.apiKeys.reserve(
+          apiKeyId,
+          call.id,
+          input.tool,
+          estimateMicros,
+        );
       s.reservedMicros += estimateMicros;
       s.status = "active";
-      this.db.save(s);
-      this.db.saveCall(call, signature);
+      await this.db.save(s);
+      await this.db.saveCall(call, signature);
       if (input.statedReason)
-        this.db.event(id, "selection_explanation", "agent_reported", {
+        await this.db.event(id, "selection_explanation", "agent_reported", {
           callId: call.id,
           tool: input.tool,
           text: input.statedReason,
           meaning: "Agent-supplied explanation, not private reasoning.",
         });
-      this.db.event(id, "tool_called", "observed", {
+      await this.db.event(id, "tool_called", "observed", {
         callId: call.id,
         tool: input.tool,
         arguments: call.arguments,
@@ -687,6 +716,7 @@ export class Observatory {
       });
       this.timestamps.get(provider)!.push(now);
     });
+    if (replay) return replay;
     this.active.add(call.id);
     const start = Date.now();
     try {
@@ -722,14 +752,14 @@ export class Observatory {
       call.latencyMs = Date.now() - start;
       call.finishedAt = new Date().toISOString();
       try {
-        this.db.transaction(() => {
-          const s = this.require(id);
-          this.db.apiKeys.settle(call.id);
+        await this.db.transaction(async () => {
+          const s = await this.require(id);
+          await this.db.apiKeys.settle(call.id);
           s.reservedMicros -= call.estimateMicros;
           s.spentMicros += call.estimateMicros;
-          this.db.save(s);
-          this.db.saveCall(call, signature);
-          this.db.event(id, "tool_result", "observed", {
+          await this.db.save(s);
+          await this.db.saveCall(call, signature);
+          await this.db.event(id, "tool_result", "observed", {
             callId: call.id,
             tool: call.tool,
             status: call.status,
@@ -746,10 +776,10 @@ export class Observatory {
     }
     return call;
   }
-  outcome(id: string, raw: z.infer<typeof outcomeInput>) {
+  async outcome(id: string, raw: z.infer<typeof outcomeInput>) {
     const input = outcomeInput.parse(raw);
-    return this.db.transaction(() => {
-      const s = this.require(id);
+    return await this.db.transaction(async () => {
+      const s = await this.require(id);
       if (!s.approvedAt)
         throw new ObservationError(
           409,
@@ -757,19 +787,17 @@ export class Observatory {
         );
       if (
         s.reservedMicros > 0 ||
-        this.db.calls(id).some((c) => c.status === "running")
+        (await this.db.calls(id)).some((c) => c.status === "running")
       )
         throw new ObservationError(
           409,
           "Wait for running tool calls to finish before submitting the outcome.",
         );
-      const old = this.db
-        .events(id)
-        .find(
-          (e) =>
-            e.type === "outcome_submitted" &&
-            e.data.requestKey === input.requestKey,
-        );
+      const old = (await this.db.events(id)).find(
+        (e) =>
+          e.type === "outcome_submitted" &&
+          e.data.requestKey === input.requestKey,
+      );
       if (old) {
         if (old.data.signature !== digest(input))
           throw new ObservationError(
@@ -778,7 +806,7 @@ export class Observatory {
           );
         return { ...s, submittedOutcomeId: String(old.data.outcomeId) };
       }
-      this.checkEvidence(id, input.evidenceCallIds);
+      await this.checkEvidence(id, input.evidenceCallIds);
       const outcome: Outcome = {
         id: this.db.newId(),
         at: new Date().toISOString(),
@@ -788,8 +816,8 @@ export class Observatory {
       };
       s.outcomes.push(outcome);
       s.status = "completed";
-      this.db.save(s);
-      this.db.event(id, "outcome_submitted", "agent_reported", {
+      await this.db.save(s);
+      await this.db.event(id, "outcome_submitted", "agent_reported", {
         outcomeId: outcome.id,
         requestKey: input.requestKey,
         signature: digest(input),
@@ -800,18 +828,18 @@ export class Observatory {
       return { ...s, submittedOutcomeId: outcome.id };
     });
   }
-  checkEvidence(id: string, callIds: string[]) {
-    const valid = new Set(this.db.calls(id).map((c) => c.id));
+  async checkEvidence(id: string, callIds: string[]) {
+    const valid = new Set((await this.db.calls(id)).map((c) => c.id));
     if (callIds.some((c) => !valid.has(c)))
       throw new ObservationError(
         400,
         "Evidence must reference tool calls in this session.",
       );
   }
-  evaluate(id: string, raw: z.infer<typeof evaluationInput>) {
+  async evaluate(id: string, raw: z.infer<typeof evaluationInput>) {
     const input = evaluationInput.parse(raw);
-    return this.db.transaction(() => {
-      const s = this.require(id);
+    return await this.db.transaction(async () => {
+      const s = await this.require(id);
       const latest = s.outcomes.at(-1);
       if (!s.outcomes.some((o) => o.id === input.outcomeId))
         throw new ObservationError(
@@ -832,7 +860,8 @@ export class Observatory {
         )
       )
         throw new ObservationError(400, "Review every criterion exactly once.");
-      for (const c of input.criteria) this.checkEvidence(id, c.evidenceCallIds);
+      for (const c of input.criteria)
+        await this.checkEvidence(id, c.evidenceCallIds);
       let passedWeight = 0,
         failedWeight = 0,
         unknownWeight = 0;
@@ -858,16 +887,16 @@ export class Observatory {
         unknownWeight,
       };
       s.evaluations.push(evaluation);
-      this.db.save(s);
-      this.db.event(id, "outcome_evaluated", "workspace_review", {
+      await this.db.save(s);
+      await this.db.event(id, "outcome_evaluated", "workspace_review", {
         ...evaluation,
         reviewerIdentity: "Self-reported; not independently verified",
       });
       return s;
     });
   }
-  consent(id: string, consent: boolean) {
-    const s = this.require(id);
+  async consent(id: string, consent: boolean) {
+    const s = await this.require(id);
     if (!consent)
       throw new ObservationError(
         409,
@@ -875,9 +904,9 @@ export class Observatory {
       );
     return s;
   }
-  openCase(id: string, evaluationId: string, reason: string) {
-    return this.db.transaction(() => {
-      const s = this.require(id);
+  async openCase(id: string, evaluationId: string, reason: string) {
+    return await this.db.transaction(async () => {
+      const s = await this.require(id);
       if (!s.evaluations.some((e) => e.id === evaluationId))
         throw new ObservationError(
           400,
@@ -893,8 +922,8 @@ export class Observatory {
         status: "open" as const,
       };
       s.cases.push(c);
-      this.db.save(s);
-      this.db.event(id, "review_case_opened", "workspace_review", {
+      await this.db.save(s);
+      await this.db.event(id, "review_case_opened", "workspace_review", {
         ...c,
         paymentIssued: false,
         coveragePolicy: null,
@@ -902,14 +931,14 @@ export class Observatory {
       return s;
     });
   }
-  resolveCase(
+  async resolveCase(
     id: string,
     caseId: string,
     status: "resolved" | "dismissed",
     resolution: string,
   ) {
-    return this.db.transaction(() => {
-      const s = this.require(id);
+    return await this.db.transaction(async () => {
+      const s = await this.require(id);
       const c = s.cases.find((c) => c.id === caseId);
       if (!c) throw new ObservationError(404, "Review case not found.");
       if (c.status !== "open")
@@ -917,8 +946,8 @@ export class Observatory {
       c.status = status;
       c.resolution = resolution;
       c.updatedAt = new Date().toISOString();
-      this.db.save(s);
-      this.db.event(id, "review_case_closed", "workspace_review", {
+      await this.db.save(s);
+      await this.db.event(id, "review_case_closed", "workspace_review", {
         caseId,
         status,
         resolution,
@@ -927,8 +956,8 @@ export class Observatory {
       return s;
     });
   }
-  summary() {
-    const sessions = this.db.list();
+  async summary() {
+    const sessions = await this.db.list();
     const modelNames = [...new Set(sessions.map((s) => s.model))];
     const models = modelNames.map((model) => {
       const group = sessions.filter((s) => s.model === model);
@@ -989,13 +1018,13 @@ export class Observatory {
         includedSessions: sharing.length,
         policy: SHARING_POLICY,
         minimumCohort: config.minCohort,
-        available: this.commercialAggregate().available,
+        available: (await this.commercialAggregate()).available,
         published: false,
       },
     };
   }
-  commercialAggregate() {
-    const sessions = this.db.list().filter((s) => s.commercialConsent);
+  async commercialAggregate() {
+    const sessions = (await this.db.list()).filter((s) => s.commercialConsent);
     if (sessions.length < config.minCohort)
       return {
         available: false,
@@ -1007,13 +1036,18 @@ export class Observatory {
         automaticallyPublished: false,
         providers: [],
       };
+    const sessionCalls = new Map(
+      await Promise.all(
+        sessions.map(async (s) => [s.id, await this.db.calls(s.id)] as const),
+      ),
+    );
     const providers = Object.values(names).flatMap((provider) => {
       const relevant = sessions.filter((s) =>
-        this.db.calls(s.id).some((c) => c.provider === provider),
+        sessionCalls.get(s.id)!.some((c) => c.provider === provider),
       );
       if (relevant.length < config.minCohort) return [];
       const calls = relevant
-        .flatMap((s) => this.db.calls(s.id))
+        .flatMap((s) => sessionCalls.get(s.id)!)
         .filter(
           (c) =>
             c.provider === provider &&

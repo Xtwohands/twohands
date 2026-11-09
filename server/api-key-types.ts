@@ -34,7 +34,8 @@ export interface ApiKeyEvent {
   keyId: string;
   type: "created" | "updated" | "revoked";
   at: string;
-  actor: "workspace_owner_credential";
+  actor: "workspace_owner_credential" | "authenticated_account";
+  actorId?: string;
   previous: WorkspaceApiKey | null;
   current: WorkspaceApiKey;
 }

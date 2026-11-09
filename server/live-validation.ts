@@ -1,6 +1,8 @@
 /** Explicitly invoked paid acceptance check. Never runs in CI or on server startup. */
 import { randomUUID } from "node:crypto";
 import { config } from "./config.js";
+import { PostgresDatabase } from "./database.js";
+import { claimRuntime } from "./migration.js";
 import { Store } from "./store.js";
 import { Engine } from "./engine.js";
 import type { Task } from "./types.js";
@@ -19,8 +21,18 @@ if (
   throw new Error(
     `Set LIVE_VALIDATION_BUDGET_USD to an explicit cap of at least ${(estimate / 1e6).toFixed(3)} and at most 5 before invoking paid validation. No requests were made.`,
   );
-const store = new Store(config.dbPath);
-store.recover();
+if (config.storageBackend === "postgres" && !config.databaseUrl)
+  throw new Error("Set DATABASE_URL before running Postgres validation.");
+const store = new Store(
+  config.dbPath,
+  config.storageBackend === "postgres" ? config.databaseUrl : undefined,
+  config.legacyWorkspaceId,
+);
+const release =
+  store.db instanceof PostgresDatabase
+    ? await claimRuntime(store.db)
+    : undefined;
+await store.recover();
 const engine = new Engine(store);
 const now = new Date().toISOString();
 const task: Task = {
@@ -47,9 +59,9 @@ const task: Task = {
     consent: false,
   },
 };
-store.transaction(() => {
-  store.save(task);
-  store.event(task.id, "intent_created", {
+await store.transaction(async () => {
+  await store.save(task);
+  await store.event(task.id, "intent_created", {
     ...task.intent,
     rubricVersion: "live-validation-v1",
     consentScope: "local integration validation only",
@@ -70,9 +82,9 @@ try {
     engine.active.add(task.id);
     await engine.execute(task.id, queries);
   }
-  const responses = store
-    .events(task.id)
-    .filter((e) => e.type === "provider_response");
+  const responses = (await store.events(task.id)).filter(
+    (e) => e.type === "provider_response",
+  );
   const counts = Object.fromEntries(
     ["exa", "tavily"].map((p) => [
       p,
@@ -89,7 +101,7 @@ try {
       {
         taskId: task.id,
         providers: counts,
-        estimatedUsd: store.get(task.id)!.spentMicros / 1e6,
+        estimatedUsd: (await store.get(task.id))!.spentMicros / 1e6,
         billingReconciled: false,
       },
       null,
@@ -98,5 +110,6 @@ try {
   );
   if (Object.values(counts).some((c) => c.successes < 10)) process.exitCode = 1;
 } finally {
-  store.close();
+  await release?.();
+  await store.close();
 }
