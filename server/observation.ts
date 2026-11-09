@@ -1,3 +1,7 @@
+import {
+  applyOperatorAllowance,
+  operatorAllows,
+} from "./workspace-allowance.js";
 import { z } from "zod";
 import { providerRegistry, registeredToolSchema } from "./provider-adapters.js";
 import { providerAccountForCall } from "./provider-accounts.js";
@@ -189,7 +193,9 @@ export class Observatory {
     const catalog = await this.catalog(apiKeyId);
     const policy = await this.routingPolicy();
     const key = apiKeyId ? await this.db.apiKeys.active(apiKeyId) : undefined;
+    const operatorAllowance = await this.db.store.allowance.status();
     const previewBudgetMicros = Math.min(
+      operatorAllowance.remainingMicros ?? Infinity,
       config.agentSessionBudgetMicros,
       key?.remainingMicros ?? Infinity,
     );
@@ -210,6 +216,7 @@ export class Observatory {
         error instanceof Error ? error.message : "Invalid discovery request.",
       );
     }
+    applyOperatorAllowance(discovery.tools, operatorAllowance);
     const tools = discovery.tools.map((tool) => ({
       ...tool,
       enabled:
@@ -237,6 +244,7 @@ export class Observatory {
         .filter((t) => t.discoveryMatches.some((m) => m.status === "eligible"))
         .map((t) => t.tool),
       preview: true,
+      operatorAllowance,
       budgetMicros: previewBudgetMicros,
       policyRevision: policy.revision,
     };
@@ -352,6 +360,7 @@ export class Observatory {
     });
   }
   async catalog(apiKeyId?: string) {
+    const operatorAllowance = await this.db.store.allowance.status();
     const sessions = await this.db.list();
     const calls = (
       await Promise.all(
@@ -448,6 +457,11 @@ export class Observatory {
           ...toolCapabilities[tool],
           available: providerRegistry.credentialStatus(tool).configured,
           adapterVersion: providerRegistry.get(tool).version,
+          operatorAllowance,
+          operatorAllowed: operatorAllows(
+            operatorAllowance,
+            providerEstimate(provider),
+          ),
           estimatedMicros: providerEstimate(provider),
           rateCardVersion: config.rateCardVersion,
           sampleCount: samples.length,
@@ -479,9 +493,11 @@ export class Observatory {
   ) {
     const session = await this.require(id);
     const key = apiKeyId ? await this.db.apiKeys.active(apiKeyId) : undefined;
+    const operatorAllowance = await this.db.store.allowance.status();
     const remainingBudgetMicros = Math.max(
       0,
       Math.min(
+        operatorAllowance.remainingMicros ?? Infinity,
         session.budgetMicros - session.spentMicros - session.reservedMicros,
         key?.remainingMicros ?? Infinity,
       ),
@@ -508,6 +524,7 @@ export class Observatory {
         error instanceof Error ? error.message : "Invalid discovery request.",
       );
     }
+    applyOperatorAllowance(discovery.tools, operatorAllowance);
     const tools = catalog.map((t) => ({
       ...t,
       ...discovery.tools.find((m) => m.tool === t.tool)!,
@@ -550,6 +567,7 @@ export class Observatory {
         .map((t) => t.tool),
       tools,
       remainingBudgetMicros,
+      operatorAllowance,
       meaning:
         "Server-matched options returned to the client; does not prove the model considered every option. Candidate quotes are alternatives, not a batch authorization.",
     };
@@ -693,6 +711,11 @@ export class Observatory {
         startedAt: new Date().toISOString(),
         estimateMicros,
       };
+      await this.db.store.allowance.reserve(
+        call.id,
+        "observation",
+        estimateMicros,
+      );
       if (apiKeyId)
         await this.db.apiKeys.reserve(
           apiKeyId,
@@ -756,6 +779,7 @@ export class Observatory {
         await this.db.transaction(async () => {
           const s = await this.require(id);
           await this.db.apiKeys.settle(call.id);
+          await this.db.store.allowance.settle(call.id);
           s.reservedMicros -= call.estimateMicros;
           s.spentMicros += call.estimateMicros;
           await this.db.save(s);

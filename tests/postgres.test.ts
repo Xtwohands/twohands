@@ -1,3 +1,4 @@
+import { grantFixtureAllowance } from "./fixtures/allowance";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -35,6 +36,7 @@ suite("isolated PostgreSQL storage", () => {
       [rootId],
     );
     created.push(rootId);
+    await grantFixtureAllowance(store);
     config.keys.exa = "fixture";
     config.rpm = 1000;
   });
@@ -169,6 +171,7 @@ suite("isolated PostgreSQL storage", () => {
       [tenant],
     );
     await store.scope.run(tenant, async () => {
+      await grantFixtureAllowance(store);
       let release!: () => void;
       const gate = new Promise<void>((r) => {
         release = r;
@@ -320,6 +323,7 @@ suite("Postgres receipt concurrency regressions", () => {
       "INSERT INTO octolab.workspaces(id,name) VALUES($1,'Concurrency regression fixture')",
       [id],
     );
+    await grantFixtureAllowance(store);
   });
   afterAll(async () => {
     if (store) await store.close();

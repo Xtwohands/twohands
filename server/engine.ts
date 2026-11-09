@@ -86,6 +86,7 @@ export class Engine {
         throw new Error("Remaining budget is insufficient");
       if (this.limited().has(provider))
         throw new Error("Provider rate limit reached");
+      await this.store.allowance.reserve(callId, "task", estimate);
       task.reservedMicros += estimate;
       await this.store.save(task);
       await this.store.event(
@@ -142,6 +143,7 @@ export class Engine {
       const task = (await this.store.get(taskId))!;
       if (task.reservedMicros < estimate)
         throw new Error("Budget reservation balance is inconsistent");
+      await this.store.allowance.settle(callId);
       if (sources) task.sources.push(...sources);
       task.reservedMicros -= estimate;
       task.spentMicros += estimate;

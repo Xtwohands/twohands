@@ -1,3 +1,4 @@
+import { WorkspaceAllowance } from "./workspace-allowance.js";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { randomUUID } from "node:crypto";
 import { type Database, PostgresDatabase, SqliteDatabase } from "./database.js";
@@ -11,6 +12,7 @@ export class StorageConflict extends Error {
 }
 export class Store {
   db: Database;
+  readonly allowance = new WorkspaceAllowance(this);
   readonly scope = new AsyncLocalStorage<string>();
   readonly actorScope = new AsyncLocalStorage<{
     kind: "account" | "api_key";
@@ -239,6 +241,7 @@ export class Store {
                 (s) => s.type === "budget_settled" && s.callId === e.callId,
               ),
           )) {
+            if (pending.callId) await this.allowance.settle(pending.callId);
             await this.event(
               task.id,
               "provider_interrupted",

@@ -135,6 +135,10 @@ export function workspaceRoutes(app: Express, obs: Observatory) {
     return start.toISOString();
   };
   app.get(
+    "/api/workspace/operator-allowance",
+    route(async (_req, res) => res.json(await obs.db.store.allowance.status())),
+  );
+  app.get(
     "/api/workspace/routing",
     route(async (_req, res) => res.json(await obs.routingPolicy())),
   );

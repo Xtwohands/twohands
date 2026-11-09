@@ -182,6 +182,7 @@ export class ObservationStore {
           const receipt = (await this.receipt(s.id, c.requestKey))!;
           await this.saveCall(c, receipt.signature);
           await this.apiKeys.settle(c.id);
+          await this.store.allowance.settle(c.id);
           s.reservedMicros = Math.max(0, s.reservedMicros - c.estimateMicros);
           s.spentMicros += c.estimateMicros;
           await this.event(s.id, "call_interrupted", "observed", {
