@@ -1,39 +1,86 @@
-/* Approved dark grid system. Cyan belongs to actions and keyboard focus. */
+/* Approved dark grid system. Blue belongs to actions and keyboard focus. */
 :root {
   --grid-gap: 16px;
   --panel-surface: #1e1e1e;
   --panel-subtle: #242424;
   --panel-line: #303030;
+  --action-button-edge: linear-gradient(to bottom, #85caff, #307fba 97.708%);
+  --action-button-glow: inset 0 0 3px 1px rgb(255 255 255 / 24%);
+  --action-button-shadow:
+    0 3px 6px 0 rgb(0 0 0 / 20%), 0 0 0 1px var(--brand-accent);
+  --navigation-button-fill: #272729;
+  --navigation-button-edge: linear-gradient(
+    to bottom,
+    #414141,
+    #272729 97.708%
+  );
+  --navigation-button-glow: inset 0 0 3px 1px rgb(77 77 77 / 24%);
+  --navigation-button-shadow:
+    0 3px 6px 0 rgb(0 0 0 / 20%), 0 0 0 1px var(--navigation-button-fill);
 }
 
-/* White labels sit on a deeper cyan fill; the accent ring keeps the brand cyan. */
+/* Figma surfaces with a compact glow; retain existing sizing and rounding.
+   Draw the glow against the full shape, then the gradient stroke above it. */
+:is(
+  [data-slot="button"][data-variant="default"],
+  .obs-sidebar nav > a:not(.admin-mfa-notice),
+  .obs-sidebar nav .ws-nav-group > a,
+  .mobile-sidebar-content nav > a,
+  .mobile-sidebar-content nav .ws-nav-group > a,
+  .portal-mobile-nav nav > a,
+  .account-menu-trigger
+) {
+  position: relative;
+  isolation: isolate;
+  &::before,
+  &::after {
+    content: var(--surface-decoration, none);
+    position: absolute;
+    inset: -1px;
+    border-radius: inherit;
+    pointer-events: none;
+  }
+  &::before {
+    box-shadow: var(--surface-glow);
+  }
+  &::after {
+    padding: 1px;
+    background: var(--surface-edge);
+    mask:
+      linear-gradient(#fff 0 0) content-box,
+      linear-gradient(#fff 0 0);
+    mask-composite: exclude;
+  }
+}
+
 [data-slot="button"][data-variant="default"] {
+  --surface-decoration: "";
+  --surface-edge: var(--action-button-edge);
+  --surface-glow: var(--action-button-glow);
   color: #fff;
   border: 1px solid transparent;
   border-radius: 8px;
-  background:
-    linear-gradient(var(--primary), var(--primary)) padding-box,
-    linear-gradient(180deg, #ffffff66, #ffffff0a) border-box;
-  box-shadow:
-    0 0 0 1px var(--brand-cyan),
-    0 3px 6px #0003,
-    inset 0 0 6px 2px #ffffff3d;
+  background: var(--primary);
+  box-shadow: var(--action-button-shadow);
   transition: transform 140ms ease-out;
 }
 [data-slot="button"][data-variant="default"]:hover:not(:disabled) {
   filter: none;
-  box-shadow:
-    0 0 0 1px var(--brand-cyan),
-    0 3px 6px #0003,
-    inset 0 0 6px 2px #ffffff4a;
+  background: var(--primary);
+  box-shadow: var(--action-button-shadow);
 }
 [data-slot="button"][data-variant="default"]:active:not(:disabled) {
   transform: translateY(1px);
 }
+[data-slot="button"][data-variant="default"]:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 3px;
+}
 [data-slot="button"][data-variant="link"] {
-  color: var(--brand-cyan);
+  color: var(--brand-accent);
 }
 [data-slot="button"][data-variant="default"]:disabled {
+  --surface-decoration: none;
   background: #292929;
   color: #a2a2a2;
   box-shadow: none;
@@ -64,6 +111,44 @@
 .observation-shell .obs-sidebar nav a.selected svg,
 .mobile-sidebar-content a.selected svg {
   color: #dededc;
+}
+/* Keep selection shadows inside the navigation scrollport without moving links. */
+.obs-sidebar:has(.ws-nav-group) > nav,
+.mobile-sidebar-content:has(.ws-nav-group) > nav {
+  padding: 8px;
+  margin: -8px;
+}
+.obs-sidebar:has(.ws-nav-group) > nav {
+  margin-bottom: 16px;
+}
+/* Offset the new border within the existing navigation row dimensions. */
+.obs-sidebar nav > a:not(.admin-mfa-notice),
+.obs-sidebar nav .ws-nav-group > a,
+.mobile-sidebar-content nav > a,
+.mobile-sidebar-content nav .ws-nav-group > a {
+  border: 1px solid transparent;
+  padding: 9px 11px;
+}
+.obs-sidebar:has(.ws-nav-group) nav a,
+.mobile-sidebar-content:has(.ws-nav-group) nav a {
+  padding: 7px 11px;
+}
+.portal-mobile-nav nav a {
+  border: 1px solid transparent;
+  padding: 8px;
+}
+/* Figma 2:16 navigation surface, including grouped and mobile links. */
+.obs-sidebar nav > a:is(.selected, :hover),
+.obs-sidebar nav .ws-nav-group > a:is(.selected, :hover),
+.mobile-sidebar-content nav > a:is(.selected, :hover),
+.mobile-sidebar-content nav .ws-nav-group > a:is(.selected, :hover),
+.portal-mobile-nav nav > a:is(.selected, :hover) {
+  --surface-decoration: "";
+  --surface-edge: var(--navigation-button-edge);
+  --surface-glow: var(--navigation-button-glow);
+  background: var(--navigation-button-fill);
+  border-color: transparent;
+  box-shadow: var(--navigation-button-shadow);
 }
 .obs-sidebar .sidebar-bottom {
   padding-top: 20px;
@@ -158,6 +243,9 @@
 }
 
 .account-menu-trigger {
+  --surface-decoration: "";
+  --surface-edge: var(--navigation-button-edge);
+  --surface-glow: var(--navigation-button-glow);
   display: flex;
   align-items: center;
   gap: 10px;
@@ -165,17 +253,18 @@
   min-width: 0;
   min-height: 57px;
   padding: 9px 10px;
-  border: 1px solid #303030;
+  border: 1px solid transparent;
   border-radius: 9px;
-  background: #1b1b1b;
+  background: var(--navigation-button-fill);
+  box-shadow: var(--navigation-button-shadow);
   color: #dededc;
   text-align: left;
   cursor: pointer;
 }
 .account-menu-trigger:hover,
 .account-menu-trigger[data-state="open"] {
-  background: #242424;
-  border-color: #454545;
+  background: var(--navigation-button-fill);
+  border-color: transparent;
 }
 .account-menu-avatar {
   display: flex;
