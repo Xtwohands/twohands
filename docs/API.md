@@ -101,14 +101,14 @@ The criteria must exactly match the saved rubric. Every evidence ID must belong 
 
 ## Read and export
 
-| Endpoint                     | Response                                                                                               |
-| ---------------------------- | ------------------------------------------------------------------------------------------------------ |
-| `GET /api/health`            | Provider key presence, configured estimates, policy/rate-card versions, minimum cohort; no credentials |
-| `GET /api/tasks`             | Recent local task summaries                                                                            |
-| `GET /api/tasks/:id`         | Internal task context, sources, current assessments, accepted organizations, full trace                |
-| `GET /api/tasks/:id/results` | Human-reviewed organization shortlist and CSV string; contains workspace content                       |
-| `GET /api/tasks/:id/export`  | Allowlisted JSON event summary without raw task/provider/reviewer content                              |
-| `GET /api/analytics`         | Consented aggregate metrics, or explicit cohort suppression                                            |
+| Endpoint                     | Response                                                                                                             |
+| ---------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `GET /api/health`            | Provider key presence, configured estimates, policy/rate-card versions, compatibility `minCohort: 0`; no credentials |
+| `GET /api/tasks`             | Recent local task summaries                                                                                          |
+| `GET /api/tasks/:id`         | Internal task context, sources, current assessments, accepted organizations, full trace                              |
+| `GET /api/tasks/:id/results` | Human-reviewed organization shortlist and CSV string; contains workspace content                                     |
+| `GET /api/tasks/:id/export`  | Allowlisted JSON event summary without raw task/provider/reviewer content                                            |
+| `GET /api/analytics`         | Opted-in aggregate usage from the first task; empty history returns zero counts and unknown latency                  |
 
 The internal task endpoint is not a provider-facing feed. Use the sanitized export for sharing traces without content. Result CSVs intentionally include company names, evidence URLs, and reviewer notes; cells are escaped to prevent spreadsheet formula execution.
 

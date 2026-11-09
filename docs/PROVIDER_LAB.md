@@ -6,7 +6,7 @@ This guide describes operator tools. In SQLite/local mode, [Tool company preview
 
 **Demo data** is an illustrative scenario, labeled throughout the dashboard. Its numbers are constants, not observed paid-provider results. Demo test plans stay in browser storage and do not enter the backend, provider history, or model statistics.
 
-**Local lab** shows actual controlled test receipts and private organic workspace counts, including small samples. Commercial sharing is enabled for all observation sessions. Company aggregate exports still require the configured minimum cohort (at least five sessions offering and using the selected provider); they contain no objectives, queries, raw answers, notes, model names, or session IDs. The local preview does not publish anything to a vendor or create tenant isolation.
+**Local lab** shows actual controlled test receipts and private organic workspace counts, including small samples. Commercial sharing is enabled for all observation sessions. Company aggregate usage is available from the first eligible session offering and using the selected provider, with no minimum workspace/session count; exports contain no objectives, queries, raw answers, notes, model names, or session IDs. The local preview does not publish anything to a vendor or create tenant isolation.
 
 The source selector remembers its value within the browser tab, so inspecting a receipt and returning to the company view preserves context.
 

@@ -11,7 +11,7 @@ The external agent (Claude, Codex, or another MCP host) owns the conversation, q
 - Preserve observed events separately from agent-stated reasons and human evaluations. Track model identity as reported unless verified by a host integration.
 - Keep estimates distinct from provider-reported usage. Reserve budgets atomically, make operations idempotent, and record incomplete attempts after restart.
 - Provide review-case evidence for potential refunds, without issuing payments or representing an insurance policy.
-- Enable commercial aggregate sharing for all observation sessions under the November 3 workspace policy. Preserve bounded export cohorts and exclude raw content; no automatic publication to vendors.
+- Enable commercial aggregate sharing for all observation sessions under the November 3 workspace policy. Show company usage from the first eligible recorded activity and exclude raw content; no automatic publication to vendors. Independent answer-review minimum samples remain required.
 - Replace the primary UI with a quiet dark dashboard: Geist, shadcn primitives, Untitled UI icons, subtle pane shading, normal capitalization, no eyebrow copy.
 - Connect Claude and Codex locally, verify protocol and end-to-end execution where authentication permits, test failure paths and persistence, and retain screenshots and reports.
 

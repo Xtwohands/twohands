@@ -6,7 +6,6 @@ import {
   type Accounts,
   type VerifiedIdentity,
 } from "./accounts.js";
-import { config } from "./config.js";
 import { providerTools } from "./provider-identifiers.js";
 import type { ProviderId } from "./types.js";
 import type {
@@ -381,7 +380,7 @@ export class Companies {
       ? await this.aggregateInsights(company.providerId)
       : {
           providerId: company.providerId,
-          minimumCohort: config.minCohort,
+          minimumCohort: 0,
           status: "awaiting_release",
           metrics: null,
         };
@@ -391,10 +390,10 @@ export class Companies {
   async aggregateInsights(providerId: ProviderId): Promise<CompanyInsights> {
     const base = {
       providerId,
-      minimumCohort: config.minCohort,
+      minimumCohort: 0,
     };
     // Only aggregate counts leave the backend. No queries, outputs, IDs, or consumer-level slices.
-    // Require independent workspaces as well as sessions; repeated calls by one tenant cannot unlock sharing.
+    // Company usage is available from the first eligible recorded call, without a cohort gate.
     const result = await this.pool.query(
       `WITH eligible AS (
       SELECT s.workspace_id,s.id,(
@@ -409,10 +408,8 @@ export class Companies {
       SELECT c.workspace_id,c.session_id,c.body::jsonb AS body FROM octolab.observation_calls c JOIN eligible e ON e.workspace_id=c.workspace_id AND e.id=c.session_id
       WHERE c.body::jsonb->>'startedAt'>=e.offered_at AND c.body::jsonb->>'provider'=$1 AND c.body::jsonb->>'status' IN ('succeeded','failed')
     ) SELECT EXISTS(SELECT 1 FROM octolab.tool_companies WHERE provider_id=$1) AS claimed,
-      (SELECT count(DISTINCT workspace_id) FROM eligible)::integer AS tenants,
       (SELECT count(*) FROM eligible)::integer AS offered,
       (SELECT count(*) FROM (SELECT DISTINCT workspace_id,session_id FROM calls) x)::integer AS selected,
-      (SELECT count(*) FROM (SELECT DISTINCT workspace_id FROM calls) x)::integer AS selected_tenants,
       count(*)::integer AS calls,count(*) FILTER (WHERE body->>'status'='succeeded')::integer AS succeeded FROM calls`,
       [providerId],
     );
@@ -425,13 +422,6 @@ export class Companies {
         409,
         "This provider now has a company registration. Choose that company in Settings.",
       );
-    if (
-      row.tenants < config.minCohort ||
-      row.selected_tenants < config.minCohort ||
-      row.selected < config.minCohort
-    ) {
-      return { ...base, status: "insufficient_data", metrics: null };
-    }
     return {
       ...base,
       status: "available",

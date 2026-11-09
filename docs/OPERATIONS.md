@@ -22,7 +22,7 @@ PostgreSQL is an explicit alternative through `STORAGE_BACKEND=postgres`, a priv
 
 Internal storage includes prompts, criteria, normalized query arguments, source excerpts and URLs, evidence assessments, reviewer notes, routing/usage metadata, and estimates. Search providers receive the query and domain filters needed to perform the search; Firecrawl receives an explicitly selected source URL. Review the vendor's terms, data retention, and permitted use before processing sensitive requests.
 
-Analytics consent defaults **off**. The task privacy control can withdraw it immediately or explicitly opt back in. The separate delete action removes a settled task and its event history from local storage; it is blocked while provider operations are active or reserved. Local task storage is necessary to use the workspace; the optional checkbox controls whether that task contributes to provider aggregates. The provider analytics API has an explicit field allowlist, excludes task content, and suppresses small cohorts. Cohort suppression is a basic safeguard, not a differential-privacy guarantee or proof of anonymity. Do not commercialize this feed without reviewing permissions, terms, licensing, and buyer requirements.
+Analytics consent defaults **off**. The task privacy control can withdraw it immediately or explicitly opt back in. The separate delete action removes a settled task and its event history from local storage; it is blocked while provider operations are active or reserved. Local task storage is necessary to use the workspace; the optional checkbox controls whether that task contributes to provider aggregates. The provider analytics API has an explicit field allowlist, excludes task content, and shows counts from the first opted-in task. Aggregation alone is not a guarantee of anonymity. Do not commercialize this feed without reviewing permissions, terms, licensing, and buyer requirements.
 
 Sanitized trace exports omit prompts, queries, source URLs/content, organization names, reviewer notes, and request arguments. They retain task/call identifiers, timing, policy decisions, observed response metadata, and cost estimates. Company CSV exports intentionally contain the reviewed result and evidence links.
 
@@ -34,7 +34,7 @@ Each delivered output remains available as a separate version. An evaluation ref
 
 Observation summary exports omit the objective, constraints, criteria text, model label, output text, source content, URLs, queries, stated explanations, and reviewer/case notes. Private exports intentionally contain them. Identifiers and timestamps remain in summary exports; these are minimized records, not a promise of anonymity.
 
-Commercial aggregate sharing is enabled for all observation sessions under workspace policy. Existing sessions are migrated once with an appended policy event; new sessions record the policy at creation. Per-session opt-out is no longer supported. The aggregate endpoint suppresses both overall and per-provider cohorts below the configured minimum (at least five). It contains only fixed provider names and aggregate execution counts/latency. Nothing is automatically sent to vendors. Stated explanations are retained locally and are not part of this aggregate feed. A future licensed data product needs a separate, explicit export contract and permissions.
+Commercial aggregate sharing is enabled for all observation sessions under workspace policy. Existing sessions are migrated once with an appended policy event; new sessions record the policy at creation. Per-session opt-out is no longer supported. The aggregate endpoint includes the first recorded settled provider call without a minimum workspace/session count. It contains only fixed provider names and aggregate execution counts/latency. Nothing is automatically sent to vendors. Stated explanations are retained locally and are not part of this aggregate feed. A future licensed data product needs a separate, explicit export contract and permissions.
 
 ## Retention
 
@@ -72,28 +72,28 @@ MCP client connection metadata remains until its workspace is removed; it contai
 
 ## Limits and pricing
 
-| Variable                                    | Default                  | Meaning                                                                                              |
-| ------------------------------------------- | ------------------------ | ---------------------------------------------------------------------------------------------------- |
-| `EXA_SEARCH_USD`                            | 0.007                    | Estimate for one search with text from up to 10 returned pages                                       |
-| `TAVILY_SEARCH_USD`                         | 0.008                    | Estimate for one basic search                                                                        |
-| `FIRECRAWL_SCRAPE_USD`                      | 0.001                    | Estimate for one extraction                                                                          |
-| `PROVIDER_TIMEOUT_MS`                       | 20000                    | HTTP request deadline                                                                                |
-| `PROVIDER_RPM`                              | 20                       | Process-local requests per provider per rolling minute                                               |
-| `AGENT_SESSION_BUDGET_MICROS`               | 100000                   | Backend cap per automatically authorized MCP session ($0.10); 0 blocks positive-estimate calls       |
-| `PROVIDER_TEST_BUDGET_MICROS`               | 150000                   | Backend cap per controlled provider run ($0.15)                                                      |
-| `PROVIDER_TEST_DAILY_BUDGET_MICROS`         | 500000                   | Controlled-test allowance per UTC start day ($0.50), separate from organic research                  |
-| `ANALYTICS_MIN_TASKS`                       | 5                        | Minimum commercial export cohort, cannot be configured below 5                                       |
-| `STORAGE_BACKEND`                           | `sqlite`                 | Explicit runtime backend: `sqlite` or `postgres`; a URL alone does not switch it                     |
-| `DB_PATH`                                   | `./data/apilayer.sqlite` | SQLite workspace or read-only migration source                                                       |
-| `DATABASE_URL`                              | unset                    | Private PostgreSQL connection string; keep server-side                                               |
-| `LEGACY_WORKSPACE_ID`                       | unset                    | Imported workspace UUID used by the PostgreSQL runtime; does not select retention targets            |
-| `RETENTION_DAYS`                            | 30                       | Positive age in days used to compute the cleanup cutoff                                              |
-| `RETENTION_WORKSPACE_ID`                    | unset                    | Explicit registered PostgreSQL workspace to maintain; optional identity check on SQLite              |
-| `RETENTION_CUTOFF`                          | unset                    | Fixed timestamp overriding the computed cutoff, needed to reuse a preview digest                     |
-| `LEGACY_OWNER_USER_ID`                      | unset                    | Intended owner's Supabase Auth UUID, required explicitly for import and verification                 |
-| `SUPABASE_URL` / `SUPABASE_PUBLISHABLE_KEY` | unset                    | Public hosted Auth origin and publishable key; `VITE_` aliases supported, no secret/service-role key |
-| `SUPABASE_ADMIN_USER_IDS`                   | unset                    | Explicit platform administrator UUID allowlist; empty grants none                                    |
-| `HOST` / `PORT`                             | `127.0.0.1` / `3001`     | HTTP listener                                                                                        |
+| Variable                                    | Default                  | Meaning                                                                                                           |
+| ------------------------------------------- | ------------------------ | ----------------------------------------------------------------------------------------------------------------- |
+| `EXA_SEARCH_USD`                            | 0.007                    | Estimate for one search with text from up to 10 returned pages                                                    |
+| `TAVILY_SEARCH_USD`                         | 0.008                    | Estimate for one basic search                                                                                     |
+| `FIRECRAWL_SCRAPE_USD`                      | 0.001                    | Estimate for one extraction                                                                                       |
+| `PROVIDER_TIMEOUT_MS`                       | 20000                    | HTTP request deadline                                                                                             |
+| `PROVIDER_RPM`                              | 20                       | Process-local requests per provider per rolling minute                                                            |
+| `AGENT_SESSION_BUDGET_MICROS`               | 100000                   | Backend cap per automatically authorized MCP session ($0.10); 0 blocks positive-estimate calls                    |
+| `PROVIDER_TEST_BUDGET_MICROS`               | 150000                   | Backend cap per controlled provider run ($0.15)                                                                   |
+| `PROVIDER_TEST_DAILY_BUDGET_MICROS`         | 500000                   | Controlled-test allowance per UTC start day ($0.50), separate from organic research                               |
+| `ANALYTICS_MIN_TASKS`                       | 5                        | Legacy compatibility setting; no longer gates company/usage reporting (model-review sample rules remain separate) |
+| `STORAGE_BACKEND`                           | `sqlite`                 | Explicit runtime backend: `sqlite` or `postgres`; a URL alone does not switch it                                  |
+| `DB_PATH`                                   | `./data/apilayer.sqlite` | SQLite workspace or read-only migration source                                                                    |
+| `DATABASE_URL`                              | unset                    | Private PostgreSQL connection string; keep server-side                                                            |
+| `LEGACY_WORKSPACE_ID`                       | unset                    | Imported workspace UUID used by the PostgreSQL runtime; does not select retention targets                         |
+| `RETENTION_DAYS`                            | 30                       | Positive age in days used to compute the cleanup cutoff                                                           |
+| `RETENTION_WORKSPACE_ID`                    | unset                    | Explicit registered PostgreSQL workspace to maintain; optional identity check on SQLite                           |
+| `RETENTION_CUTOFF`                          | unset                    | Fixed timestamp overriding the computed cutoff, needed to reuse a preview digest                                  |
+| `LEGACY_OWNER_USER_ID`                      | unset                    | Intended owner's Supabase Auth UUID, required explicitly for import and verification                              |
+| `SUPABASE_URL` / `SUPABASE_PUBLISHABLE_KEY` | unset                    | Public hosted Auth origin and publishable key; `VITE_` aliases supported, no secret/service-role key              |
+| `SUPABASE_ADMIN_USER_IDS`                   | unset                    | Explicit platform administrator UUID allowlist; empty grants none                                                 |
+| `HOST` / `PORT`                             | `127.0.0.1` / `3001`     | HTTP listener                                                                                                     |
 
 Prices are **configurable planning assumptions**, not verified current plan prices. Exa's default is $0.007 for Auto search with up to ten results and page text, checked against its published price card and five provider-reported responses on November 1, 2026. The prior $0.017 default double-counted an allowance for content. Historical receipts keep their original rate card and estimates. Vendor plans, search types, returned contents, credit packages, and discounts can change actual charges. Confirm the official price card and your account plan before use:
 

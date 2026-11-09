@@ -524,7 +524,7 @@ it("retains active, reviewed-recently, and linked lab evidence during retention"
   for (const run of [template, active, recentReview, linked])
     expect(await lab.get(run.id)).toBeDefined();
 });
-it("keeps demo metrics out of storage and suppresses company exports below the minimum cohort", async () => {
+it("keeps demo metrics out of storage and exposes the first eligible organic call", async () => {
   const session = await obs.createAgentSession({
     title: "PRIVATE title",
     objective: "PRIVATE objective",
@@ -541,7 +541,14 @@ it("keeps demo metrics out of storage and suppresses company exports below the m
     requestKey: "organic",
     statedReason: "PRIVATE explanation",
   });
-  expect((await companyReport("tavily", "local", obs, lab)).organic).toBeNull();
+  expect(
+    (await companyReport("tavily", "local", obs, lab)).organic,
+  ).toMatchObject({
+    offeredSessions: 1,
+    selectedSessions: 1,
+    calls: 1,
+    successfulCalls: 1,
+  });
   const demo = await companyReport("exa", "demo", obs, lab);
   expect(demo.organic?.selectedSessions).toBe(54);
   expect(await lab.list()).toHaveLength(0);
@@ -553,7 +560,7 @@ it("keeps demo metrics out of storage and suppresses company exports below the m
     (await obs.catalog()).find((t) => t.provider === "tavily")?.sampleCount,
   ).toBe(1);
 });
-it("keeps all-session sharing enabled and suppresses exports when deletion reduces the provider cohort", async () => {
+it("keeps all-session sharing enabled and updates exports after deletion without hiding remaining usage", async () => {
   const ids: string[] = [];
   for (let i = 0; i < 5; i++) {
     const s = await obs.createAgentSession({
@@ -589,7 +596,9 @@ it("keeps all-session sharing enabled and suppresses exports when deletion reduc
     (async () => await obs.consent(ids[0], false))(),
   ).rejects.toThrow(/workspace policy/);
   await obs.db.remove(ids[0]);
-  expect((await companyReport("tavily", "local", obs, lab)).organic).toBeNull();
+  expect(
+    (await companyReport("tavily", "local", obs, lab)).organic,
+  ).toMatchObject({ offeredSessions: 4, selectedSessions: 4, calls: 4 });
 });
 it("does not credit selections that happened before the tool was offered", async () => {
   const sessions = [];
@@ -614,7 +623,9 @@ it("does not credit selections that happened before the tool was offered", async
     await obs.consent(s.id, true);
     sessions.push({ s, args });
   }
-  expect((await companyReport("tavily", "local", obs, lab)).organic).toBeNull();
+  expect(
+    (await companyReport("tavily", "local", obs, lab)).organic,
+  ).toMatchObject({ offeredSessions: 5, selectedSessions: 0, calls: 0 });
   for (const { s, args } of sessions)
     await obs.execute(s.id, { ...args, requestKey: "after-offer" });
   expect(
@@ -657,7 +668,7 @@ it("protects lab and company endpoints with workspace authentication and validat
     (await request(app).get("/api/provider-lab").set(auth)).body.runs,
   ).toHaveLength(1);
 });
-it("shows private workspace execution below the export threshold only when explicitly requested", async () => {
+it("shows first-call company counts while keeping private activity explicitly scoped", async () => {
   const s = await obs.createAgentSession({
     title: "PRIVATE title",
     objective: "PRIVATE objective",
@@ -675,7 +686,11 @@ it("shows private workspace execution below the export threshold only when expli
     statedReason: "PRIVATE explanation",
   });
   const aggregate = await companyReport("exa", "local", obs, lab);
-  expect(aggregate.organic).toBeNull();
+  expect(aggregate.organic).toMatchObject({
+    offeredSessions: 1,
+    selectedSessions: 1,
+    calls: 1,
+  });
   expect(aggregate.privateActivity).toBeNull();
   const local = await companyReport("exa", "local", obs, lab, true);
   expect(local.privateActivity).toMatchObject({
@@ -684,7 +699,11 @@ it("shows private workspace execution below the export threshold only when expli
     selectedSessions: 1,
     offeredSessions: 1,
   });
-  expect(local.organic).toBeNull();
+  expect(local.organic).toMatchObject({
+    offeredSessions: 1,
+    selectedSessions: 1,
+    calls: 1,
+  });
   expect(JSON.stringify(local)).not.toContain("PRIVATE");
 });
 it("does not count incompatible tools as offered candidates in new discovery events", async () => {

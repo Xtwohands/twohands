@@ -1466,10 +1466,8 @@ export function ObservationApp() {
                   <div>
                     <strong>Aggregate export</strong>
                     <p>
-                      Requires at least {summary?.sharing.minimumCohort || 5}{" "}
-                      sessions, including the same minimum for each provider.
-                      Excludes raw intent, output, queries, URLs, and
-                      explanations.
+                      Available from the first recorded provider usage. Excludes
+                      raw intent, output, queries, URLs, and explanations.
                     </p>
                   </div>
                   <ExportButton
@@ -2150,8 +2148,8 @@ function SessionView({
               <Badge variant="outline">Enabled</Badge>
             </div>
             <p className="field-hint">
-              Minimum export cohorts still apply. Nothing is automatically
-              published or sent to tool companies.
+              Usage is available without a minimum workspace or session count.
+              Nothing is automatically published or sent to tool companies.
             </p>
           </Panel>
           <Panel

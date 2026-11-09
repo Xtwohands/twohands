@@ -36,7 +36,7 @@ test("analytics recovers after connecting without leaving the screen", async ({
   ).toHaveCount(0);
   await connect(page, testToken);
   await expect(
-    page.getByRole("heading", { name: "Real insights need a real cohort." }),
+    page.getByRole("heading", { name: "No usage yet" }),
   ).toBeVisible();
   await expect(page.getByText(authError, { exact: true })).toHaveCount(0);
   await expect(page).toHaveURL(/#intelligence$/);
@@ -45,12 +45,12 @@ test("analytics recovers after connecting without leaving the screen", async ({
   await expect(
     page.getByText(authError, { exact: true }).first(),
   ).toBeVisible();
-  await expect(
-    page.getByRole("heading", { name: "Real insights need a real cohort." }),
-  ).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "No usage yet" })).toHaveCount(
+    0,
+  );
   await connect(page, testToken);
   await expect(
-    page.getByRole("heading", { name: "Real insights need a real cohort." }),
+    page.getByRole("heading", { name: "No usage yet" }),
   ).toBeVisible();
 });
 
@@ -82,7 +82,7 @@ test("a delayed unauthorized analytics response cannot replace the connected vie
   await expect.poll(() => intercepted).toBe(true);
   await connect(page, testToken);
   await expect(
-    page.getByRole("heading", { name: "Real insights need a real cohort." }),
+    page.getByRole("heading", { name: "No usage yet" }),
   ).toBeVisible();
   release();
   await finished;
@@ -93,7 +93,7 @@ test("a delayed unauthorized analytics response cannot replace the connected vie
       ),
   );
   await expect(
-    page.getByRole("heading", { name: "Real insights need a real cohort." }),
+    page.getByRole("heading", { name: "No usage yet" }),
   ).toBeVisible();
   await expect(page.getByText(authError, { exact: true })).toHaveCount(0);
 });

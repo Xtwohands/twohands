@@ -1,6 +1,5 @@
 import type { ProviderId } from "./types.js";
 import type { Observatory } from "./observation.js";
-import { config } from "./config.js";
 import { toolCapabilities } from "./provider-capabilities.js";
 import { labMeasurements, type ProviderLab } from "./provider-lab.js";
 import type {
@@ -171,33 +170,25 @@ export async function companyReport(
   const selected = eligible.filter(
     (s) => callsAfterOffer.get(s.id)!.length > 0,
   );
-  const safeCohort =
-    eligible.length >= config.minCohort && selected.length >= config.minCohort;
-  const calls = safeCohort
-    ? selected
-        .flatMap((s) => callsAfterOffer.get(s.id)!)
-        .filter(
-          (c) =>
-            c.provider === provider &&
-            ["succeeded", "failed"].includes(c.status),
-        )
-    : [];
+  const calls = selected
+    .flatMap((s) => callsAfterOffer.get(s.id)!)
+    .filter(
+      (c) =>
+        c.provider === provider && ["succeeded", "failed"].includes(c.status),
+    );
   const referenced = new Set(
     selected.flatMap((s) => s.outcomes.flatMap((o) => o.evidenceCallIds)),
   );
   const organic =
     source === "demo"
       ? demoOrganic[provider]
-      : safeCohort
-        ? {
-            offeredSessions: eligible.length,
-            selectedSessions: selected.length,
-            calls: calls.length,
-            successfulCalls: calls.filter((c) => c.status === "succeeded")
-              .length,
-            referencedCalls: calls.filter((c) => referenced.has(c.id)).length,
-          }
-        : null;
+      : {
+          offeredSessions: eligible.length,
+          selectedSessions: selected.length,
+          calls: calls.length,
+          successfulCalls: calls.filter((c) => c.status === "succeeded").length,
+          referencedCalls: calls.filter((c) => referenced.has(c.id)).length,
+        };
   const workspaceCalls =
     source === "local" && workspacePreview
       ? (
@@ -365,9 +356,7 @@ export async function companyReport(
         : "Local workspace history + latest completed test",
     organic,
     privateActivity,
-    organicUnavailableReason: organic
-      ? null
-      : `No eligible cohort yet. At least ${config.minCohort} sessions must both offer and use this provider before company aggregates are eligible. Private workspace counts remain visible.`,
+    organicUnavailableReason: null,
     benchmarks,
     benchmarkRunId: source === "demo" ? null : (latest?.id ?? null),
     usage,

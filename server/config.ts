@@ -52,6 +52,7 @@ export const config = {
     0,
     50_000_000,
   ),
+  // Legacy configuration compatibility; no longer gates company/usage reports.
   minCohort: integer("ANALYTICS_MIN_TASKS", 5, 5, 10000),
   prices,
   keys: {

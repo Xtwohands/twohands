@@ -28,11 +28,11 @@ Open **Company team** in the company sidebar. The owner can add an analyst by th
 
 Analysts can read their company's profile and approved aggregate insights. They cannot change a registration, manage team members, read access history, or approve an integration. Membership is checked on subsequent requests, so removal blocks further company reads. Replaying an earlier grant after revocation does not restore access; a deliberate new grant requires a new request key.
 
-The owner-only **Access history** records recent analyst grants, revocations, and aggregate-report access, including when a report was withheld for release or cohort requirements. Platform admins can inspect/manage company teams under their explicit permissions. No customer workspace access is granted by a company membership.
+The owner-only **Access history** records recent analyst grants, revocations, and aggregate-report access, including when a report was withheld for release. Historical cohort-suppressed access events remain readable. Platform admins can inspect/manage company teams under their explicit permissions. No customer workspace access is granted by a company membership.
 
 ## Switch areas and preview permissions
 
-**Settings** holds links to the account's user and company areas. Administrators also have **Preview as** options with a visible **Return to admin** control. User preview removes administrator privileges and retains actual workspace memberships. Company preview selects one real registration or an explicitly labeled integrated provider without a registration. It restricts backend requests to that target, uses real cohort-gated aggregates, and creates no permanent membership or fake company records. Provider-only previews are read-only; registered-company actions retain the actual administrator as their audit actor.
+**Settings** holds links to the account's user and company areas. Administrators also have **Preview as** options with a visible **Return to admin** control. User preview removes administrator privileges and retains actual workspace memberships. Company preview selects one real registration or an explicitly labeled integrated provider without a registration. It restricts backend requests to that target, uses real eligible aggregate counts without a minimum workspace/session count, and creates no permanent membership or fake company records. Provider-only previews are read-only; registered-company actions retain the actual administrator as their audit actor.
 
 ## Read company insights
 
@@ -42,24 +42,24 @@ Reports have four allowlisted counts: eligible offered sessions, sessions using 
 
 Registered companies and administrator company previews share the same dashboard structure. Overview keeps four cards for selection, request success, selected sessions, and completed requests; Live usage, Controlled tests, Test plans, and Integration remain in the sidebar whether data is available, zero, or withheld. Pending or unbound registrations retain their own company/tool identity. Controlled-test and plan sections currently show truthful empty states, not operator-lab receipts or scheduled experiments. Company details and owner-only Company team remain separate sections.
 
-After explicit insight release, metrics remain suppressed until the configured minimum cohort, at least five, includes independent workspaces offering and using the tool and enough selected sessions. Repeated calls from one workspace cannot unlock the report. Suppressed reports return `metrics: null`; no raw content, consumer identities, or session IDs are returned. No package is published or delivered automatically.
+After explicit insight release, counts are available from the first eligible recorded usage, including one workspace and one session. No usage returns real zero counts; sections stay visible. Pending release still returns `metrics: null`. No raw content, consumer identities, or session IDs are returned. No package is published or delivered automatically.
 
 ## Company and review API
 
 All company routes require a verified Supabase account session. They do not require a customer workspace. Machine API keys and editable account metadata do not grant company/admin access. Writes require same-origin JSON. Administrator previews send `X-Octolab-Preview: user` or `company`; company preview additionally requires `X-Octolab-Preview-Target: company:<UUID>` or `provider:<registered-provider-id>`. The backend verifies the original administrator and confines the request to the selected context. Non-admin preview attempts receive `403`. `GET /api/auth/preview-targets` lists available targets; `GET /api/auth/preview-insights` reads the selected provider-only preview with the same aggregate privacy rules.
 
-| Method | Route                                 | Contract                                                                                                                             |
-| ------ | ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| POST   | `/api/auth/companies`                 | `{name, website, toolName, description, requestKey}` creates an idempotent owner registration                                        |
-| GET    | `/api/companies/:id`                  | Company-member or platform-admin record; unrelated accounts receive `404`                                                            |
-| POST   | `/api/companies/:id/resubmit`         | Owner-only revisioned edit of `pending`/`rejected` registrations; same details plus `revision`, without `requestKey`                 |
-| GET    | `/api/companies/:id/insights`         | Approved company report with `available`, `awaiting_release`, or `insufficient_data` status                                          |
-| GET    | `/api/companies/:id/members`          | Owner/admin-only company team list                                                                                                   |
-| POST   | `/api/companies/:id/members`          | Owner/admin-only `{action:"grant", email, requestKey}` or `{action:"revoke", userId, requestKey}`                                    |
-| GET    | `/api/companies/:id/access-history`   | Owner/admin-only latest 100 membership-change and report-access events                                                               |
-| GET    | `/api/admin/companies?status=pending` | Admin queue, server-filtered by `pending`, `approved`, `rejected`, `suspended`, or `all`; up to 100 items and an opaque `nextCursor` |
-| POST   | `/api/admin/companies/:id/review`     | `{revision, status, providerId, insightsEnabled, feedback}` records approval, requested changes, or suspension                       |
-| GET    | `/api/admin/companies/:id/history`    | Admin-only registration, resubmission, and review history with actor, time, revision, and decision data                              |
+| Method | Route                                 | Contract                                                                                                                                                   |
+| ------ | ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| POST   | `/api/auth/companies`                 | `{name, website, toolName, description, requestKey}` creates an idempotent owner registration                                                              |
+| GET    | `/api/companies/:id`                  | Company-member or platform-admin record; unrelated accounts receive `404`                                                                                  |
+| POST   | `/api/companies/:id/resubmit`         | Owner-only revisioned edit of `pending`/`rejected` registrations; same details plus `revision`, without `requestKey`                                       |
+| GET    | `/api/companies/:id/insights`         | Approved company report with `available` (including zero usage) or `awaiting_release` status; historical `insufficient_data` access events remain readable |
+| GET    | `/api/companies/:id/members`          | Owner/admin-only company team list                                                                                                                         |
+| POST   | `/api/companies/:id/members`          | Owner/admin-only `{action:"grant", email, requestKey}` or `{action:"revoke", userId, requestKey}`                                                          |
+| GET    | `/api/companies/:id/access-history`   | Owner/admin-only latest 100 membership-change and report-access events                                                                                     |
+| GET    | `/api/admin/companies?status=pending` | Admin queue, server-filtered by `pending`, `approved`, `rejected`, `suspended`, or `all`; up to 100 items and an opaque `nextCursor`                       |
+| POST   | `/api/admin/companies/:id/review`     | `{revision, status, providerId, insightsEnabled, feedback}` records approval, requested changes, or suspension                                             |
+| GET    | `/api/admin/companies/:id/history`    | Admin-only registration, resubmission, and review history with actor, time, revision, and decision data                                                    |
 
 Pass `cursor=<nextCursor>` with the same status to continue the queue. Review writes require the current revision, so a stale review cannot overwrite a newer decision. Company fields are bounded: name/tool name 2–80 characters, website at most 300 characters, description 20–1,500 characters; review feedback is 5–1,500 characters.
 

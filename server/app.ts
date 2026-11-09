@@ -307,7 +307,7 @@ export function createApp(
       estimates: config.prices,
       rateCardVersion: config.rateCardVersion,
       policyVersion: config.policyVersion,
-      minCohort: config.minCohort,
+      minCohort: 0,
       providerIssues: engine.providerIssues(),
     }),
   );

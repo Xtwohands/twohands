@@ -129,17 +129,21 @@ describe("workspace API", () => {
       expect(json).not.toContain(value);
     expect(json).toContain("httpStatus");
   });
-  it("suppresses analytics until the minimum consented task cohort", async () => {
+  it("returns usage without a cohort gate while excluding nonconsenting tasks", async () => {
     for (let i = 0; i < 10; i++) await createTask(store);
     expect((await request(app).get("/api/analytics")).body).toMatchObject({
-      suppressed: true,
+      suppressed: false,
       cohortSize: 0,
-      minCohort: 5,
+      minCohort: 0,
     });
     for (let i = 0; i < 5; i++) await createTask(store, { consent: true });
     const r = await request(app).get("/api/analytics");
     expect(r.body.suppressed).toBe(false);
-    expect(r.body.providers.every((p: any) => p.suppressed)).toBe(true);
+    expect(
+      r.body.providers.every(
+        (p: any) => !p.suppressed && p.calls === 0 && p.latencyMs === null,
+      ),
+    ).toBe(true);
     expect(JSON.stringify(r.body)).not.toContain(intent.query);
   });
   it("never reflects malformed request bodies as internal stack traces", async () => {

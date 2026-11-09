@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import {
-  Activity,
   BarChart03 as BarChart3,
   Fingerprint01 as Fingerprint,
   GitBranch01 as GitBranch,
@@ -59,67 +58,13 @@ export function Intelligence() {
             <LoaderCircle className="spin" />
           </div>
         )
-      ) : data.suppressed ? (
-        <>
-          <div className="stats-grid">
-            <Stat
-              label="Consented tasks"
-              value={String(data.cohortSize).padStart(2, "0")}
-              detail="Only explicitly opted-in sessions"
-              icon={<Fingerprint size={17} />}
-            />
-            <Stat
-              label="Minimum cohort"
-              value={String(data.minCohort).padStart(2, "0")}
-              detail="Required before aggregate reporting"
-              icon={<ShieldCheck size={17} />}
-            />
-            <Stat
-              label="Provider insights"
-              value="—"
-              detail="Withheld until threshold is met"
-              icon={<BarChart3 size={17} />}
-            />
-            <Stat
-              label="Data source"
-              value="Live only"
-              detail="No seeded performance benchmarks"
-              icon={<Activity size={17} />}
-            />
-          </div>
-          <section className="panel analytics-empty">
-            <div className="empty-state">
-              <div className="empty-icon">
-                <LockKeyhole size={30} />
-              </div>
-              <span className="small-label">Privacy threshold active</span>
-              <h2>Real insights need a real cohort.</h2>
-              <p>
-                Complete at least {data.minCohort} opted-in research tasks to
-                unlock provider analytics. Small provider cohorts are also
-                withheld.
-              </p>
-              <div className="cohort-progress">
-                {Array.from({ length: data.minCohort }, (_, i) => (
-                  <span
-                    key={i}
-                    className={i < data.cohortSize ? "filled" : ""}
-                  />
-                ))}
-              </div>
-              <span className="mono muted">
-                {data.cohortSize} / {data.minCohort} TASKS
-              </span>
-            </div>
-          </section>
-        </>
       ) : (
         <>
           <div className="stats-grid">
             <Stat
               label="Consented tasks"
               value={String(data.cohortSize)}
-              detail="De-identified task cohort"
+              detail="Eligible opted-in tasks"
               icon={<Fingerprint size={17} />}
             />
             <Stat
@@ -141,6 +86,14 @@ export function Intelligence() {
               icon={<Layers3 size={17} />}
             />
           </div>
+          {data.cohortSize === 0 && (
+            <div className="info-strip">
+              <div>
+                <h2>No usage yet</h2>
+                <p>Recorded activity will appear here when available.</p>
+              </div>
+            </div>
+          )}
           <section className="panel">
             <div className="panel-heading">
               <span>
@@ -174,33 +127,26 @@ export function Intelligence() {
                           {p.provider}
                         </span>
                       </td>
-                      {p.suppressed ? (
-                        <td colSpan={5} className="muted">
-                          Withheld · fewer than {data.minCohort} contributing
-                          tasks
+                      <>
+                        <td>
+                          {metric(p.eligible)} / {metric(p.selected)}
                         </td>
-                      ) : (
-                        <>
-                          <td>
-                            {metric(p.eligible)} / {metric(p.selected)}
-                          </td>
-                          <td>
-                            {metric(p.httpSuccesses)} / {metric(p.calls)}
-                          </td>
-                          <td>
-                            {p.latencyMs === null ? "—" : `${p.latencyMs} ms`}
-                          </td>
-                          <td>
-                            {metric(p.coveragePasses)} /{" "}
-                            {metric(p.coverageChecks)}
-                          </td>
-                          <td>
-                            {p.estimatedMicros === null
-                              ? "—"
-                              : money(p.estimatedMicros)}
-                          </td>
-                        </>
-                      )}
+                        <td>
+                          {metric(p.httpSuccesses)} / {metric(p.calls)}
+                        </td>
+                        <td>
+                          {p.latencyMs === null ? "—" : `${p.latencyMs} ms`}
+                        </td>
+                        <td>
+                          {metric(p.coveragePasses)} /{" "}
+                          {metric(p.coverageChecks)}
+                        </td>
+                        <td>
+                          {p.estimatedMicros === null
+                            ? "—"
+                            : money(p.estimatedMicros)}
+                        </td>
+                      </>
                     </tr>
                   ))}
                 </tbody>
@@ -278,34 +224,6 @@ export function Intelligence() {
             {data.note}
           </div>
         </>
-      )}
-      {data?.suppressed && (
-        <div className="intelligence-cards">
-          {[
-            [
-              "Routing conversion",
-              "When was a provider eligible, selected, or excluded?",
-            ],
-            [
-              "Evidence quality gaps",
-              "Where did a technically successful search leave insufficient evidence?",
-            ],
-            [
-              "Demand & constraints",
-              "Which capabilities and explicit spending preferences recur?",
-            ],
-          ].map(([title, desc], i) => (
-            <section key={title} className="insight-preview">
-              <span className="mono">0{i + 1} / INSIGHT</span>
-              <h3>{title}</h3>
-              <p>{desc}</p>
-              <span>
-                <LockKeyhole size={12} />
-                Awaiting consented observations
-              </span>
-            </section>
-          ))}
-        </div>
       )}
     </>
   );

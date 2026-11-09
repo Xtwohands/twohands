@@ -112,14 +112,14 @@ async function fixture(page: Page, unbound = false) {
     route.fulfill({
       json: {
         providerId: "tavily",
-        minimumCohort: 5,
-        status: state.available ? "available" : "insufficient_data",
+        minimumCohort: 0,
+        status: state.available ? "available" : "awaiting_release",
         metrics: state.available
           ? {
-              offeredSessions: state.calls ? 17 : 0,
-              selectedSessions: state.calls ? 12 : 0,
+              offeredSessions: state.calls === 1 ? 1 : state.calls ? 17 : 0,
+              selectedSessions: state.calls === 1 ? 1 : state.calls ? 12 : 0,
               calls: state.calls,
-              successfulCalls: state.calls ? 21 : 0,
+              successfulCalls: state.calls === 1 ? 1 : state.calls ? 21 : 0,
             }
           : null,
       },
@@ -267,4 +267,43 @@ test("unbound company keeps its own identity, visible sections, and owner pages"
   await expect(
     page.getByRole("link", { name: "Provider documentation" }),
   ).toHaveCount(0);
+});
+
+test("the first recorded call is visible in company-holder and admin-preview dashboards", async ({
+  page,
+}) => {
+  const state = await fixture(page);
+  state.calls = 1;
+  await page.goto(`/#company/${id}/overview`);
+  await expect(page.locator(".company-metric > strong")).toHaveText([
+    "100%",
+    "100%",
+    "1",
+    "1",
+  ]);
+  await expect(
+    page.getByText("1 of 1 sessions", { exact: true }),
+  ).toBeVisible();
+  state.admin = true;
+  await page.goto("/#settings");
+  await page.reload();
+  await page.getByLabel("Preview as", { exact: true }).selectOption("company");
+  await page
+    .getByRole("button", { name: "Open company preview", exact: true })
+    .click();
+  await expect(page.locator(".company-metric > strong")).toHaveText([
+    "100%",
+    "100%",
+    "1",
+    "1",
+  ]);
+  await captureJourney(page, "company-first-call");
+  const navigation = await nav(page);
+  await navigation
+    .getByRole("link", { name: "Live usage", exact: true })
+    .click();
+  await expect(page.locator(".company-call-summary > span").first()).toHaveText(
+    "1 completed call",
+  );
+  await expect(page.getByText(/at least 5|minimum cohort/i)).toHaveCount(0);
 });

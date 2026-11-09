@@ -1,6 +1,6 @@
 import AxeBuilder from "@axe-core/playwright";
 import { test, expect } from "@playwright/test";
-test("saves explicit intent, persists it, inspects trace, and withholds unsupported analytics", async ({
+test("saves explicit intent, persists it, inspects trace, and shows empty analytics without hiding sections", async ({
   page,
 }, testInfo) => {
   const errors: string[] = [];
@@ -45,7 +45,7 @@ test("saves explicit intent, persists it, inspects trace, and withholds unsuppor
   });
   await page.getByRole("button", { name: "Provider intelligence" }).click();
   await expect(
-    page.getByRole("heading", { name: "Real insights need a real cohort." }),
+    page.getByRole("heading", { name: "No usage yet" }),
   ).toBeVisible();
   await page.screenshot({
     path: `test-results/intelligence-${testInfo.project.name}.png`,

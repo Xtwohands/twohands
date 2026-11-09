@@ -164,9 +164,14 @@ async function mockAuth(
           .request()
           .headers()
           ["x-octolab-preview-target"]?.split(":")[1],
-        minimumCohort: 5,
-        status: "insufficient_data",
-        metrics: null,
+        minimumCohort: 0,
+        status: "available",
+        metrics: {
+          offeredSessions: 0,
+          selectedSessions: 0,
+          calls: 0,
+          successfulCalls: 0,
+        },
       },
     }),
   );
@@ -281,9 +286,14 @@ async function mockAuth(
         item?.status === "approved"
           ? {
               providerId: item.providerId,
-              minimumCohort: 5,
-              status: "insufficient_data",
-              metrics: null,
+              minimumCohort: 0,
+              status: "available",
+              metrics: {
+                offeredSessions: 0,
+                selectedSessions: 0,
+                calls: 0,
+                successfulCalls: 0,
+              },
             }
           : {
               error:
@@ -705,7 +715,7 @@ test("admin switches selected companies, drops late reports, and retains return 
     await route.fulfill({
       json: {
         providerId: "exa",
-        minimumCohort: 5,
+        minimumCohort: 0,
         status: "available",
         metrics: {
           offeredSessions: 987654,

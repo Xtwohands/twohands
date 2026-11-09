@@ -278,7 +278,7 @@ export function CompanyView({
           <p>
             {source === "demo"
               ? "All metrics below are simulated to demonstrate the workflow. No customer results or paid-provider outcomes are implied."
-              : "Your workspace activity is visible below, including small samples. Controlled tests are separate. All sessions contribute to commercial aggregates; export thresholds still apply. Nothing is published to a tool company."}
+              : "Your workspace activity is visible below, including small samples. Controlled tests are separate. All sessions contribute to commercial aggregates without a minimum workspace/session count. Nothing is published to a tool company."}
           </p>
         </div>
         <Badge variant="outline">

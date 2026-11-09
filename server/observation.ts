@@ -1042,7 +1042,7 @@ export class Observatory {
         consentedSessions: sharing.length, // Legacy response field.
         includedSessions: sharing.length,
         policy: SHARING_POLICY,
-        minimumCohort: config.minCohort,
+        minimumCohort: 0,
         available: (await this.commercialAggregate()).available,
         published: false,
       },
@@ -1050,17 +1050,6 @@ export class Observatory {
   }
   async commercialAggregate() {
     const sessions = (await this.db.list()).filter((s) => s.commercialConsent);
-    if (sessions.length < config.minCohort)
-      return {
-        available: false,
-        minimumCohort: config.minCohort,
-        consentedSessions: sessions.length,
-        includedSessions: sessions.length,
-        policy: SHARING_POLICY,
-        includesRawContent: false,
-        automaticallyPublished: false,
-        providers: [],
-      };
     const sessionCalls = new Map(
       await Promise.all(
         sessions.map(async (s) => [s.id, await this.db.calls(s.id)] as const),
@@ -1068,9 +1057,15 @@ export class Observatory {
     );
     const providers = Object.values(names).flatMap((provider) => {
       const relevant = sessions.filter((s) =>
-        sessionCalls.get(s.id)!.some((c) => c.provider === provider),
+        sessionCalls
+          .get(s.id)!
+          .some(
+            (c) =>
+              c.provider === provider &&
+              ["succeeded", "failed"].includes(c.status),
+          ),
       );
-      if (relevant.length < config.minCohort) return [];
+      if (!relevant.length) return [];
       const calls = relevant
         .flatMap((s) => sessionCalls.get(s.id)!)
         .filter(
@@ -1095,7 +1090,7 @@ export class Observatory {
     });
     return {
       available: providers.length > 0,
-      minimumCohort: config.minCohort,
+      minimumCohort: 0,
       consentedSessions: sessions.length,
       includedSessions: sessions.length,
       policy: SHARING_POLICY,
