@@ -138,17 +138,28 @@
   padding: 8px;
 }
 /* Figma 2:16 navigation surface, including grouped and mobile links. */
-.obs-sidebar nav > a:is(.selected, :hover),
-.obs-sidebar nav .ws-nav-group > a:is(.selected, :hover),
-.mobile-sidebar-content nav > a:is(.selected, :hover),
-.mobile-sidebar-content nav .ws-nav-group > a:is(.selected, :hover),
-.portal-mobile-nav nav > a:is(.selected, :hover) {
+.obs-sidebar nav > a.selected,
+.obs-sidebar nav .ws-nav-group > a.selected,
+.mobile-sidebar-content nav > a.selected,
+.mobile-sidebar-content nav .ws-nav-group > a.selected,
+.portal-mobile-nav nav > a.selected {
   --surface-decoration: "";
   --surface-edge: var(--navigation-button-edge);
   --surface-glow: var(--navigation-button-glow);
   background: var(--navigation-button-fill);
   border-color: transparent;
   box-shadow: var(--navigation-button-shadow);
+}
+/* Hover acknowledges the pointer without looking like the current page. */
+.obs-sidebar nav > a:hover:not(.selected),
+.obs-sidebar nav .ws-nav-group > a:hover:not(.selected),
+.mobile-sidebar-content nav > a:hover:not(.selected),
+.mobile-sidebar-content nav .ws-nav-group > a:hover:not(.selected),
+.portal-mobile-nav nav > a:hover:not(.selected) {
+  --surface-decoration: none;
+  background: #1d1d1f;
+  border-color: transparent;
+  box-shadow: none;
 }
 .obs-sidebar .sidebar-bottom {
   padding-top: 20px;
