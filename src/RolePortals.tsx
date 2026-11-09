@@ -1,3 +1,4 @@
+import { AdminNavigation } from "./AdminNavigation";
 import { CompanyTeamView } from "./CompanyTeamView";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ArrowRight, Settings01, Menu01, XClose } from "@untitledui/icons";
@@ -14,18 +15,30 @@ import type {
   CompanyPreviewTarget,
 } from "../server/company-types";
 import "./roles.css";
-function PortalShell({
+export function PortalShell({
   area,
   title,
   links,
+  adminPage = "admin",
   children,
 }: {
   area: "company" | "admin" | "settings";
   title: string;
   links: { href: string; label: string; selected: boolean }[];
   children: ReactNode;
+  adminPage?: string;
 }) {
   const [open, setOpen] = useState(false);
+  useEffect(() => {
+    if (area !== "admin") return;
+    const close = () => setOpen(false);
+    window.addEventListener("hashchange", close);
+    window.addEventListener("popstate", close);
+    return () => {
+      window.removeEventListener("hashchange", close);
+      window.removeEventListener("popstate", close);
+    };
+  }, [area]);
   const nav = (
     <>
       <a href="#home" className="obs-brand">
@@ -48,17 +61,21 @@ function PortalShell({
               : "Admin navigation"
         }
       >
-        {links.map((link) => (
-          <a
-            key={link.href}
-            href={link.href}
-            onClick={() => setOpen(false)}
-            className={link.selected ? "selected" : ""}
-            aria-current={link.selected ? "page" : undefined}
-          >
-            {link.label}
-          </a>
-        ))}
+        {area === "admin" ? (
+          <AdminNavigation page={adminPage} onNavigate={() => setOpen(false)} />
+        ) : (
+          links.map((link) => (
+            <a
+              key={link.href}
+              href={link.href}
+              onClick={() => setOpen(false)}
+              className={link.selected ? "selected" : ""}
+              aria-current={link.selected ? "page" : undefined}
+            >
+              {link.label}
+            </a>
+          ))
+        )}
       </nav>
       <div className="sidebar-bottom">
         <a href="#settings">
@@ -660,18 +677,8 @@ export function AdminCompanyReview() {
       setError((e as Error).message);
     }
   };
-  const links = [
-    { href: "#admin", label: "Company reviews", selected: true },
-    ...(account.profile?.workspaces.length
-      ? [
-          { href: "#sessions", label: "Workspace operations", selected: false },
-          { href: "#disputes", label: "Payment disputes", selected: false },
-          { href: "#lab", label: "Provider lab", selected: false },
-        ]
-      : []),
-  ];
   return (
-    <PortalShell area="admin" title="Administration" links={links}>
+    <PortalShell area="admin" title="Administration" links={[]}>
       <div className="page-heading">
         <div>
           <h1>Company reviews</h1>
