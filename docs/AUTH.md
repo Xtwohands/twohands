@@ -53,6 +53,18 @@ In PostgreSQL account mode, API_TOKEN and ADMIN_API_TOKEN do not replace account
 
 Signing out ends the current browser session. Machine keys remain separate workspace credentials until revoked, expired, or capped. Admitted calls still settle conservatively after revocation or interruption.
 
+## Account API
+
+| Method | Route                  | Behavior                                                                                                                      |
+| ------ | ---------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| GET    | `/api/auth/config`     | Public `{enabled:false}` in SQLite mode, or validated public Auth URL/key in account mode.                                    |
+| GET    | `/api/auth/me`         | Authenticated account ID/email, accessible workspaces/roles, and platform-admin status.                                       |
+| POST   | `/api/auth/workspaces` | Create a workspace with `{name, requestKey}` and owner membership. Requires a verified account, JSON, and same-origin writes. |
+
+Protected browser requests send `Authorization: Bearer <Supabase access token>` and `X-Octolab-Workspace: <workspace ID>`. Omitting the workspace header selects the first accessible workspace; an inaccessible requested ID returns `403`. `/api/auth/me` and workspace creation do not require an existing workspace. Login, signup, confirmation, refresh, recovery, and sign-out use the browser Auth SDK directly.
+
+Workspace names are 2–80 characters. Creation accepts a UUID request key and refuses a new workspace when the account already has ten memberships. An identical retry returns the saved workspace; changed names under the same key return `409`, and a removed membership cannot be recovered by replay. Account/database verification failures return `503`; ended, expired, or invalid sessions return `401`.
+
 ## Session, audit, and payment boundaries
 
 Verified identity lookups are briefly cached by token hash; live session/user status and membership are checked freshly. Logout/session deletion, account deletion/bans, expiry, and lost membership block subsequent requests. Verification/database outages fail closed without treating an Auth outage as an invalid password.
@@ -69,8 +81,12 @@ Normal tests cover Auth-server verification and local compatibility. Disposable 
 
 Run only against a disposable fixture database:
 
-    OCTOLAB_TEST_POSTGRES_URL=postgresql://... npm test -- tests/accounts.test.ts tests/postgres.test.ts
+```sh
+OCTOLAB_TEST_POSTGRES_URL=postgresql://... npm test -- tests/accounts.test.ts tests/postgres.test.ts
+```
 
 These fixtures create a minimal synthetic Auth schema. Never point them at production Supabase.
+
+The checkpoint validation recorded 267 passing normal unit/integration tests, 16 passing disposable PostgreSQL tests, and 153 passing desktop/mobile browser scenarios with one intentional skip. These are fixture results, not hosted Auth, provider performance, or payment results.
 
 Before hosted cutover, complete actual project/redirect/email configuration, sign in as the intended owner, verify imported audit chains and balances, and check logout/reset behavior against that project. Fixture validation performed no hosted migration, email delivery, provider call, or payment.

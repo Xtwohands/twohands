@@ -2,15 +2,15 @@
 
 The user sidebar has **API keys** at `#dashboard/keys`. Create separate credentials for agents/applications, restrict permissions and tools, set expiry and a lifetime estimated-spend limit, inspect usage, edit policy, or permanently revoke a key.
 
-This checkpoint uses the current single shared workspace. It adds machine credentials and durable limits; hosted user accounts remain separate work. Every key has a persistent application-owned workspace UUID preserved by the [verified PostgreSQL import](POSTGRES_MIGRATION.md). PostgreSQL storage adds database workspace isolation, while this runtime still selects one workspace and authenticates its owner with `API_TOKEN`.
+Each key belongs to one persistent workspace UUID, preserved by the [verified PostgreSQL import](POSTGRES_MIGRATION.md). In PostgreSQL [account mode](AUTH.md), the backend resolves the owning workspace from the key hash and applies current scope, tool, expiry, revocation, and spending checks. Browser workspace selection cannot retarget a key. SQLite retains one shared local workspace.
 
 ## Owner protection is required
 
-Before issuing keys, configure a strong `API_TOKEN` of at least 24 characters on the server, restart, and connect the dashboard with that owner credential. The owner token manages keys; scoped keys cannot create/edit/revoke keys, change routing, use funding/admin/provider-lab APIs, evaluate outputs, or enter the legacy execution paths.
+In PostgreSQL mode, sign in as a workspace owner or explicitly allowlisted platform administrator and select the intended workspace before issuing keys. Members cannot manage keys. `API_TOKEN` is ignored in account mode. In SQLite/local mode, configure a strong `API_TOKEN` of at least 24 characters, restart, and connect with that owner credential. In both modes, scoped keys cannot create/edit/revoke keys, change routing, use funding/admin/provider-lab APIs, evaluate outputs, or enter the legacy execution paths.
 
-The existing anonymous loopback development mode is available only before any key has been issued. If the owner token is removed or shortened after issuance, general `/api` requests fail closed with `503`, including requests that omit Authorization. Restore owner configuration before continuing. Revoking every key does not revert the workspace to anonymous access. Health checks, signed Stripe webhooks, and separately authenticated admin funding routes retain their existing authentication boundaries.
+In SQLite/local mode, anonymous loopback development is available only before any key has been issued. If the owner token is removed or shortened after issuance, general `/api` requests fail closed with `503`, including requests that omit Authorization. Restore owner configuration before continuing. Revoking every key does not revert the workspace to anonymous access. Health checks, signed Stripe webhooks, and separately authenticated admin funding routes retain their existing authentication boundaries.
 
-No scoped key was issued into the production development database during implementation. Issuance stays disabled locally until owner access is configured. Test credentials exist only in isolated fixture databases/processes.
+No scoped key was issued into the production development database during implementation. SQLite issuance stays disabled until owner-token access is configured; PostgreSQL issuance uses authenticated owner/platform-admin access. Test credentials exist only in isolated fixture databases/processes.
 
 ## Create and connect
 
@@ -24,7 +24,7 @@ No scoped key was issued into the production development database during impleme
 APILAYER_API_KEY=<scoped key>
 ```
 
-`APILAYER_API_KEY` takes precedence over legacy `API_TOKEN` in the bridge. A rejected scoped key never falls back to the owner credential. Keep the owner credential for administration; prefer a dedicated client environment containing the scoped key. Existing local installer registrations still load the project's environment file for backward compatibility, so protect that file and the machine running the bridge. The bridge remains loopback-only; this does not implement hosted HTTP MCP/OAuth.
+`APILAYER_API_KEY` takes precedence over legacy `API_TOKEN` in the bridge. A rejected scoped key never falls back to the owner credential. Use account login for PostgreSQL administration and retain any SQLite owner credential separately; prefer a dedicated client environment containing the scoped key. Existing local installer registrations still load the project's environment file for backward compatibility, so protect that file and the machine running the bridge. The bridge remains loopback-only; this does not implement hosted HTTP MCP/OAuth.
 
 Full secrets contain 32 random bytes and are stored only as SHA-256 digests. The plaintext value is returned only by the first successful creation response; no full secret is stored in key metadata, audit records, observation events, or browser storage. Creation has a UUID idempotency key: identical retries return the original metadata with `secret:null`; they cannot recover the plaintext. If the first response was lost, revoke the saved key and create a replacement. Changed details under the same creation UUID return `409`.
 
@@ -48,13 +48,13 @@ Before a new provider request, one database transaction reserves its estimate ag
 
 Settlement moves the estimate from reserved to spent in the same transaction as the saved provider result. Failures and uncertain outcomes retain conservative estimates, matching existing backend policy. Replaying an existing call receipt adds no spending or provider request. Research retention does not erase cumulative key spending. A process restart conservatively settles interrupted reservations once; it never automatically repeats uncertain provider work.
 
-A $0 cap still permits authorized free operations and rejects positive-estimate provider calls. Owner edits use optimistic revisions and cannot lower the cap below spent plus reserved estimates. Expiry is fixed when issued; replace expired credentials. Revocation blocks new authentication/admission immediately; already admitted calls can finish and settle. Revoked credentials cannot be restored. Key policy changes have a separate audit history attributed to the workspace owner credential, not a verified human identity. “Last used” means the last authenticated key request, including an operation subsequently denied by scope.
+A $0 cap still permits authorized free operations and rejects positive-estimate provider calls. Owner edits use optimistic revisions and cannot lower the cap below spent plus reserved estimates. Expiry is fixed when issued; replace expired credentials. Revocation blocks new authentication/admission immediately; already admitted calls can finish and settle. Revoked credentials cannot be restored. Key policy changes have a separate audit history: PostgreSQL records the authenticated account UUID; SQLite identifies the owner credential. Account attribution does not verify model/host identity or make a review independent. “Last used” means the last authenticated key request, including an operation subsequently denied by scope.
 
-The UI clears credentials, dialogs, and key metadata on current owner-authorization rejection. Late successful responses from an invalidated view cannot restore a secret. This does not replace workspace ownership checks when hosted accounts are introduced.
+The UI clears credentials, dialogs, and key metadata on current owner-authorization rejection. Late successful responses from an invalidated view cannot restore a secret. In account mode, sign-out, rejected sessions, and workspace changes also clear protected state; backend membership checks remain authoritative.
 
 ## Owner management API
 
-All management routes require the workspace owner credential once protection is configured. Requests use existing JSON/origin protection.
+All management routes require a workspace owner or platform administrator account in PostgreSQL mode, or the configured owner credential in SQLite mode. Requests use existing JSON/origin protection.
 
 | Method | Route                                | Behavior                                                                                         |
 | ------ | ------------------------------------ | ------------------------------------------------------------------------------------------------ |

@@ -50,7 +50,7 @@ The append-only `funding_ledger` combines on-chain credits and Stripe credit adj
 
 ## API
 
-All routes inherit the existing workspace bearer-token and cross-origin write protection.
+All routes enforce [workspace access](AUTH.md) and same-origin write protection. PostgreSQL funding access requires a workspace owner or platform administrator account; members and scoped keys are denied. SQLite retains the configured owner bearer-token boundary.
 
 | Method | Route                                        | Behavior                                                                                                                                                                                                |
 | ------ | -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -59,7 +59,7 @@ All routes inherit the existing workspace bearer-token and cross-origin write pr
 | GET    | `/api/workspace/funding/deposits/:id`        | Read one saved request.                                                                                                                                                                                 |
 | POST   | `/api/workspace/funding/deposits/:id/verify` | Verify `{transactionHash}` using read-only JSON-RPC calls.                                                                                                                                              |
 
-The local workspace supports at most 1,000 on-chain requests, separately from the Stripe intent limit. It uses one shared receiver and balance. This is not an authenticated per-customer payment system.
+Each workspace supports at most 1,000 on-chain requests, separately from the Stripe intent limit. The receiver is configured server-wide, while PostgreSQL receipt ownership and test balances are workspace-scoped. Transaction proof remains globally unique across workspaces. This is a test integration, not production customer payment accounting.
 
 ## Tests and remaining activation work
 
@@ -67,4 +67,4 @@ Unit tests exercise exact decimals, idempotency, delayed finality, expiry, missi
 
 Before enabling even test deposits, choose a receiving address you control and configure the server. Then perform an explicitly authorized wallet transfer and compare its real receipt with the saved ledger. That live transfer has not been performed.
 
-Production funds require a separate implementation and review: authenticated account ownership, customer attribution, payment reconciliation, wallet/custody policy, operational monitoring, accounting rules, and an independently reviewed mainnet activation path. Mainnet cannot be enabled by changing a chain ID in the current configuration.
+PostgreSQL account ownership and audit attribution are implemented but require hosted validation. Production funds require a separate implementation and review: customer/payment ownership policy, payment reconciliation, wallet/custody policy, operational monitoring, accounting rules, and an independently reviewed mainnet activation path. Mainnet cannot be enabled by changing a chain ID in the current configuration.

@@ -1,6 +1,6 @@
-# PostgreSQL storage checkpoint
+# PostgreSQL migration and account cutover
 
-The production path is PostgreSQL on Supabase. SQLite remains the default until an explicit cutover; fixtures continue to use isolated SQLite databases. Adding `DATABASE_URL` alone does not migrate or switch the app. Account login is a separate checkpoint; this storage PR still uses the existing owner/admin credentials.
+The production path is PostgreSQL on Supabase. SQLite remains the default until an explicit cutover; fixtures continue to use isolated SQLite databases. Adding `DATABASE_URL` alone does not migrate or switch the app. The earlier storage-only checkpoint retained owner/admin tokens. The current checkpoint adds [Supabase Auth and workspace authorization](AUTH.md): PostgreSQL requires account sessions or scoped workspace keys and ignores `API_TOKEN`/`ADMIN_API_TOKEN`. SQLite retains its local token mode.
 
 ## What changes
 
@@ -19,11 +19,11 @@ Existing evidence JSON is preserved as text to retain hashes and historical sema
 1. Keep `STORAGE_BACKEND=sqlite` while preparing. Configure the private `DATABASE_URL` in ignored `.env` or deployment secrets. Never use a `VITE_` variable for it.
 2. Stop the existing API server and maintenance processes. SQLite's exclusive lock makes an active workspace export fail safely. Retain a backup of the SQLite database and its WAL state before deployment; do not copy only the main file while a writer is running.
 3. Run `npm run db:inspect`. It opens the source read-only and prints workspace identity, counts, and snapshot digest. Set `LEGACY_WORKSPACE_ID` to that identity.
-4. Set `LEGACY_OWNER_USER_ID` to the intended owner's actual Supabase Auth user UUID. This assignment is explicit; the first person to sign up never inherits existing research or credits.
-5. Run `npm run db:migrate`. Checked-in SQL migrations run atomically with checksum tracking. Editing an applied migration is rejected.
-6. Run `npm run db:import`. All copied tables, original event IDs, insertion order, key hashes, ledgers, receipts, consent events, and provider fixtures already present in that source stay in the same legacy workspace. The source is never edited. Fixture databases must never be chosen as production input.
+4. Run `npm run db:migrate`. Checked-in SQL migrations run atomically with checksum tracking. Editing an applied migration is rejected. Include the authenticated-workspace migration; do not stop at the earlier storage-only schema.
+5. Configure `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY` (or their `VITE_` public aliases) for the same project as the database. Start with `STORAGE_BACKEND=postgres` to create and confirm the intended owner account, following [account bootstrap](AUTH.md#initial-migration-and-account-bootstrap). No imported history is exposed or assigned by signup. An empty new workspace is optional and stays separate from history.
+6. Stop the PostgreSQL runtime, set `LEGACY_OWNER_USER_ID` to that specific account's actual Supabase Auth UUID, then run `npm run db:import`. No service-role key, personal access token, or dashboard password is required. All copied tables, original event IDs, insertion order, key hashes, ledgers, receipts, consent events, and provider fixtures already present in that source stay in the same legacy workspace. The source is never edited. Fixture databases must never be chosen as production input.
 7. Run `npm run db:verify` before restarting. Counts and canonical per-column content digests must match. Identical imports are repeatable; a different source snapshot or occupied destination is rejected. Imports and verification refuse to run against an active PostgreSQL server.
-8. Set `STORAGE_BACKEND=postgres`, build, and start. Check `/healthz`, owner access, historical audit integrity, and existing receipt balances before allowing new work.
+8. Build and restart with `STORAGE_BACKEND=postgres`. Sign in as the assigned owner and select the imported workspace. Check `/healthz`, owner/member separation, historical audit integrity, and existing receipt balances before allowing new work. Configure `SUPABASE_ADMIN_USER_IDS` only for intended platform operators; owners do not automatically become platform administrators.
 
 The importer is all-or-nothing and never merges into an occupied tenant or reassigns a tenant with another member. Original JSON values remain byte-for-byte identical. PostgreSQL numeric driver representation is normalized only when comparing per-column digests.
 
@@ -38,7 +38,7 @@ Retention targets the configured legacy workspace and requires the runtime to be
 `npm run check` runs the existing isolated suite. To run real PostgreSQL integration tests, provide **a disposable database**, never the production URL:
 
 ```sh
-OCTOLAB_TEST_POSTGRES_URL=postgresql://... npm test -- tests/postgres.test.ts
+OCTOLAB_TEST_POSTGRES_URL=postgresql://... npm test -- tests/postgres.test.ts tests/accounts.test.ts
 ```
 
-These tests create fixture workspaces in that database. They exercise migration checksums, tenant separation, global payment-proof uniqueness, receipt retries, concurrent caps, atomic audit chains, Stripe test-ledger/dispute flows, and verified SQLite import/replay. No live provider or payment request is made. Browser fixtures remain separate from production data.
+These tests create fixture workspaces and a minimal synthetic Auth schema in that database. They must never target hosted production Supabase. Account coverage includes live session/membership revocation, owner/admin separation, scoped workspace keys, signed cross-workspace webhook resolution, and audit attribution. Hosted migrations, login, and email delivery remain separate unperformed cutover checks. They exercise migration checksums, tenant separation, global payment-proof uniqueness, receipt retries, concurrent caps, atomic audit chains, Stripe test-ledger/dispute flows, and verified SQLite import/replay. No live provider or payment request is made. Browser fixtures remain separate from production data.
