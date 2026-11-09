@@ -1,5 +1,7 @@
 # Pending improvements
 
+Current policy update (November 8, 2026): company usage and aggregate exports now show the first eligible recorded usage without a five-workspace/session gate. Earlier threshold discussion below is historical; independent answer-review minimum samples remain separate.
+
 Recorded November 3, 2026 from the product clarification conversation. The user authorized the implementation pass at 1:26 AM Pacific. All four agreed items are implemented; see [implementation and validation results](IMPLEMENTATION_2026-11-03.md). The notes below preserve the accepted scope and research. Existing unrelated working-tree changes were preserved.
 
 ## Agreed work

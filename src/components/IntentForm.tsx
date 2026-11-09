@@ -262,8 +262,7 @@ export function IntentForm({
               <span>
                 Include this task in de-identified provider analytics
                 <small>
-                  Optional. Minimum cohort of {health?.minCohort || 5} tasks;
-                  prompts, queries, and source content are excluded.
+                  Optional. Prompts, queries, and source content are excluded.
                 </small>
               </span>
             </label>

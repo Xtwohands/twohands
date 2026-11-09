@@ -1,3 +1,4 @@
+import { providerEnabled } from "./config.js";
 import { createHmac, randomBytes } from "node:crypto";
 import { z } from "zod";
 import { ProviderError, search, scrape } from "./providers.js";
@@ -146,6 +147,7 @@ export class AdapterRegistry<
       reference: adapter.credential.reference,
       state,
       configured: state === "configured",
+      enabled: providerEnabled(adapter.provider),
       revision:
         state === "configured"
           ? createHmac("sha256", revisionKey)
@@ -201,6 +203,8 @@ export class AdapterRegistry<
     const request = this.parse(tool, raw);
     if (!this.credentialStatus(tool).configured)
       throw new Error("Provider credentials are missing, invalid or revoked.");
+    if (!providerEnabled(adapter.provider))
+      throw new Error("Provider is disabled or unavailable.");
     const result = await adapter.execute(request, { callId, transports });
     const parsed = adapter.result.safeParse(result);
     if (!parsed.success) throw new ProviderError("invalid_response");

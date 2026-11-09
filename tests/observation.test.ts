@@ -511,7 +511,7 @@ it("permits an explicit retrospective review without replacing the latest output
       }))(),
   ).rejects.toThrow("Output version not found");
 });
-it("withholds aggregate availability when consented sessions do not share a provider cohort", async () => {
+it("exports each recorded provider's usage without a session cohort threshold", async () => {
   for (let i = 0; i < 5; i++) {
     const s = await obs.create(input(), "operator_entered");
     await obs.approve(s.id, s.intentHash);
@@ -522,11 +522,40 @@ it("withholds aggregate availability when consented sessions do not share a prov
     });
   }
   expect(await obs.commercialAggregate()).toMatchObject({
-    available: false,
+    available: true,
     consentedSessions: 5,
+    minimumCohort: 0,
+    providers: [
+      expect.objectContaining({ provider: "exa", sessions: 3, calls: 3 }),
+      expect.objectContaining({ provider: "tavily", sessions: 2, calls: 2 }),
+    ],
+  });
+  expect((await obs.summary()).sharing.available).toBe(true);
+});
+it("exports a first completed call and leaves an unused provider out of the export", async () => {
+  expect(await obs.commercialAggregate()).toMatchObject({
+    available: false,
+    minimumCohort: 0,
     providers: [],
   });
-  expect((await obs.summary()).sharing.available).toBe(false);
+  const session = await create();
+  await obs.execute(session.id, call("first-call"));
+  expect(await obs.commercialAggregate()).toMatchObject({
+    available: true,
+    minimumCohort: 0,
+    providers: [
+      expect.objectContaining({
+        provider: "exa",
+        sessions: 1,
+        calls: 1,
+        successes: 1,
+      }),
+    ],
+  });
+  expect((await obs.summary()).models[0]).toMatchObject({
+    minimumSamples: 5,
+    score: null,
+  });
 });
 describe("request cost decisions and budget enforcement", () => {
   it("quotes result counts and search depth without making provider calls", async () => {

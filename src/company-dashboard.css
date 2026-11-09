@@ -158,3 +158,8 @@
   color: #ddd;
   font: inherit;
 }
+
+.company-dashboard-context a {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}

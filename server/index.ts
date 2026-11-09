@@ -38,6 +38,7 @@ const app = createApp(
   undefined,
   accounts,
 );
+await app.locals.toolSettings.ready;
 const workspaceIds =
   store.db instanceof PostgresDatabase
     ? (

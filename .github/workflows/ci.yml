@@ -55,6 +55,7 @@ jobs:
           OCTOLAB_TEST_POSTGRES_URL: postgresql://postgres:isolated_ci_fixture@127.0.0.1:5432/octolab_ci
           OCTOLAB_WORKBENCH_TEST_POSTGRES_URL: postgresql://postgres:isolated_ci_fixture@127.0.0.1:5432/octolab_ci
           OCTOLAB_BILLING_TEST_POSTGRES_URL: postgresql://postgres:isolated_ci_fixture@127.0.0.1:5432/octolab_ci
+          OCTOLAB_ADMIN_SETTINGS_TEST_POSTGRES_URL: postgresql://postgres:isolated_ci_fixture@127.0.0.1:5432/octolab_ci
       - name: Use matching PostgreSQL backup clients
         run: |
           mkdir -p "$RUNNER_TEMP/pg-tools"

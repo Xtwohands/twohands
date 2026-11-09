@@ -1,25 +1,17 @@
-import { config } from "./config.js";
 import type { Store } from "./store.js";
 import type { Candidate, TraceEvent } from "./types.js";
 export async function analytics(store: Store) {
   const tasks = (await store.tasks()).filter((t) => t.intent.consent);
-  const minimum = config.minCohort;
-  const base = { cohortSize: tasks.length, minCohort: minimum };
-  if (tasks.length < minimum) return { suppressed: true as const, ...base };
+  const base = { cohortSize: tasks.length, minCohort: 0 };
   const histories = await Promise.all(
     tasks.map(async (t) => ({ task: t, events: await store.events(t.id) })),
   );
   const events = histories.flatMap((h) => h.events);
-  const protectedCount = (
+  const count = (
     items: {
       taskId: string;
     }[],
-  ) =>
-    !items.length
-      ? 0
-      : new Set(items.map((e) => e.taskId)).size < minimum
-        ? null
-        : items.length;
+  ) => items.length;
   // First routing decision per normalized invocation: fallback rechecks are not new opportunities.
   const firstCandidates: TraceEvent[] = [];
   const firstSelections: TraceEvent[] = [];
@@ -56,13 +48,6 @@ export async function analytics(store: Store) {
       const candidateEvents = firstCandidates.filter((e) =>
         e.data.candidates.some((c: Candidate) => c.provider === provider),
       );
-      if (
-        new Set([...responses, ...candidateEvents].map((e) => e.taskId)).size <
-        minimum
-      )
-        return { provider, suppressed: true as const };
-      const performanceSuppressed =
-        new Set(responses.map((e) => e.taskId)).size < minimum;
       const calls = new Set(responses.map((e) => e.callId));
       const checks = events.filter(
         (e) => e.type === "outcome_evaluated" && calls.has(e.callId),
@@ -96,38 +81,29 @@ export async function analytics(store: Store) {
       return {
         provider,
         suppressed: false as const,
-        performanceSuppressed,
-        eligible: provider === "firecrawl" ? null : protectedCount(eligible),
-        selected: protectedCount(selected),
-        calls: performanceSuppressed ? null : responses.length,
-        httpSuccesses: performanceSuppressed
-          ? null
-          : responses.filter(
-              (e) => e.data.httpStatus >= 200 && e.data.httpStatus < 300,
-            ).length,
-        successes: performanceSuppressed
-          ? null
-          : responses.filter((e) => e.data.success).length,
-        latencyMs: performanceSuppressed
-          ? null
-          : Math.round(
+        performanceSuppressed: false,
+        eligible: provider === "firecrawl" ? null : count(eligible),
+        selected: count(selected),
+        calls: responses.length,
+        httpSuccesses: responses.filter(
+          (e) => e.data.httpStatus >= 200 && e.data.httpStatus < 300,
+        ).length,
+        successes: responses.filter((e) => e.data.success).length,
+        latencyMs: responses.length
+          ? Math.round(
               responses.reduce((a, e) => a + e.data.latencyMs, 0) /
                 responses.length,
-            ),
-        estimatedMicros: performanceSuppressed
-          ? null
-          : events
-              .filter(
-                (e) =>
-                  e.type === "budget_settled" && e.data.provider === provider,
-              )
-              .reduce((a, e) => a + e.data.estimateMicros, 0),
-        coveragePasses: performanceSuppressed
-          ? null
-          : checks.filter((e) => e.data.pass).length,
-        coverageChecks: performanceSuppressed ? null : checks.length,
+            )
+          : null,
+        estimatedMicros: events
+          .filter(
+            (e) => e.type === "budget_settled" && e.data.provider === provider,
+          )
+          .reduce((a, e) => a + e.data.estimateMicros, 0),
+        coveragePasses: checks.filter((e) => e.data.pass).length,
+        coverageChecks: checks.length,
         lossReasons: [...lossGroups].map(
-          ([reason, items]) => [reason, protectedCount(items)] as const,
+          ([reason, items]) => [reason, count(items)] as const,
         ),
       };
     },
@@ -164,8 +140,8 @@ export async function analytics(store: Store) {
     ...base,
     providers,
     capabilities: {
-      search: protectedCount(events.filter((e) => e.type === "tool_invoked")),
-      extraction: protectedCount(
+      search: count(events.filter((e) => e.type === "tool_invoked")),
+      extraction: count(
         events.filter(
           (e) =>
             e.type === "provider_request" &&
@@ -173,23 +149,21 @@ export async function analytics(store: Store) {
         ),
       ),
     },
-    fallbacks: protectedCount(fallbackEvents),
-    fallbackRecoveries: protectedCount(recovered),
-    insufficient200: protectedCount(insufficient200),
-    comparisons: protectedCount(
-      events.filter((e) => e.type === "comparison_requested"),
-    ),
+    fallbacks: count(fallbackEvents),
+    fallbackRecoveries: count(recovered),
+    insufficient200: count(insufficient200),
+    comparisons: count(events.filter((e) => e.type === "comparison_requested")),
     preferenceCounts: Object.fromEntries(
       ["balanced", "cost", "latency"].map((p) => [
         p,
-        protectedCount(
+        count(
           tasks
             .filter((t) => t.intent.preference === p)
             .map((t) => ({ taskId: t.id })),
         ),
       ]),
     ),
-    note: "Initial-route opportunities are counted once per tool invocation; fallback checks do not inflate conversion. Coverage is not company verification. Costs are estimates. Small task, provider, and metric subcohorts are withheld; a dash means withheld or not applicable.",
+    note: "Initial-route opportunities are counted once per tool invocation; fallback checks do not inflate conversion. Coverage is not company verification or an independent answer-quality score. Costs are estimates. Counts include eligible opted-in tasks from the first recorded usage; a dash means no measurement or not applicable.",
   };
 }
 export type Analytics = Awaited<ReturnType<typeof analytics>>;

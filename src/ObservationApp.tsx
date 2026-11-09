@@ -1,3 +1,4 @@
+import { ToolSettingsView } from "./ToolSettingsView";
 import {
   CompanyPortal,
   AdminCompanyReview,
@@ -101,6 +102,7 @@ import {
 type Page =
   | "admin"
   | "tool-access"
+  | "tool-settings"
   | "home"
   | "dashboard"
   | "sessions"
@@ -163,6 +165,7 @@ function readRoute() {
     page: ([
       "admin",
       "tool-access",
+      "tool-settings",
       "home",
       "dashboard",
       "sessions",
@@ -360,13 +363,19 @@ export function ObservationApp() {
     (route.page === "company" ||
       route.page === "admin" ||
       route.page === "tool-access" ||
+      route.page === "tool-settings" ||
       !account.workspaceId);
   const operatorArea =
     !account.enabled ||
     (!!account.profile?.isAdmin &&
-      !["dashboard", "company", "home", "admin", "tool-access"].includes(
-        route.page,
-      ));
+      ![
+        "dashboard",
+        "company",
+        "home",
+        "admin",
+        "tool-access",
+        "tool-settings",
+      ].includes(route.page));
   const refresh = useCallback(async () => {
     if (independentArea || route.page === "home") return true;
     const current = ++generation.current;
@@ -560,6 +569,21 @@ export function ObservationApp() {
         adminPage="tool-access"
       >
         <ToolAccessView />
+      </PortalShell>
+    );
+  if (
+    account.enabled &&
+    account.profile?.isAdmin &&
+    route.page === "tool-settings"
+  )
+    return (
+      <PortalShell
+        area="admin"
+        title="Tool settings"
+        links={[]}
+        adminPage="tool-settings"
+      >
+        <ToolSettingsView />
       </PortalShell>
     );
   if (account.enabled && account.profile?.isAdmin && !account.workspaceId)
@@ -1466,10 +1490,8 @@ export function ObservationApp() {
                   <div>
                     <strong>Aggregate export</strong>
                     <p>
-                      Requires at least {summary?.sharing.minimumCohort || 5}{" "}
-                      sessions, including the same minimum for each provider.
-                      Excludes raw intent, output, queries, URLs, and
-                      explanations.
+                      Available from the first recorded provider usage. Excludes
+                      raw intent, output, queries, URLs, and explanations.
                     </p>
                   </div>
                   <ExportButton
@@ -2150,8 +2172,8 @@ function SessionView({
               <Badge variant="outline">Enabled</Badge>
             </div>
             <p className="field-hint">
-              Minimum export cohorts still apply. Nothing is automatically
-              published or sent to tool companies.
+              Usage is available without a minimum workspace or session count.
+              Nothing is automatically published or sent to tool companies.
             </p>
           </Panel>
           <Panel

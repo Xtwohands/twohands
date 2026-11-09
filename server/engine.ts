@@ -1,6 +1,13 @@
+import { providerWork } from "./provider-settings-gate.js";
 import { randomUUID } from "node:crypto";
 import { publicEvidenceUrl } from "./url-policy.js";
-import { config, providerEstimate, providerAuthMode } from "./config.js";
+import {
+  config,
+  providerEnabled,
+  providerRpm,
+  providerEstimate,
+  providerAuthMode,
+} from "./config.js";
 import { candidates, coverage } from "./router.js";
 import { ProviderError, search, scrape } from "./providers.js";
 import type { Store } from "./store.js";
@@ -37,11 +44,12 @@ export class Engine {
     return Object.fromEntries(
       Object.entries(config.keys).map(([k, v]) => [
         k,
-        Boolean(v) ||
-          (k === "firecrawl" &&
-            config.allowKeylessFirecrawl &&
-            !this.keylessBlocked &&
-            this.keylessAttempts < config.keylessMaxRequests),
+        providerEnabled(k as ProviderId) &&
+          (Boolean(v) ||
+            (k === "firecrawl" &&
+              config.allowKeylessFirecrawl &&
+              !this.keylessBlocked &&
+              this.keylessAttempts < config.keylessMaxRequests)),
       ]),
     ) as Record<ProviderId, boolean>;
   }
@@ -51,7 +59,7 @@ export class Engine {
     for (const [id, times] of this.timestamps) {
       const recent = times.filter((t) => now - t < 60000);
       this.timestamps.set(id, recent);
-      if (recent.length >= config.rpm) set.add(id);
+      if (recent.length >= providerRpm(id)) set.add(id);
     }
     return set;
   }
@@ -174,6 +182,9 @@ export class Engine {
     });
   }
   async execute(taskId: string, queryOrPlan: string | string[]) {
+    return providerWork(() => this.executeCurrent(taskId, queryOrPlan));
+  }
+  private async executeCurrent(taskId: string, queryOrPlan: string | string[]) {
     let anySuccess = false;
     let anyCoverage = false;
     let completedQueries = 0;
@@ -385,6 +396,9 @@ export class Engine {
     }
   }
   async fetchUrl(task: Task, sourceId: string) {
+    return providerWork(() => this.fetchCurrent(task, sourceId));
+  }
+  private async fetchCurrent(task: Task, sourceId: string) {
     const source = task.sources.find((s) => s.id === sourceId);
     if (!source) throw new Error("Unknown source");
     publicEvidenceUrl(source.url, task.intent.domains);

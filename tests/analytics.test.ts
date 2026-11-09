@@ -100,20 +100,57 @@ describe("privacy-preserving cross-provider aggregates", () => {
     expect(data.insufficient200).toBe(5);
     expect(JSON.stringify(data)).not.toContain("PRIVATE QUERY");
   });
-  it("withholds rare metric cohorts even after the overall task threshold is reached", async () => {
+  it("reports a single contributing task without hiding small provider or metric counts", async () => {
     await trace();
-    for (let i = 0; i < 4; i++) await createTask(store, { consent: true });
     const data = await analytics(store);
-    if (data.suppressed) throw new Error("Overall cohort should be ready");
-    expect(data.capabilities.search).toBeNull();
-    expect(data.fallbacks).toBeNull();
-    expect(data.providers.every((p) => p.suppressed)).toBe(true);
+    expect(data).toMatchObject({
+      suppressed: false,
+      cohortSize: 1,
+      minCohort: 0,
+    });
+    expect(data.capabilities.search).toBe(1);
+    expect(data.fallbacks).toBe(1);
+    expect(data.providers.find((p) => p.provider === "tavily")).toMatchObject({
+      calls: 1,
+      selected: 1,
+      httpSuccesses: 1,
+      latencyMs: 120,
+    });
+    expect(
+      data.providers.find((p) => p.provider === "firecrawl"),
+    ).toMatchObject({
+      calls: 0,
+      latencyMs: null,
+    });
+    expect(data.providers.every((p) => !p.suppressed)).toBe(true);
   });
   it("excludes nonconsenting traces and never counts their recovered outcomes", async () => {
     for (let i = 0; i < 5; i++) await trace(false);
     expect(await analytics(store)).toMatchObject({
-      suppressed: true,
+      suppressed: false,
       cohortSize: 0,
     });
+    expect(
+      (await analytics(store)).providers.every(
+        (p) => p.calls === 0 && p.latencyMs === null,
+      ),
+    ).toBe(true);
+  });
+  it("returns honest zero counts and unknown latency before any usage", async () => {
+    const data = await analytics(store);
+    expect(data).toMatchObject({
+      suppressed: false,
+      cohortSize: 0,
+      minCohort: 0,
+    });
+    expect(data.providers).toHaveLength(3);
+    for (const provider of data.providers)
+      expect(provider).toMatchObject({
+        calls: 0,
+        selected: 0,
+        latencyMs: null,
+        estimatedMicros: 0,
+      });
+    expect(JSON.stringify(data)).not.toContain("NaN");
   });
 });

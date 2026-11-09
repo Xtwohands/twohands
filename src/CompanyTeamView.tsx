@@ -152,8 +152,7 @@ export function CompanyTeamView({ companyId }: { companyId: string }) {
                     {{
                       available: "Report available",
                       awaiting_release: "Awaiting data access review",
-                      insufficient_data:
-                        "Not enough eligible usage to show metrics",
+                      insufficient_data: "No eligible usage recorded",
                     }[String(event.data.status)] ?? "Access recorded"}
                   </p>
                 )}

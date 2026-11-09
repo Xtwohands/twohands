@@ -17,6 +17,7 @@ export function workspaceAllowanceAdminRoutes(
         throw new AccountError(503, "Hosted account access is required.");
       if (!sameOriginWrite(req, res)) return;
       const identity = await accounts.identity(req);
+      accounts.assertAdmin(identity);
       if (!accounts.isAdmin(identity.userId))
         throw new AccountError(
           403,

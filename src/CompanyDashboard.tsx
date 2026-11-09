@@ -135,10 +135,12 @@ function Usage({
       </div>
       <div className="company-call-summary">
         <span>
-          <strong>{m.calls.toLocaleString()}</strong> completed calls
+          <strong>{m.calls.toLocaleString()}</strong>{" "}
+          {m.calls === 1 ? "completed call" : "completed calls"}
         </span>
         <span>
-          <strong>{m.successfulCalls.toLocaleString()}</strong> successful calls
+          <strong>{m.successfulCalls.toLocaleString()}</strong>{" "}
+          {m.successfulCalls === 1 ? "successful call" : "successful calls"}
         </span>
       </div>
     </>

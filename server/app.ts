@@ -1,4 +1,8 @@
 import { workspaceAllowanceAdminRoutes } from "./workspace-allowance-api.js";
+import { ToolSettings } from "./tool-settings.js";
+import { toolSettingsRoutes } from "./tool-settings-api.js";
+import { PostgresDatabase } from "./database.js";
+import { SettingsBusyError } from "./provider-settings-gate.js";
 import { providerActivity } from "./provider-activity.js";
 import { toolCapabilities } from "./provider-capabilities.js";
 import { type Accounts } from "./accounts.js";
@@ -22,7 +26,7 @@ import { sanitizedEventData } from "./sanitized.js";
 import { analytics } from "./analytics.js";
 import { randomUUID, timingSafeEqual, createHash } from "node:crypto";
 import { z } from "zod";
-import { config, providerAuthMode } from "./config.js";
+import { config, providerAuthMode, providerEnabled } from "./config.js";
 import { Store, StorageConflict } from "./store.js";
 import { Engine } from "./engine.js";
 import type { Task } from "./types.js";
@@ -77,12 +81,18 @@ export function createApp(
   funding = new FundingService(store),
   stripeFunding = new StripeFundingService(funding),
   accounts?: Accounts,
+  toolSettings = new ToolSettings(
+    store.db instanceof PostgresDatabase ? store.db : undefined,
+  ),
 ) {
   const app = express();
   app.locals.apiKeys = observatory.db.apiKeys;
   app.locals.funding = funding;
   app.locals.stripeFunding = stripeFunding;
   app.locals.providerLab = providerLab;
+  app.locals.toolSettings = toolSettings;
+  // Startup failures are observed by health/startup; never create an unhandled rejection.
+  void toolSettings.ready.catch(() => {});
   observatory.controlledSamples = async () =>
     await providerLab.controlledSamples();
   app.disable("x-powered-by");
@@ -96,6 +106,7 @@ export function createApp(
     next();
   });
   app.get("/healthz", async (_req, res) => {
+    await toolSettings.ready;
     await store.db.prepare("SELECT 1").get();
     res.json({ ok: true });
   });
@@ -108,8 +119,9 @@ export function createApp(
           provider,
           description: capability.description,
           available:
-            !!config.keys[provider] ||
-            (provider === "firecrawl" && config.allowKeylessFirecrawl),
+            providerEnabled(provider) &&
+            (!!config.keys[provider] ||
+              (provider === "firecrawl" && config.allowKeylessFirecrawl)),
           estimatedMicros: config.prices[provider],
         };
       }),
@@ -119,6 +131,7 @@ export function createApp(
   accountRoutes(app, accounts);
   companyAccountRoutes(app, accounts);
   workspaceAllowanceAdminRoutes(app, store, accounts);
+  toolSettingsRoutes(app, toolSettings, accounts);
   if (accounts)
     stripeFunding.workspaceForWebhook = (identity) =>
       accounts.paymentWorkspace(identity);
@@ -307,7 +320,7 @@ export function createApp(
       estimates: config.prices,
       rateCardVersion: config.rateCardVersion,
       policyVersion: config.policyVersion,
-      minCohort: config.minCohort,
+      minCohort: 0,
       providerIssues: engine.providerIssues(),
     }),
   );
@@ -869,7 +882,7 @@ export function createApp(
       _next: express.NextFunction,
     ) => {
       const status =
-        err instanceof StorageConflict
+        err instanceof StorageConflict || err instanceof SettingsBusyError
           ? 409
           : err.type === "entity.too.large"
             ? 413

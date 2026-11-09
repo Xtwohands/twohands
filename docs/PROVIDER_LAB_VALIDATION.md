@@ -48,7 +48,7 @@ These observations support targeted inspection of ranking, capture length, and e
 
 All application tests use injected adapters and isolated databases. Synthetic sessions, calls, reviews, and plans never enter the real workspace or provider/model statistics.
 
-Coverage includes forced selection, matching query inputs, backend run/day caps, missing credentials, idempotent creation, cancellation, shared rate limits, review history, stale-response protection, authentication recovery, consent thresholds, chronological offering/selection, descriptive comparisons, and retention of linked evidence. A separate child-process test kills execution after a durable reservation and verifies conservative settlement without repeating the request.
+Coverage includes forced selection, matching query inputs, backend run/day caps, missing credentials, idempotent creation, cancellation, shared rate limits, review history, stale-response protection, authentication recovery, first-usage reporting, sharing scope, chronological offering/selection, descriptive comparisons, and retention of linked evidence. A separate child-process test kills execution after a durable reservation and verifies conservative settlement without repeating the request.
 
 The packaged container runs with network access disabled and no provider keys. Its checks cover authenticated lab endpoints, blocked unconfigured tests, demo isolation, and saved-plan persistence across container restart. Live requests above are reported separately from these fixtures.
 

@@ -3,7 +3,7 @@ try {
   const command = process.argv[2];
   if (command !== "backup" && command !== "restore") {
     console.log(
-      "backup: BACKUP_DATABASE_URL, BACKUP_FILE, BACKUP_PASSPHRASE\nrestore: RESTORE_DATABASE_URL, BACKUP_FILE, BACKUP_PASSPHRASE, RESTORE_CONFIRM_DATABASE\nRestores require a fresh database and verify data, audit chains, financial balances and runtime access. Application backups exclude hosted Auth identities and object storage.",
+      "backup: BACKUP_DATABASE_URL, BACKUP_FILE, BACKUP_PASSPHRASE\nrestore: RESTORE_DATABASE_URL, BACKUP_FILE, BACKUP_PASSPHRASE, RESTORE_CONFIRM_DATABASE\nRestores require a fresh database and verify data, audit chains, financial balances and runtime access. Application backups exclude hosted Auth identities, managed Vault secrets and object storage.",
     );
   } else {
     const connection =

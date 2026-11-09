@@ -62,6 +62,8 @@ suite("authenticated account and tenant boundaries", () => {
         email: name + "@fixture.invalid",
         sessionId: randomUUID(),
         expiresAt: Date.now() + 3600000,
+        aal: "aal2" as const,
+        mfaVerified: true,
       };
       identities.set("fixture-" + name, identity);
       await db.pool.query(
@@ -515,8 +517,9 @@ suite("authenticated account and tenant boundaries", () => {
       .set(headers("fixture-a", bWorkspace));
     expect(report.status).toBe(200);
     expect(report.body).toMatchObject({
-      status: "insufficient_data",
-      metrics: null,
+      status: "available",
+      minimumCohort: 0,
+      metrics: expect.objectContaining({ calls: expect.any(Number) }),
     });
     expect(JSON.stringify(report.body)).not.toContain(
       "Private account fixture",
@@ -750,7 +753,7 @@ suite("authenticated account and tenant boundaries", () => {
       .get(`/api/companies/${id}/insights`)
       .set(headers("fixture-b"));
     expect(report.status).toBe(200);
-    expect(report.body.metrics).toBeNull();
+    expect(report.body.metrics).not.toBeNull();
     const audit = await request(app)
       .get(`/api/companies/${id}/access-history`)
       .set(headers("fixture-a"));
@@ -783,7 +786,7 @@ suite("authenticated account and tenant boundaries", () => {
         .status,
     ).toBe(404);
   });
-  it("suppresses small company cohorts and excludes ineligible offers and calls before exposure", async () => {
+  it("reports first-workspace usage and excludes ineligible offers and calls before exposure", async () => {
     const registration = await request(app)
       .post("/api/auth/companies")
       .set(headers("fixture-b"))
@@ -809,6 +812,19 @@ suite("authenticated account and tenant boundaries", () => {
           })
       ).status,
     ).toBe(200);
+    const empty = await request(app)
+      .get(`/api/companies/${id}/insights`)
+      .set(headers("fixture-b"));
+    expect(empty.body).toMatchObject({
+      status: "available",
+      minimumCohort: 0,
+      metrics: {
+        offeredSessions: 0,
+        selectedSessions: 0,
+        calls: 0,
+        successfulCalls: 0,
+      },
+    });
     const tenants = [] as {
       workspace: string;
       session: string;
@@ -873,14 +889,47 @@ suite("authenticated account and tenant boundaries", () => {
         ],
       );
       tenants.push({ workspace, session, event: event.rows[0].id, call });
+      if (n === 0) {
+        for (const identityHeaders of [
+          headers("fixture-b"),
+          {
+            ...headers("fixture-admin"),
+            "X-Octolab-Preview": "company",
+            "X-Octolab-Preview-Target": `company:${id}`,
+          },
+        ]) {
+          const first = await request(app)
+            .get(`/api/companies/${id}/insights`)
+            .set(identityHeaders);
+          expect(first.status).toBe(200);
+          expect(first.body).toMatchObject({
+            status: "available",
+            minimumCohort: 0,
+            metrics: {
+              offeredSessions: 1,
+              selectedSessions: 1,
+              calls: 1,
+              successfulCalls: 1,
+            },
+          });
+          expect(JSON.stringify(first.body)).not.toContain("PRIVATE_");
+          expect(JSON.stringify(first.body)).not.toContain(workspace);
+        }
+      }
     }
     const get = () =>
       request(app)
         .get(`/api/companies/${id}/insights`)
         .set(headers("fixture-b"));
     expect((await get()).body).toMatchObject({
-      status: "insufficient_data",
-      metrics: null,
+      status: "available",
+      minimumCohort: 0,
+      metrics: {
+        offeredSessions: 4,
+        selectedSessions: 4,
+        calls: 4,
+        successfulCalls: 4,
+      },
     });
     const last = tenants[4];
     await db.pool.query(
@@ -891,7 +940,12 @@ suite("authenticated account and tenant boundaries", () => {
       "UPDATE octolab.observation_calls SET body=jsonb_set(body::jsonb,'{startedAt}','\"2026-01-01T09:00:00.000Z\"'::jsonb)::text WHERE workspace_id=$1 AND id=$2",
       [last.workspace, last.call],
     );
-    expect((await get()).body.metrics).toBeNull();
+    expect((await get()).body.metrics).toMatchObject({
+      offeredSessions: 5,
+      selectedSessions: 4,
+      calls: 4,
+      successfulCalls: 4,
+    });
     await db.pool.query(
       "UPDATE octolab.observation_calls SET body=jsonb_set(body::jsonb,'{startedAt}','\"2026-01-01T10:01:00.000Z\"'::jsonb)::text WHERE workspace_id=$1 AND id=$2",
       [last.workspace, last.call],

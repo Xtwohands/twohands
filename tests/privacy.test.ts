@@ -25,7 +25,7 @@ describe("consent withdrawal and deletion", () => {
       .send({ consent: false });
     expect(result.status).toBe(200);
     expect(await analytics(store)).toMatchObject({
-      suppressed: true,
+      suppressed: false,
       cohortSize: 4,
     });
     expect((await store.events(task.id)).at(-1)?.data).toMatchObject({

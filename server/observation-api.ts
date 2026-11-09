@@ -1,4 +1,5 @@
 import { AllowanceError } from "./workspace-allowance.js";
+import { SettingsBusyError } from "./provider-settings-gate.js";
 import { ApiKeyError } from "./api-keys.js";
 import { discoveryInput } from "./tool-discovery.js";
 import { observationListItem } from "./observation-types.js";
@@ -54,7 +55,11 @@ export function observationRoutes(app: Express, obs: Observatory) {
               .map((i) => `${i.path.join(".")}: ${i.message}`)
               .join("; "),
           });
-        else if (e instanceof ObservationError || e instanceof ApiKeyError)
+        else if (
+          e instanceof ObservationError ||
+          e instanceof ApiKeyError ||
+          e instanceof SettingsBusyError
+        )
           res.status(e.status).json({ error: e.message });
         else
           res.status(500).json({

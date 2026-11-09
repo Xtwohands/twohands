@@ -21,6 +21,9 @@ const prices: Record<ProviderId, number> = {
 };
 const exaAdditionalResultMicros = price("EXA_ADDITIONAL_RESULT_USD", 0.001);
 export const config = {
+  disabledProviders: [] as ProviderId[],
+  unavailableManagedCredentials: [] as ProviderId[],
+  providerRpms: {} as Partial<Record<ProviderId, number>>,
   exaAdditionalResultMicros,
   port: integer("PORT", 3001, 1, 65535),
   host: process.env.HOST || "127.0.0.1",
@@ -52,6 +55,7 @@ export const config = {
     0,
     50_000_000,
   ),
+  // Legacy configuration compatibility; no longer gates company/usage reports.
   minCohort: integer("ANALYTICS_MIN_TASKS", 5, 5, 10000),
   prices,
   keys: {
@@ -62,6 +66,27 @@ export const config = {
   rateCardVersion: `request-estimates-v2:${createHash("sha256").update(JSON.stringify({ prices, exaAdditionalResultMicros })).digest("hex").slice(0, 12)}`,
   policyVersion: "deterministic-v1",
 };
+
+export function providerEnabled(provider: string) {
+  return (
+    !config.disabledProviders.some((p) => p === provider) &&
+    !config.unavailableManagedCredentials.some((p) => p === provider)
+  );
+}
+export function providerRpm(provider: ProviderId) {
+  return config.providerRpms[provider] ?? config.rpm;
+}
+export function refreshRateCardVersion() {
+  config.rateCardVersion = `request-estimates-v2:${createHash("sha256")
+    .update(
+      JSON.stringify({
+        prices: config.prices,
+        exaAdditionalResultMicros: config.exaAdditionalResultMicros,
+      }),
+    )
+    .digest("hex")
+    .slice(0, 12)}`;
+}
 
 export function providerEstimate(provider: ProviderId) {
   return provider === "firecrawl" &&

@@ -25,7 +25,12 @@ export function sameOriginWrite(req: Request, res: Response): boolean {
 }
 export function accountFailure(error: unknown, res: Response) {
   if (error instanceof AccountError || error instanceof ApiKeyError)
-    res.status(error.status).json({ error: error.message });
+    res.status(error.status).json({
+      error: error.message,
+      ...(error instanceof AccountError && error.code
+        ? { code: error.code }
+        : {}),
+    });
   else if (error instanceof z.ZodError)
     res
       .status(400)
@@ -50,6 +55,7 @@ export function accountPreviewAccess(accounts: Accounts) {
           403,
           "Only administrators can preview another role.",
         );
+      accounts.assertAdmin(identity);
       if (targetHeader && role !== "company")
         throw new AccountError(
           400,
@@ -184,11 +190,13 @@ export function accountAccess(
         });
         return;
       }
-      const identity = await accounts.identity(req),
-        workspace = await accounts.workspace(
-          identity,
-          req.header("x-octolab-workspace"),
-        );
+      const identity = await accounts.identity(req);
+      if (accounts.isAdmin(identity.userId)) accounts.assertAdmin(identity);
+      const workspace = await accounts.workspace(
+        identity,
+        req.header("x-octolab-workspace"),
+      );
+      if (workspace.role === "platform_admin") accounts.assertAdmin(identity);
       if (!accounts.isAdmin(identity.userId) && operatorRestricted(req, path))
         throw new AccountError(
           403,
@@ -250,6 +258,7 @@ export function adminAccountAccess(accounts: Accounts, store: Store) {
     try {
       if (!sameOriginWrite(req, res)) return;
       const identity: VerifiedIdentity = await accounts.identity(req);
+      accounts.assertAdmin(identity);
       if (!accounts.isAdmin(identity.userId))
         throw new AccountError(
           403,

@@ -1,8 +1,9 @@
+import { providerLease } from "./provider-settings-gate.js";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import type { Store } from "./store.js";
 import type { ProviderId } from "./types.js";
-import { config, providerEstimate } from "./config.js";
+import { config, providerRpm, providerEstimate } from "./config.js";
 import { search, scrape, ProviderError } from "./providers.js";
 import { digest } from "./observation-store.js";
 import { ObservationError } from "./observation.js";
@@ -190,6 +191,9 @@ export class ProviderLab {
       ),
       providers: registeredProviderIds.map((id) => ({
         id,
+        enabled: providerRegistry.credentialStatus(
+          providerRegistry.forProvider(id).tool,
+        ).enabled,
         configured: providerRegistry.credentialStatus(
           providerRegistry.forProvider(id).tool,
         ).configured,
@@ -215,6 +219,22 @@ export class ProviderLab {
       );
   }
   async start(raw: unknown) {
+    const release = providerLease();
+    let handedOff = false;
+    try {
+      return await this.startCurrent(raw, release, () => {
+        handedOff = true;
+      });
+    } catch (error) {
+      if (!handedOff) release();
+      throw error;
+    }
+  }
+  private async startCurrent(
+    raw: unknown,
+    release: () => void,
+    handOff: () => void,
+  ) {
     const admitted = await this.store.transaction(async () => {
       const input = labRunInput.parse(raw);
       const providers = [...input.providers].sort() as ProviderId[];
@@ -244,6 +264,9 @@ export class ProviderLab {
       if (
         providers.some(
           (p) =>
+            !providerRegistry.credentialStatus(
+              providerRegistry.forProvider(p).tool,
+            ).enabled ||
             !providerRegistry.credentialStatus(
               providerRegistry.forProvider(p).tool,
             ).configured,
@@ -339,8 +362,12 @@ export class ProviderLab {
       return { run, created: true };
     });
     const { run, created } = admitted;
-    if (!created) return run;
+    if (!created) {
+      release();
+      return run;
+    }
     this.active.add(run.id);
+    handOff();
     void this.execute(run.id)
       .catch(async () => {
         try {
@@ -368,7 +395,10 @@ export class ProviderLab {
           );
         }
       })
-      .finally(() => this.active.delete(run.id));
+      .finally(() => {
+        this.active.delete(run.id);
+        release();
+      });
     return await this.get(run.id);
   }
   private async execute(id: string) {
@@ -385,7 +415,10 @@ export class ProviderLab {
             (t) => now - t < 60000,
           ),
         );
-        if (this.timestamps.get(call.provider)!.length >= config.rpm) {
+        if (
+          this.timestamps.get(call.provider)!.length >=
+          providerRpm(call.provider)
+        ) {
           call.status = "skipped";
           call.error = "Shared provider rate limit reached. Not retried.";
           await this.save(run);

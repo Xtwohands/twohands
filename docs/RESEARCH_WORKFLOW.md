@@ -34,7 +34,7 @@ For development, `npm run dev` starts the API on port 3001 and Vite on **http://
 - **Budget controls:** integer USD micro-units, transactional reservation before each provider attempt, retry receipts for client-supplied idempotency keys, conservative settlement on errors/timeouts, task cap of 50 attempts, provider request limits, and a maximum of three active tasks. Compare mode explicitly opts into both paid search providers.
 - **Trace inspector:** clearly labeled, read-only historical live recordings for key-free replay; append-only task/call events, candidate scores and exclusions, selected reasons, credential-redacted request arguments, response metadata, vendor-reported usage when available, budget ledger, fallback decisions, and human feedback.
 - **Evidence review:** pass/fail/unknown per criterion, different evidence links for different criteria, accepted/rejected/pending findings, deduplicated organization shortlist, and spreadsheet-safe CSV export.
-- **Provider intelligence:** only opted-in task aggregates; at least five contributing tasks before reporting and separate provider cohort suppression. No raw prompts, queries, evidence text, organization names, or source URLs in the analytics response. Consent can be withdrawn per task, and local task/history deletion has an explicit confirmation.
+- **Provider intelligence:** only opted-in task aggregates, available from the first contributing task without small-provider suppression. No raw prompts, queries, evidence text, organization names, or source URLs in the analytics response. Consent can be withdrawn per task, and local task/history deletion has an explicit confirmation.
 - **Persistence and recovery:** local SQLite with WAL, restart reconciliation of in-flight estimates, graceful draining, a retention command, and sanitized trace exports.
 
 Known evidence URLs can be added without a search request. Extracted page status is tracked separately from provider API status; changed evidence requires re-review.
@@ -52,7 +52,7 @@ Without keys, open **Routing inspector** and choose **Historical live: API 200 /
 5. A 200 response can still fail the basic evidence coverage check and trigger the other provider. If live responses are similar, report that honestly; never manufacture a quality difference.
 6. Review sources. Name the organization, choose pass/fail/unknown, link evidence to each criterion, and write an evidence note. Acceptance requires every criterion to pass.
 7. Export your reviewed company shortlist, or share a **sanitized** trace without task content.
-8. Analytics unlock after five opted-in tasks; small provider cohorts remain withheld.
+8. Analytics show opted-in usage from the first task; with no usage, counts are zero and latency is unknown.
 
 See [the test/improvement plan](TEST_IMPROVEMENT_PLAN.md), [actual live validation evidence](LIVE_VALIDATION.md), [demo and validation status](VALIDATION.md), [architecture and routing](ARCHITECTURE.md), [API contract](API.md), and [privacy/operations](OPERATIONS.md).
 

@@ -33,7 +33,9 @@ export interface BackupManifest {
   capturedAt: string;
   serverMajor: number;
   snapshot: DatabaseSnapshot;
-  scope: "octolab application and migration history; Auth identities and object storage excluded";
+  scope:
+    | "octolab application and migration history; Auth identities and object storage excluded"
+    | "octolab application and migration history; Auth identities, managed Vault secrets and object storage excluded";
 }
 function parseConnection(raw: string) {
   try {
@@ -165,7 +167,7 @@ export async function backupDatabase(
       ),
       snapshot: await databaseSnapshot(client),
       scope:
-        "octolab application and migration history; Auth identities and object storage excluded",
+        "octolab application and migration history; Auth identities, managed Vault secrets and object storage excluded",
     };
     assertEvidence(manifest.snapshot);
     const salt = randomBytes(SALT_BYTES),

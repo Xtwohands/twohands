@@ -29,6 +29,7 @@ export interface ToolCompany {
 }
 export interface CompanyInsights {
   providerId: ProviderId;
+  /** Compatibility field: company usage no longer requires a minimum cohort. */
   minimumCohort: number;
   status: "available" | "awaiting_release" | "insufficient_data";
   metrics: null | {

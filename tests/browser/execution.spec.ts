@@ -113,11 +113,11 @@ test("compare calls use both providers and extraction consumes the same task led
     page.getByRole("button", { name: /comparison requested/ }),
   ).toBeVisible();
 });
-test("consented cross-provider cohort unlocks honest aggregate insights", async ({
+test("one consented task exposes honest aggregate insights", async ({
   page,
   request,
 }) => {
-  for (let i = 0; i < 5; i++) {
+  for (let i = 0; i < 1; i++) {
     const created = await request.post("/api/tasks", {
       data: {
         prompt: "PRIVATE FIXTURE INTENT: agent payments funding research",
