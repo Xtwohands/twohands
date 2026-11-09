@@ -129,7 +129,14 @@ suite("platform tool settings security and persistence", () => {
   });
   afterAll(async () => {
     Object.assign(config, originals);
-    if (store) await store.close();
+    if (store) {
+      // Other suites share this disposable database. Do not leave global settings
+      // or managed-secret references for their new application runtimes to load.
+      await db.pool.query(
+        "TRUNCATE octolab.platform_tool_settings,octolab.platform_tool_setting_events",
+      );
+      await store.close();
+    }
   });
   const input = async (extra: Record<string, unknown> = {}) => ({
     requestKey: randomUUID(),
