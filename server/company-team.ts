@@ -22,11 +22,12 @@ export class CompanyTeam {
     id: string,
     client: Pick<PoolClient, "query"> = this.pool,
   ) {
+    const preview = this.accounts.previewsCompany(identity, id);
     if (!z.uuid().safeParse(id).success)
       throw new AccountError(404, "Company not found.");
     const result = await client.query(
       "SELECT c.id FROM octolab.tool_companies c WHERE c.id=$1 AND ($3 OR EXISTS(SELECT 1 FROM octolab.company_memberships m WHERE m.company_id=c.id AND m.user_id=$2 AND m.role='owner'))",
-      [id, identity.userId, this.accounts.isAdmin(identity.userId)],
+      [id, identity.userId, this.accounts.isAdmin(identity.userId) || preview],
     );
     if (!result.rowCount)
       throw new AccountError(403, "Only a company owner can manage its team.");

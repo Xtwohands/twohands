@@ -917,6 +917,279 @@ suite("authenticated account and tenant boundaries", () => {
       ).status,
     ).toBe(404);
   });
+  it("scopes admin company preview to one real owner experience and keeps the real actor in audit", async () => {
+    const input = {
+      name: "Preview pending fixture",
+      website: "https://preview.fixture.invalid",
+      toolName: "Preview tool",
+      description: "Isolated selected company permission fixture.",
+      requestKey: randomUUID(),
+    };
+    const created = await request(app)
+      .post("/api/auth/companies")
+      .set(headers("fixture-b"))
+      .send(input);
+    expect(created.status).toBe(201);
+    const id = created.body.id;
+    const target = `company:${id}`;
+    const preview = {
+      ...headers("fixture-admin"),
+      "X-Octolab-Preview": "company",
+      "X-Octolab-Preview-Target": target,
+    };
+    const choices = await request(app)
+      .get("/api/auth/preview-targets")
+      .set(headers("fixture-admin"));
+    expect(choices.status).toBe(200);
+    expect(choices.body).toContainEqual(
+      expect.objectContaining({ target, kind: "company", status: "pending" }),
+    );
+    expect(
+      (await request(app).get("/api/auth/preview-targets").set(preview)).status,
+    ).toBe(200);
+    expect(
+      (
+        await request(app)
+          .get("/api/auth/preview-targets")
+          .set(headers("fixture-a"))
+      ).status,
+    ).toBe(403);
+    const profile = await request(app).get("/api/auth/me").set(preview);
+    expect(profile.body).toMatchObject({
+      user: { id: ids.admin },
+      isAdmin: false,
+      canPreview: true,
+      workspaces: [],
+      companyPreview: { target, status: "pending" },
+    });
+    expect(profile.body.companies).toHaveLength(1);
+    expect(profile.body.companies[0]).toMatchObject({
+      id,
+      role: "owner",
+      status: "pending",
+      insightsEnabled: false,
+    });
+    const otherId = choices.body.find(
+      (item: any) => item.kind === "company" && item.id !== id,
+    ).id;
+    for (const path of [
+      `/api/companies/${otherId}`,
+      `/api/companies/${otherId}/members`,
+      "/api/admin/companies",
+      "/api/observations",
+      "/api/workspace/api-keys",
+      "/api/auth/preview-insights",
+    ]) {
+      expect((await request(app).get(path).set(preview)).status, path).toBe(
+        403,
+      );
+    }
+    expect(
+      (await request(app).get(`/api/companies/${id}/insights`).set(preview))
+        .status,
+    ).toBe(403);
+    expect(
+      (await request(app).get(`/api/companies/${id}/members`).set(preview))
+        .status,
+    ).toBe(200);
+    expect(
+      (
+        await request(app)
+          .post(`/api/companies/${id}/members`)
+          .set(preview)
+          .send({
+            action: "grant",
+            email: "a@fixture.invalid",
+            requestKey: randomUUID(),
+          })
+      ).status,
+    ).toBe(200);
+    const audit = await request(app)
+      .get(`/api/companies/${id}/access-history`)
+      .set(preview);
+    expect(audit.body).toContainEqual(
+      expect.objectContaining({
+        actorId: ids.admin,
+        action: "member_granted",
+      }),
+    );
+    const { requestKey, ...details } = input;
+    const revised = await request(app)
+      .post(`/api/companies/${id}/resubmit`)
+      .set(preview)
+      .send({ ...details, revision: 0 });
+    expect(revised.status).toBe(200);
+    expect(revised.body).toMatchObject({
+      status: "pending",
+      revision: 1,
+      insightsEnabled: false,
+    });
+    const history = await request(app)
+      .get(`/api/admin/companies/${id}/history`)
+      .set(headers("fixture-admin"));
+    expect(history.body[0]).toMatchObject({
+      actorId: ids.admin,
+      data: { action: "resubmitted" },
+    });
+    expect(
+      (
+        await db.pool.query(
+          "SELECT 1 FROM octolab.company_memberships WHERE company_id=$1 AND user_id=$2",
+          [id, ids.admin],
+        )
+      ).rowCount,
+    ).toBe(0);
+    for (const token of ["fixture-a", "oct_key_forged", "unknown-session"]) {
+      expect(
+        (
+          await request(app)
+            .get("/api/auth/me")
+            .set({ ...preview, ...headers(token) })
+        ).status,
+      ).toBe(token === "fixture-a" ? 403 : 401);
+    }
+    expect(
+      (
+        await request(app)
+          .get("/api/auth/me")
+          .set({ ...headers("fixture-admin"), "X-Octolab-Preview": "company" })
+      ).status,
+    ).toBe(400);
+    expect(
+      (
+        await request(app)
+          .get("/api/auth/me")
+          .set({
+            ...preview,
+            "X-Octolab-Preview-Target": "company:" + randomUUID(),
+          })
+      ).status,
+    ).toBe(409);
+    const normal = await request(app)
+      .get("/api/auth/me")
+      .set(headers("fixture-admin"));
+    expect(normal.body.isAdmin).toBe(true);
+    expect(normal.body.workspaces.length).toBeGreaterThan(1);
+    const deletedId = randomUUID();
+    await db.pool.query(
+      "INSERT INTO octolab.tool_companies(id,owner_user_id,request_key,name,website,tool_name,description) SELECT $1,owner_user_id,$2,name,website,tool_name,description FROM octolab.tool_companies WHERE id=$3",
+      [deletedId, randomUUID(), id],
+    );
+    const deletedPreview = {
+      ...preview,
+      "X-Octolab-Preview-Target": `company:${deletedId}`,
+    };
+    expect(
+      (await request(app).get("/api/auth/me").set(deletedPreview)).status,
+    ).toBe(200);
+    await db.pool.query("DELETE FROM octolab.tool_companies WHERE id=$1", [
+      deletedId,
+    ]);
+    expect(
+      (await request(app).get("/api/auth/me").set(deletedPreview)).status,
+    ).toBe(409);
+    expect(
+      (
+        await request(app)
+          .get("/api/auth/preview-targets")
+          .set(headers("fixture-admin"))
+      ).status,
+    ).toBe(200);
+  });
+  it("shows recorded unclaimed provider aggregates without inventing a registration or bypassing release", async () => {
+    const company = (
+      await db.pool.query(
+        "SELECT id FROM octolab.tool_companies WHERE provider_id='firecrawl'",
+      )
+    ).rows[0];
+    await db.pool.query(
+      "UPDATE octolab.tool_companies SET provider_id=NULL,insights_enabled=false,status='pending' WHERE id=$1",
+      [company.id],
+    );
+    const preview = {
+      ...headers("fixture-admin"),
+      "X-Octolab-Preview": "company",
+      "X-Octolab-Preview-Target": "provider:firecrawl",
+    };
+    const targets = await request(app)
+      .get("/api/auth/preview-targets")
+      .set(headers("fixture-admin"));
+    expect(targets.body).toContainEqual(
+      expect.objectContaining({
+        target: "provider:firecrawl",
+        status: "unregistered",
+        kind: "provider",
+      }),
+    );
+    const profile = await request(app).get("/api/auth/me").set(preview);
+    expect(profile.body).toMatchObject({
+      isAdmin: false,
+      workspaces: [],
+      companies: [],
+      companyPreview: { target: "provider:firecrawl", kind: "provider" },
+    });
+    const report = await request(app)
+      .get("/api/auth/preview-insights")
+      .set(preview);
+    expect(report.status).toBe(200);
+    expect(report.body).toMatchObject({
+      status: "available",
+      metrics: {
+        offeredSessions: 5,
+        selectedSessions: 5,
+        calls: 5,
+        successfulCalls: 5,
+      },
+    });
+    expect(JSON.stringify(report.body)).not.toContain("PRIVATE_");
+    expect(
+      (await request(app).get(`/api/companies/${company.id}`).set(preview))
+        .status,
+    ).toBe(403);
+    expect(
+      (await request(app).post("/api/auth/companies").set(preview).send({}))
+        .status,
+    ).toBe(403);
+    await db.pool.query(
+      "UPDATE octolab.tool_companies SET provider_id='firecrawl',insights_enabled=false,status='approved' WHERE id=$1",
+      [company.id],
+    );
+    expect(
+      (await request(app).get("/api/auth/preview-insights").set(preview))
+        .status,
+    ).toBe(409);
+    const registered = {
+      ...preview,
+      "X-Octolab-Preview-Target": `company:${company.id}`,
+    };
+    expect(
+      (
+        await request(app)
+          .get(`/api/companies/${company.id}/insights`)
+          .set(registered)
+      ).body,
+    ).toMatchObject({ status: "awaiting_release", metrics: null });
+    const audit = await request(app)
+      .get(`/api/companies/${company.id}/access-history`)
+      .set(registered);
+    expect(audit.body).toContainEqual(
+      expect.objectContaining({
+        actorId: ids.admin,
+        action: "report_accessed",
+      }),
+    );
+    await db.pool.query(
+      "UPDATE octolab.tool_companies SET insights_enabled=true WHERE id=$1",
+      [company.id],
+    );
+    expect(
+      (
+        await request(app)
+          .get(`/api/companies/${company.id}/insights`)
+          .set(registered)
+      ).body.metrics.calls,
+    ).toBe(5);
+  });
   it("rejects revoked or banned sessions even while identity verification is cached", async () => {
     await request(app).get("/api/auth/me").set(headers("fixture-a"));
     await db.pool.query("DELETE FROM auth.sessions WHERE id=$1", [

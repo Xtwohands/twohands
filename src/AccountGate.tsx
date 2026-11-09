@@ -9,6 +9,7 @@ import {
 import type { Session, SupabaseClient } from "@supabase/supabase-js";
 import { LogOut01, ArrowRight } from "@untitledui/icons";
 import type { AccountProfile, AuthPublicConfig } from "../server/account-types";
+import type { CompanyPreviewTarget } from "../server/company-types";
 import { setAccountSession, setPreviewRole } from "./api";
 import { Button } from "./components/ui/button";
 import { Input } from "./components/ui/input";
@@ -23,7 +24,11 @@ type AccountContext = {
   create: () => void;
   refresh: () => Promise<void>;
   previewRole: "user" | "company" | null;
-  preview: (role: "user" | "company" | null) => Promise<void>;
+  previewTarget: string | null;
+  previewTargets: CompanyPreviewTarget[];
+  previewTargetError: string;
+  reloadPreviewTargets: () => Promise<void>;
+  preview: (role: "user" | "company" | null, target?: string) => Promise<void>;
 };
 const Context = createContext<AccountContext>({
   enabled: false,
@@ -33,6 +38,10 @@ const Context = createContext<AccountContext>({
   create: () => {},
   refresh: async () => {},
   previewRole: null,
+  previewTarget: null,
+  previewTargets: [],
+  previewTargetError: "",
+  reloadPreviewTargets: async () => {},
   preview: async () => {},
 });
 export const useAccount = () => useContext(Context);
@@ -88,14 +97,34 @@ export function AccountControls({
 }
 function PreviewNotice({
   role,
+  target,
+  targets,
+  onTarget,
   onExit,
 }: {
   role: "user" | "company";
+  target: string | null;
+  targets: CompanyPreviewTarget[];
+  onTarget: (target: string) => void;
   onExit: () => void;
 }) {
   return (
     <div className="preview-notice" role="status">
-      <span>Previewing as {role === "user" ? "user" : "tool company"}</span>
+      <span>Previewing {role === "user" ? "as user" : "company"}</span>
+      {role === "company" && targets.length > 0 && (
+        <select
+          aria-label="Preview company"
+          value={target || ""}
+          onChange={(e) => onTarget(e.target.value)}
+        >
+          {targets.map((item) => (
+            <option key={item.target} value={item.target}>
+              {item.name}
+              {item.kind === "provider" ? " · integrated provider" : ""}
+            </option>
+          ))}
+        </select>
+      )}
       <Button variant="outline" size="sm" onClick={onExit}>
         Return to admin
       </Button>
@@ -109,6 +138,13 @@ export function AccountGate({ children }: { children: ReactNode }) {
   const [switching, setSwitching] = useState(false);
   const [previewRole, setPreview] = useState<"user" | "company" | null>(null);
   const previewRef = useRef<"user" | "company" | null>(null);
+  const targetRef = useRef<string | null>(null);
+  const previewGeneration = useRef(0);
+  const [previewTarget, setPreviewTarget] = useState<string | null>(null);
+  const [previewTargets, setPreviewTargets] = useState<CompanyPreviewTarget[]>(
+    [],
+  );
+  const [previewTargetError, setPreviewTargetError] = useState("");
   const canPreviewRef = useRef(false);
   const [workspaceId, setWorkspaceId] = useState("");
   const [ready, setReady] = useState(false),
@@ -145,6 +181,11 @@ export function AccountGate({ children }: { children: ReactNode }) {
   const clear = () => {
     canPreviewRef.current = false;
     previewRef.current = null;
+    targetRef.current = null;
+    previewGeneration.current++;
+    setPreviewTarget(null);
+    setPreviewTargets([]);
+    setPreviewTargetError("");
     setPreviewRole(null);
     setPreview(null);
     version.current++;
@@ -172,9 +213,17 @@ export function AccountGate({ children }: { children: ReactNode }) {
             ...(previewRef.current
               ? { "X-Octolab-Preview": previewRef.current }
               : {}),
+            ...(targetRef.current
+              ? { "X-Octolab-Preview-Target": targetRef.current }
+              : {}),
           },
         }),
         data = await response.json();
+      if (response.status === 401) {
+        signOut();
+        setError(data.error || "Your session ended. Sign in again.");
+        return;
+      }
       if (!response.ok)
         throw new Error(data.error || "Could not load account access.");
       if (
@@ -205,6 +254,7 @@ export function AccountGate({ children }: { children: ReactNode }) {
       setWorkspaceId(selected?.id || "");
       setAccountSession(value.access_token, selected?.id || "", result.user.id);
       setError("");
+      return result;
     } catch (e) {
       if (request === version.current) {
         setProfile(undefined);
@@ -216,6 +266,31 @@ export function AccountGate({ children }: { children: ReactNode }) {
       if (request === version.current) setReady(true);
     }
   };
+  const reloadPreviewTargets = async () => {
+    const current = currentSession.current;
+    if (!current || !canPreviewRef.current) return;
+    try {
+      const response = await fetch("/api/auth/preview-targets", {
+        headers: { Authorization: "Bearer " + current.access_token },
+      });
+      const data = await response.json();
+      if (
+        currentSession.current?.user.id !== current.user.id ||
+        !canPreviewRef.current
+      )
+        return;
+      if (!response.ok)
+        throw new Error(data.error || "Could not load company previews.");
+      setPreviewTargets(data);
+      setPreviewTargetError("");
+    } catch (e) {
+      if (currentSession.current?.user.id === current.user.id)
+        setPreviewTargetError((e as Error).message);
+    }
+  };
+  useEffect(() => {
+    if (profile?.canPreview || profile?.isAdmin) void reloadPreviewTargets();
+  }, [profile?.canPreview, profile?.isAdmin]);
   useEffect(() => {
     const changed = () => setRoute(location.hash);
     window.addEventListener("hashchange", changed);
@@ -335,21 +410,34 @@ export function AccountGate({ children }: { children: ReactNode }) {
     profile,
     workspaceId,
     previewRole,
-    preview: async (role) => {
+    previewTarget,
+    previewTargets,
+    previewTargetError,
+    reloadPreviewTargets,
+    preview: async (role, target) => {
       if (!currentSession.current || !canPreviewRef.current) return;
+      if (role === "company" && !target) {
+        setPreviewTargetError("Choose a company to preview.");
+        return;
+      }
+      const operation = ++previewGeneration.current;
       previewRef.current = role;
-      setPreviewRole(role);
+      targetRef.current = role === "company" ? target! : null;
+      setPreviewTarget(targetRef.current);
+      setPreviewRole(role, targetRef.current);
       setPreview(role);
       setSwitching(true);
       setProfile(undefined);
+      let loaded: AccountProfile | undefined;
       try {
-        await loadProfile(currentSession.current);
+        loaded = await loadProfile(currentSession.current);
       } finally {
-        setSwitching(false);
+        if (operation === previewGeneration.current) setSwitching(false);
       }
+      if (operation !== previewGeneration.current || !loaded) return;
       location.hash =
         role === "company"
-          ? "company"
+          ? `company/${loaded.companyPreview?.id || ""}/insights`
           : role === "user"
             ? "dashboard"
             : "admin";
@@ -391,13 +479,24 @@ export function AccountGate({ children }: { children: ReactNode }) {
     return (
       <Context.Provider value={context}>
         <div
-          key={profile.user.id + ":" + workspaceId + ":" + previewRole}
+          key={
+            profile.user.id +
+            ":" +
+            workspaceId +
+            ":" +
+            previewRole +
+            ":" +
+            previewTarget
+          }
           className="account-workspace"
         >
           {children}
           {previewRole && (
             <PreviewNotice
               role={previewRole}
+              target={previewTarget}
+              targets={previewTargets}
+              onTarget={(target) => void context.preview("company", target)}
               onExit={() => void context.preview(null)}
             />
           )}
@@ -424,6 +523,9 @@ export function AccountGate({ children }: { children: ReactNode }) {
         {previewRole && (
           <PreviewNotice
             role={previewRole}
+            target={previewTarget}
+            targets={previewTargets}
+            onTarget={(target) => void context.preview("company", target)}
             onExit={() => void context.preview(null)}
           />
         )}
