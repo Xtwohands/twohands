@@ -103,10 +103,7 @@ const labels: Record<DashboardSection, [string, string]> = {
     "API keys",
     "Create credentials for your agents and control access and estimated spending.",
   ],
-  credits: [
-    "Credits",
-    "Test credits from Stripe payments and verified USDC deposits on Base Sepolia.",
-  ],
+  credits: ["Credits", "Your test balance and deposit history."],
   connections: [
     "Connections",
     "One MCP connection. Your tools, in the agent you already use.",

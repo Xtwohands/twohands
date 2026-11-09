@@ -29,6 +29,12 @@ test("test funding remains disabled by default with clear setup instructions", a
     page.getByText("Payments disabled", { exact: true }),
   ).toBeVisible();
   await expect(page.getByText(/workspace owner can enable/)).toHaveCount(0);
+  await expect(
+    page.getByRole("heading", { name: "Network details", exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("heading", { name: "Credit ledger", exact: true }),
+  ).toHaveCount(0);
   await captureJourney(page, "payments-disabled");
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
   expect(
@@ -85,4 +91,64 @@ test("fixture test deposit creates, verifies, and credits exactly once", async (
   await expect(page.locator(".ws-balance-card")).toContainText("test credits");
   await page.reload();
   await expect(page.locator(".ws-balance-card")).toContainText("test credits");
+});
+
+test("turning payments off preserves historical credits and receipts", async ({
+  page,
+  request,
+}) => {
+  const base = "http://127.0.0.1:3102";
+  const before = await (
+    await request.get(base + "/api/workspace/funding")
+  ).json();
+  if (!before.entries?.length) {
+    const created = await request.post(
+      base + "/api/workspace/funding/deposits",
+      {
+        data: {
+          requestKey: crypto.randomUUID(),
+          amount: "10",
+          sender: `0x${"11".repeat(20)}`,
+        },
+      },
+    );
+    expect(created.status()).toBe(201);
+    const deposit = await created.json();
+    const verified = await request.post(
+      base + `/api/workspace/funding/deposits/${deposit.id}/verify`,
+      {
+        data: { transactionHash: `0x${"33".repeat(32)}` },
+      },
+    );
+    expect(verified.status()).toBe(200);
+  }
+  await page.route("**/api/workspace/funding", async (route) => {
+    const response = await route.fetch();
+    const data = await response.json();
+    await route.fulfill({
+      response,
+      json: {
+        ...data,
+        enabled: false,
+        stripe: { ...data.stripe, enabled: false },
+      },
+    });
+  });
+  await page.goto(base + "/#dashboard/credits");
+  await expect(
+    page.getByRole("button", { name: "Add test credits", exact: true }),
+  ).toBeDisabled();
+  await expect(
+    page.getByRole("region", { name: "Deposit history", exact: true }),
+  ).toBeVisible();
+  await expect(page.locator(".ws-balance-card")).toContainText("test credits");
+  await expect(
+    page.getByRole("region", { name: "Credit ledger", exact: true }),
+  ).toBeVisible();
+  await page
+    .getByRole("button", { name: "View deposit", exact: true })
+    .first()
+    .click();
+  await expect(page.getByRole("dialog")).toBeVisible();
+  await captureJourney(page, "disabled-payments-historical-receipt");
 });

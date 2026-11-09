@@ -133,72 +133,74 @@ export function StripeFundingPanel({
           </Button>
         </div>
       </section>
-      <section className="ws-panel">
-        <header>
-          <div>
-            <h2>Card deposit history</h2>
-            <p>Test payments and their current credit adjustments.</p>
-          </div>
-          <Badge variant="outline">Test mode</Badge>
-        </header>
-        {summary?.stripeIntents?.length ? (
-          <div
-            className="ws-table-scroll"
-            tabIndex={0}
-            role="region"
-            aria-label="Card deposit history"
-          >
-            <table className="ws-table">
-              <thead>
-                <tr>
-                  <th>Amount</th>
-                  <th>Status</th>
-                  <th>Created</th>
-                  <th>Net credits</th>
-                  <th>
-                    <span className="sr-only">Inspect</span>
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {summary.stripeIntents.map((i) => (
-                  <tr key={i.id}>
-                    <td>
-                      <strong>{usd(i.amountCents)}</strong> test USD
-                    </td>
-                    <td>{labels[i.status]}</td>
-                    <td>{date(i.createdAt)}</td>
-                    <td>
-                      {(i.netCreditUnits / 1e6).toLocaleString("en-US", {
-                        maximumFractionDigits: 2,
-                      })}
-                    </td>
-                    <td>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => {
-                          setSelected(i);
-                          setError("");
-                          setReturned(false);
-                          setOpen(true);
-                        }}
-                      >
-                        View card deposit
-                        <ArrowRight />
-                      </Button>
-                    </td>
+      {(summary?.stripe?.enabled || !!summary?.stripeIntents?.length) && (
+        <section className="ws-panel">
+          <header>
+            <div>
+              <h2>Card deposit history</h2>
+              <p>Test payments and their current credit adjustments.</p>
+            </div>
+            <Badge variant="outline">Test mode</Badge>
+          </header>
+          {summary?.stripeIntents?.length ? (
+            <div
+              className="ws-table-scroll"
+              tabIndex={0}
+              role="region"
+              aria-label="Card deposit history"
+            >
+              <table className="ws-table">
+                <thead>
+                  <tr>
+                    <th>Amount</th>
+                    <th>Status</th>
+                    <th>Created</th>
+                    <th>Net credits</th>
+                    <th>
+                      <span className="sr-only">Inspect</span>
+                    </th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <Empty title="No card deposits yet">
-            Verified Stripe test payments will appear here.
-          </Empty>
-        )}
-      </section>
+                </thead>
+                <tbody>
+                  {summary.stripeIntents.map((i) => (
+                    <tr key={i.id}>
+                      <td>
+                        <strong>{usd(i.amountCents)}</strong> test USD
+                      </td>
+                      <td>{labels[i.status]}</td>
+                      <td>{date(i.createdAt)}</td>
+                      <td>
+                        {(i.netCreditUnits / 1e6).toLocaleString("en-US", {
+                          maximumFractionDigits: 2,
+                        })}
+                      </td>
+                      <td>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            setSelected(i);
+                            setError("");
+                            setReturned(false);
+                            setOpen(true);
+                          }}
+                        >
+                          View card deposit
+                          <ArrowRight />
+                        </Button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <Empty title="No card deposits yet">
+              Verified Stripe test payments will appear here.
+            </Empty>
+          )}
+        </section>
+      )}
       <Dialog
         open={open}
         onOpenChange={(value) => {

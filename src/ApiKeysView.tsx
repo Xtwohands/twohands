@@ -429,13 +429,15 @@ export function ApiKeysView() {
                   response was lost.
                 </p>
               )}
-              <Button onClick={close}>Done</Button>
-              <Button variant="outline" asChild>
-                <a href="#dashboard/connections" onClick={close}>
-                  Agent connection setup
-                  <ArrowRight />
-                </a>
-              </Button>
+              <div className="button-row">
+                <Button onClick={close}>Done</Button>
+                <Button variant="outline" asChild>
+                  <a href="#dashboard/connections" onClick={close}>
+                    Agent connection setup
+                    <ArrowRight />
+                  </a>
+                </Button>
+              </div>
             </div>
           ) : mode === "revoke" && selected ? (
             <div className="ws-deposit-detail">
