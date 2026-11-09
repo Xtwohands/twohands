@@ -36,13 +36,35 @@ Commercial aggregate sharing is enabled for all observation sessions under works
 
 ## Retention
 
-Default documented retention: **30 days**. Scheduling cleanup is the operator's responsibility; no background job silently deletes research. Stop the server before running maintenance.
+The default age is **30 days**. Cleanup is operator-run, with no automatic schedule. The API and maintenance command share `openConfiguredStore`, so `STORAGE_BACKEND` selects the same backend for both. Stop the API and other maintenance processes, then preserve a consistent backup before applying deletion. SQLite refuses a second writer; PostgreSQL maintenance acquires the runtime ownership lock and refuses to overlap a running API.
+
+Build the maintenance command first. Without `--apply`, it only previews the selected workspace's deletion counts, cutoff, and plan digest; it does not print candidate record IDs or delete records:
 
 ```bash
-RETENTION_DAYS=30 npm run retention
+npm run build
+# SQLite: DB_PATH must identify an existing source file.
+STORAGE_BACKEND=sqlite DB_PATH=./data/apilayer.sqlite RETENTION_DAYS=30 npm run retention
+# PostgreSQL: explicitly select a registered workspace; there is no legacy-workspace fallback.
+STORAGE_BACKEND=postgres RETENTION_WORKSPACE_ID=<workspace-id> RETENTION_DAYS=30 npm run retention
 ```
 
-The command deletes expired research tasks and observation sessions with their evidence and event histories. It skips running research tasks, observation sessions with active provider calls, and observation sessions with open review cases. Expiration uses the last materialized update. Closed cases are subject to ordinary retention. Provider lab maintenance deletes expired reviewed plans and completed unlinked runs, while preserving running tests, recent usefulness reviews, unfinished plans, and runs linked by retained plans. SQLite maintenance then checkpoints WAL and vacuums; PostgreSQL maintenance targets `LEGACY_WORKSPACE_ID` and acquires the runtime ownership lock. Additional tenant retention scheduling is not implemented. MCP client connection metadata is operational history and remains until the workspace is removed; it contains client name/version and timestamps, not conversation content. A paused task is not a complete backup. Apply equivalent retention to exported files, screenshots, backups, and hosting volumes. Filesystem snapshots and external backups are outside this application's deletion control.
+PostgreSQL requires `DATABASE_URL` and an explicit `RETENTION_WORKSPACE_ID` that exists in the workspace registry. On SQLite, an optional `RETENTION_WORKSPACE_ID` must match the source's identity; a missing file or mismatched identity fails. A database URL alone does not change the selected backend.
+
+After reviewing the preview and backup, pass `--apply`. To require the exact previewed plan, reuse its **same cutoff** with `RETENTION_CUTOFF` and supply its digest:
+
+```bash
+STORAGE_BACKEND=postgres RETENTION_WORKSPACE_ID=<workspace-id> \
+  RETENTION_CUTOFF=<cutoff-from-preview> \
+  npm run retention -- --apply --expect-digest=<digest-from-preview>
+```
+
+The digest covers the workspace, cutoff, and candidate IDs. A changed plan rejects before deletion. Without `RETENTION_CUTOFF`, each invocation computes a new cutoff from `RETENTION_DAYS`, so a later digest check would not describe the same plan. `--expect-digest` is optional; `--apply` is always required to delete. SQLite uses the same flags with its explicit `DB_PATH`.
+
+Deletion runs in one workspace transaction. A failure rolls back the entire deletion set. It retains running or reserved research tasks, reserved observation sessions, running calls, open review cases, unfinished test plans, recent usefulness reviews, runs linked by retained plans, and source runs needed by retained replays, including replay ancestry. Timestamps exactly at the cutoff are retained. Expired eligible tasks and sessions are deleted with their evidence and event histories; expired reviewed plans and unprotected non-running runs are also eligible. Cumulative key spending and financial ledgers are not reset. Cleanup no longer runs `VACUUM` automatically.
+
+Restore deleted records from the preserved backup if necessary; restarting does not undo applied cleanup. Before the first PostgreSQL write, rollback can select the preserved SQLite source. After PostgreSQL writes, reconcile or export those changes before reverting storage, as described in the [migration rollback guide](POSTGRES_MIGRATION.md#rollback). This checkpoint did not apply retention to the original or hosted application data. Isolated checks cover dry runs, cutoff boundaries, stale plans, rollback after an interrupted deletion, protected evidence, and a neighboring PostgreSQL workspace.
+
+MCP client connection metadata remains until its workspace is removed; it contains client name/version and timestamps, not conversation content. A paused task is not a backup. Apply a separate retention policy to exported files, screenshots, backups, and hosting volumes; filesystem snapshots and external backups are outside this command's deletion control. Scheduling retention across workspaces remains operational follow-up.
 
 ## Limits and pricing
 
@@ -60,7 +82,10 @@ The command deletes expired research tasks and observation sessions with their e
 | `STORAGE_BACKEND`                           | `sqlite`                 | Explicit runtime backend: `sqlite` or `postgres`; a URL alone does not switch it                     |
 | `DB_PATH`                                   | `./data/apilayer.sqlite` | SQLite workspace or read-only migration source                                                       |
 | `DATABASE_URL`                              | unset                    | Private PostgreSQL connection string; keep server-side                                               |
-| `LEGACY_WORKSPACE_ID`                       | unset                    | Imported workspace UUID required by the PostgreSQL runtime and retention                             |
+| `LEGACY_WORKSPACE_ID`                       | unset                    | Imported workspace UUID used by the PostgreSQL runtime; does not select retention targets            |
+| `RETENTION_DAYS`                            | 30                       | Positive age in days used to compute the cleanup cutoff                                              |
+| `RETENTION_WORKSPACE_ID`                    | unset                    | Explicit registered PostgreSQL workspace to maintain; optional identity check on SQLite              |
+| `RETENTION_CUTOFF`                          | unset                    | Fixed timestamp overriding the computed cutoff, needed to reuse a preview digest                     |
 | `LEGACY_OWNER_USER_ID`                      | unset                    | Intended owner's Supabase Auth UUID, required explicitly for import and verification                 |
 | `SUPABASE_URL` / `SUPABASE_PUBLISHABLE_KEY` | unset                    | Public hosted Auth origin and publishable key; `VITE_` aliases supported, no secret/service-role key |
 | `SUPABASE_ADMIN_USER_IDS`                   | unset                    | Explicit platform administrator UUID allowlist; empty grants none                                    |

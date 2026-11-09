@@ -33,14 +33,14 @@ The importer is all-or-nothing and never merges into an occupied tenant or reass
 
 Before the first PostgreSQL write, stop the new runtime and select the preserved SQLite source with `STORAGE_BACKEND=sqlite`. After new PostgreSQL writes, reverting to the old SQLite file would lose new receipts and accounting changes. Keep PostgreSQL stopped and reconcile or export those changes before selecting another storage backend. No automatic reverse migration or destructive reset is included.
 
-Retention targets the configured legacy workspace and requires the runtime to be stopped. Additional tenant retention scheduling belongs with account-aware operational jobs.
+Retention uses the same backend selection as the API, requires an explicit registered `RETENTION_WORKSPACE_ID` in PostgreSQL mode, and refuses a running runtime. It defaults to a dry-run preview; `--apply` performs atomic workspace-scoped deletion while preserving protected work and replay ancestry. See the [retention procedure](OPERATIONS.md#retention) for backups, fixed-cutoff digest checks, and rollback limits. Cross-workspace scheduling remains operational follow-up.
 
 ## Validation
 
 `npm run check` runs the existing isolated suite. To run real PostgreSQL integration tests, provide **a disposable database**, never the production URL:
 
 ```sh
-OCTOLAB_TEST_POSTGRES_URL=postgresql://... npm test -- tests/postgres.test.ts tests/accounts.test.ts
+OCTOLAB_TEST_POSTGRES_URL=postgresql://... npm test -- tests/postgres.test.ts tests/accounts.test.ts tests/retention.test.ts
 ```
 
 These tests create fixture workspaces and a minimal synthetic Auth schema in that database. They must never target hosted production Supabase. Account coverage includes live session/membership revocation, owner/admin separation, scoped workspace keys, signed cross-workspace webhook resolution, and audit attribution. Hosted schema installation was completed separately through MCP and is recorded in the [rollout checkpoint](SUPABASE_ROLLOUT.md); a confirmed hosted account exists, while recovery/login/logout validation and historical-data cutover remain incomplete. They exercise migration checksums, tenant separation, global payment-proof uniqueness, receipt retries, concurrent caps, atomic audit chains, Stripe test-ledger/dispute flows, and verified SQLite import/replay. No live provider or payment request is made. Browser fixtures remain separate from production data.

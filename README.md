@@ -94,6 +94,8 @@ Calls reserve integer USD micro-units transactionally against configured estimat
 
 SQLite is single-user and local by default; set a long `API_TOKEN` before binding it beyond loopback. PostgreSQL requires configured Supabase Auth and live session/membership checks instead. Use HTTPS and trusted deployment access controls for remote use; hosted login, email delivery, and cutover still require validation in the target project. The MCP bridge intentionally accepts only loopback HTTP destinations. Run one API server per database with either storage backend; PostgreSQL uses a session advisory ownership lock and requires a direct connection or session pooler. See [privacy and operations](docs/OPERATIONS.md).
 
+Retention previews counts by default and requires `--apply` to delete. PostgreSQL cleanup requires an explicit registered workspace, uses the API's backend selection and runtime lock, and preserves active or linked evidence. Follow the [backup and retention procedure](docs/OPERATIONS.md#retention) before running maintenance.
+
 Earlier deterministic routing runs remain available at [Research tools](http://127.0.0.1:3001/research/#workspace). Their original data and workflows are preserved and explicitly distinguished from external-agent decisions. See [the earlier research workflow](docs/RESEARCH_WORKFLOW.md).
 
 ## Verify
