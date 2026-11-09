@@ -4,13 +4,13 @@ PostgreSQL account mode separates three areas. One account can have more than on
 
 | Person             | Entry and sidebar                                                                                                            | First task                                                                                                                                 |
 | ------------------ | ---------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| User               | `#dashboard`: tools, routing, activity, usage, connections; owners also see credits and API keys                             | Create/select a workspace, create a scoped API key, then connect an external agent                                                         |
+| User               | `#dashboard`: tools, routing, activity, usage, connections; owners also see credits and API keys                             | Sign in, create a scoped API key, then connect an external agent; private account setup is automatic                                       |
 | Tool company owner | `#company`: overview, live usage, controlled tests, test plans, integration, company details, and owner-only team management | Register the company and tool for ownership/integration review; no customer workspace is required                                          |
 | Platform admin     | `#admin`: persistent navigation across company reviews, workspace operations, disputes, provider lab, and tool access        | Review company ownership and manage audited tool allowances; company reviews and tool access do not require selecting a customer workspace |
 
 Users keep the conversation and tool choices in Claude, Codex, or another MCP host. The dashboard configures and inspects that infrastructure. It does not turn each consumer task into an operator approval flow.
 
-The admin sidebar also retains Model evaluations, Tool activity, and Review cases across admin destinations. Workspace-dependent destinations keep their URL and show an explicit workspace-selection gate when none is selected; they do not issue private workspace requests prematurely. Direct links, refresh, browser history, and mobile navigation use the same destinations. **Tool access** manages the separate [operator allowance](WORKSPACE_ALLOWANCES.md); it is not a customer payment flow.
+The admin sidebar also retains Model evaluations, Tool activity, and Review cases across admin destinations. Account-dependent administrator destinations keep their URL and show an explicit customer-account selection gate when none is selected; they do not issue private workspace requests prematurely. Direct links, refresh, browser history, and mobile navigation use the same destinations. **Tool access** manages the separate [operator allowance](WORKSPACE_ALLOWANCES.md); it is not a customer payment flow.
 
 ## Register and review a tool company
 
@@ -32,7 +32,7 @@ The owner-only **Access history** records recent analyst grants, revocations, an
 
 ## Switch areas and preview permissions
 
-**Settings** holds links to the account's user and company areas. Administrators also have **Preview as** options with a visible **Return to admin** control. User preview removes administrator privileges and retains actual workspace memberships. Company preview selects one real registration or an explicitly labeled integrated provider without a registration. It restricts backend requests to that target, uses real eligible aggregate counts without a minimum workspace/session count, and creates no permanent membership or fake company records. Provider-only previews are read-only; registered-company actions retain the actual administrator as their audit actor.
+**Settings** is available in the upward-opening account menu, together with in-app **Help and documentation**. It holds links to the account's user and company areas. Administrators also have **Preview as** options with a visible **Return to admin** control. User preview removes administrator privileges and retains actual workspace memberships. Company preview selects one real registration or an explicitly labeled integrated provider without a registration. It restricts backend requests to that target, uses real eligible aggregate counts without a minimum workspace/session count, and creates no permanent membership or fake company records. Provider-only previews are read-only; registered-company actions retain the actual administrator as their audit actor.
 
 ## Read company insights
 
