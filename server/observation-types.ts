@@ -96,6 +96,7 @@ export interface ObservedCall {
   result?: Record<string, unknown>;
 }
 export interface ObservationEvent {
+  actor?: { kind: "account" | "api_key"; id: string };
   id: number;
   sessionId: string;
   at: string;

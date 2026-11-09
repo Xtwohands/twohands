@@ -7,46 +7,51 @@ import { DisputeReviewService } from "./dispute-review.js";
 export function disputeReviewRoutes(
   app: Express,
   service: DisputeReviewService,
+  accountAccess?: express.RequestHandler,
 ) {
   const router = express.Router();
-  router.use((req, res, next) => {
-    if (!config.adminToken || config.adminToken === config.token) {
-      res.status(503).json({
-        error:
-          "Admin funding review is disabled. Configure a separate admin access token on the server.",
-      });
-      return;
-    }
-    const expected = Buffer.from(config.adminToken);
-    const actual = Buffer.from(
-      req.headers.authorization?.replace(/^Bearer /, "") || "",
-    );
-    if (
-      actual.length !== expected.length ||
-      !timingSafeEqual(actual, expected)
-    ) {
-      res.status(401).json({
-        error: "Enter the admin access token to review disputed payments.",
-      });
-      return;
-    }
-    if (!["GET", "HEAD", "OPTIONS"].includes(req.method)) {
-      const origin = req.header("origin");
-      try {
-        if (origin && new URL(origin).host !== req.headers.host)
-          throw new Error();
-      } catch {
-        res.status(403).json({ error: "Cross-origin writes are not allowed" });
+  if (accountAccess) router.use(accountAccess);
+  else
+    router.use((req, res, next) => {
+      if (!config.adminToken || config.adminToken === config.token) {
+        res.status(503).json({
+          error:
+            "Admin funding review is disabled. Configure a separate admin access token on the server.",
+        });
         return;
       }
-      if (!req.is("application/json")) {
-        res.status(415).json({ error: "JSON content type required" });
+      const expected = Buffer.from(config.adminToken);
+      const actual = Buffer.from(
+        req.headers.authorization?.replace(/^Bearer /, "") || "",
+      );
+      if (
+        actual.length !== expected.length ||
+        !timingSafeEqual(actual, expected)
+      ) {
+        res.status(401).json({
+          error: "Enter the admin access token to review disputed payments.",
+        });
         return;
       }
-    }
-    res.locals.adminActor = `admin credential ${createHash("sha256").update(config.adminToken).digest("hex").slice(0, 12)}`;
-    next();
-  });
+      if (!["GET", "HEAD", "OPTIONS"].includes(req.method)) {
+        const origin = req.header("origin");
+        try {
+          if (origin && new URL(origin).host !== req.headers.host)
+            throw new Error();
+        } catch {
+          res
+            .status(403)
+            .json({ error: "Cross-origin writes are not allowed" });
+          return;
+        }
+        if (!req.is("application/json")) {
+          res.status(415).json({ error: "JSON content type required" });
+          return;
+        }
+      }
+      res.locals.adminActor = `admin credential ${createHash("sha256").update(config.adminToken).digest("hex").slice(0, 12)}`;
+      next();
+    });
   router.use(express.json({ limit: "24kb" }));
   const handle =
     (fn: express.RequestHandler): express.RequestHandler =>

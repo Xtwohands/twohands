@@ -1,6 +1,6 @@
 # Provider lab and tool company demo
 
-The sidebar switches between the operator workspace and a tool company preview. Open [Tool company](http://127.0.0.1:3001/#company/exa) to explore Exa, Tavily, and Firecrawl. No company account or additional permission is required for this local demo.
+The sidebar switches between the operator workspace and a tool company preview. Open [Tool company](http://127.0.0.1:3001/#company/exa) to explore Exa, Tavily, and Firecrawl. No separate company account is implemented. The API uses the selected authorized workspace; PostgreSQL provider-lab operations require an explicitly allowlisted platform administrator account.
 
 ## Two sources, visibly separate
 
@@ -64,7 +64,7 @@ Recurring dashboard reads omit captured page bodies. Full receipts are loaded on
 
 ## API
 
-These endpoints inherit the workspace token, host validation, and same-origin JSON-write checks. They are operator APIs, not additional MCP tools.
+These endpoints enforce same-origin JSON writes and workspace access. In PostgreSQL account mode, every `/api/provider-lab` route requires a platform administrator from `SUPABASE_ADMIN_USER_IDS`; workspace ownership alone is insufficient. SQLite retains its workspace-token boundary. These are operator APIs, not additional MCP tools.
 
 | Endpoint                                                 | Behavior                                                                              |
 | -------------------------------------------------------- | ------------------------------------------------------------------------------------- |

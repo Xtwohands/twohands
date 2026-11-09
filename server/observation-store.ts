@@ -140,6 +140,9 @@ export class ObservationStore {
         ? JSON.parse(row.body as string).hash
         : "genesis";
       const payload = {
+        ...(this.store.actorScope.getStore()
+          ? { actor: this.store.actorScope.getStore() }
+          : {}),
         sessionId,
         type,
         provenance,

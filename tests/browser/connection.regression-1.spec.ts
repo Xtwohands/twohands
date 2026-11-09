@@ -19,6 +19,10 @@ test("analytics recovers after connecting without leaving the screen", async ({
   page,
 }) => {
   await page.route("**/api/**", async (route) => {
+    if (new URL(route.request().url()).pathname === "/api/auth/config") {
+      await route.continue();
+      return;
+    }
     if (route.request().headers().authorization === `Bearer ${testToken}`)
       await route.continue();
     else await route.fulfill({ status: 401, json: { error: authError } });
@@ -59,6 +63,10 @@ test("a delayed unauthorized analytics response cannot replace the connected vie
   const finished = new Promise<void>((resolve) => (finish = resolve));
   let intercepted = false;
   await page.route("**/api/**", async (route) => {
+    if (new URL(route.request().url()).pathname === "/api/auth/config") {
+      await route.continue();
+      return;
+    }
     if (route.request().headers().authorization === `Bearer ${testToken}`) {
       await route.continue();
       return;

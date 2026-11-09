@@ -6,7 +6,9 @@ This is an administrative review workflow. It records investigation status and n
 
 ## Enable admin access
 
-Configure a separate server credential and restart:
+In PostgreSQL [account mode](AUTH.md), set `SUPABASE_ADMIN_USER_IDS` to the intended platform administrator UUIDs and restart. Sign in and select the workspace to review. The server checks the live Auth session and allowlist on each request and records the authenticated account UUID; owners and members do not gain dispute access. `ADMIN_API_TOKEN` does not authenticate this mode.
+
+For SQLite/local mode only, configure a separate server credential and restart:
 
 ```dotenv
 ADMIN_API_TOKEN=<a strong random admin-only credential>
@@ -14,7 +16,7 @@ ADMIN_API_TOKEN=<a strong random admin-only credential>
 
 The credential must be nonempty and different from `API_TOKEN`. Blank or identical credentials disable the admin funding API. The workspace bearer token cannot access admin funding routes, and the admin credential alone cannot access workspace routes when `API_TOKEN` is configured. Use HTTPS for remote access. Do not paste credentials into review notes or URLs.
 
-Open Payment disputes and enter the admin credential. It stays in React memory while the page is mounted; it is not written to local/session storage or URLs. **Lock admin access**, leaving the page, or a rejected/disabled credential clears the open review and drafts. Delayed responses from an older login cannot reopen or lock a newer login.
+In SQLite/local mode, open Payment disputes and enter the admin credential. It stays in React memory while the page is mounted; it is not written to local/session storage or URLs. **Lock admin access**, leaving the page, or a rejected/disabled credential clears the open review and drafts. Delayed responses from an older login cannot reopen or lock a newer login.
 
 Both deposit methods remain independently disabled until configured. Admin review can read historical disputes without enabling new deposits or provider spending. **Verify Stripe status** additionally requires the Stripe test verification credentials described in [Stripe setup](STRIPE_DEPOSITS.md); it uses the existing per-payment manual-check cooldown.
 
@@ -24,9 +26,9 @@ Both deposit methods remain independently disabled until configured. Admin revie
 2. Open a payment to inspect its saved amount, refund total, net credits, provider verification time, payment and charge IDs, prior review, and audit history.
 3. Refresh saved evidence, or explicitly verify the current payment state with Stripe.
 4. Choose a local review status and enter a 10–4,000 character note describing the evidence checked and decision.
-5. Save the review. The payment's credit hold remains unchanged. History records the previous/new status, note, evidence snapshot, server time, revision, and a server-derived admin-credential identifier.
+5. Save the review. The payment's credit hold remains unchanged. History records the previous/new status, note, evidence snapshot, server time, revision, and the account UUID in PostgreSQL mode or a server-derived admin-credential identifier in SQLite mode.
 
-Credential identifiers identify the credential used; they are not verified human identities. Shared credentials cannot distinguish individual people. Per-user admin accounts and roles remain separate production work.
+SQLite credential identifiers identify the shared credential used, not a verified individual. PostgreSQL account attribution identifies the authenticated account, without independently verifying who operated it or the truth of a review note.
 
 Every save includes the current revision and a fingerprint of material payment evidence. If another admin saves first or the amount/payment identity/refund/dispute/credit state changes, a stale save returns `409`. Refresh the case before saving; the UI preserves the draft note. A later material evidence change reopens a reviewed case as Needs review. Merely refreshing a verification timestamp does not reopen it. Previous decisions remain in history.
 
@@ -34,7 +36,7 @@ Review saves use UUID idempotency keys. Retrying unchanged details after a lost 
 
 ## API
 
-All routes below require `Authorization: Bearer <ADMIN_API_TOKEN>`. Mutating routes require JSON and enforce same-origin writes. The admin router has its own authentication boundary before the general workspace-token middleware. Unknown routes inside this prefix remain behind admin authentication.
+In PostgreSQL mode, all routes below require `Authorization: Bearer <account access token>` and a platform administrator UUID allowlisted server-side. Send `X-Octolab-Workspace: <workspace ID>` to choose the workspace to review; omission selects the first accessible workspace. SQLite requires `Authorization: Bearer <ADMIN_API_TOKEN>`. Mutating routes require JSON and enforce same-origin writes. The admin router authenticates before the general workspace middleware. Unknown routes inside this prefix remain behind admin authentication.
 
 | Method | Route                                              | Behavior                                                                                                                |
 | ------ | -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |

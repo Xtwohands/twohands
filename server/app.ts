@@ -1,3 +1,9 @@
+import { type Accounts } from "./accounts.js";
+import {
+  accountRoutes,
+  accountAccess,
+  adminAccountAccess,
+} from "./account-api.js";
 import express from "express";
 import { ApiKeyError, requiredApiKeyScope } from "./api-keys.js";
 import { apiKeyRoutes } from "./api-key-api.js";
@@ -65,6 +71,7 @@ export function createApp(
   providerLab = new ProviderLab(store, undefined, engine.timestamps),
   funding = new FundingService(store),
   stripeFunding = new StripeFundingService(funding),
+  accounts?: Accounts,
 ) {
   const app = express();
   app.locals.apiKeys = observatory.db.apiKeys;
@@ -79,8 +86,7 @@ export function createApp(
       "X-Content-Type-Options": "nosniff",
       "Referrer-Policy": "no-referrer",
       "Cache-Control": "no-store",
-      "Content-Security-Policy":
-        "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; font-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
+      "Content-Security-Policy": `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'${accounts ? " " + new URL(accounts.settings.url).origin : ""}; font-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'`,
     });
     next();
   });
@@ -88,87 +94,101 @@ export function createApp(
     await store.db.prepare("SELECT 1").get();
     res.json({ ok: true });
   });
+  accountRoutes(app, accounts);
+  if (accounts)
+    stripeFunding.workspaceForWebhook = (identity) =>
+      accounts.paymentWorkspace(identity);
   stripeWebhookRoute(app, stripeFunding);
-  disputeReviewRoutes(app, new DisputeReviewService(stripeFunding));
-  app.use("/api", async (req, res, next) => {
-    if (
-      !config.token &&
-      !["127.0.0.1", "localhost", "[::1]"].includes(req.hostname)
-    ) {
-      res.status(403).json({
-        error:
-          "Unrecognized local host. Set API_TOKEN when using a public hostname.",
-      });
-      return;
-    }
-    if (
-      config.token.length < 24 &&
-      (await observatory.db.apiKeys.hasIssuedKeys())
-    ) {
-      res.status(503).json({
-        error:
-          "Scoped key access requires a workspace owner token of at least 24 characters. Restore owner access before using this workspace.",
-      });
-      return;
-    }
-    const credential = req.headers.authorization?.replace(/^Bearer /, "") || "";
-    const actual = Buffer.from(credential);
-    const expected = Buffer.from(config.token);
-    const owner =
-      config.token &&
-      actual.length === expected.length &&
-      timingSafeEqual(actual, expected);
-    if (!owner && credential.startsWith("oct_key_")) {
-      try {
-        const key = await observatory.db.apiKeys.authenticate(credential);
-        const scope = requiredApiKeyScope(
-          req.method,
-          `/api${req.path.replace(/\/+$/, "")}`,
-        );
-        if (!scope || !key.scopes.includes(scope))
-          throw new ApiKeyError(
-            403,
-            "This API key does not permit this operation.",
-          );
-        res.locals.apiKeyId = key.id;
-      } catch (e) {
-        res.status(e instanceof ApiKeyError ? e.status : 401).json({
-          error: e instanceof ApiKeyError ? e.message : "Invalid API key.",
+  disputeReviewRoutes(
+    app,
+    new DisputeReviewService(stripeFunding),
+    accounts ? adminAccountAccess(accounts, store) : undefined,
+  );
+  if (accounts)
+    app.use("/api", accountAccess(accounts, store, observatory.db.apiKeys));
+  else
+    app.use("/api", async (req, res, next) => {
+      if (
+        !config.token &&
+        !["127.0.0.1", "localhost", "[::1]"].includes(req.hostname)
+      ) {
+        res.status(403).json({
+          error:
+            "Unrecognized local host. Set API_TOKEN when using a public hostname.",
         });
         return;
       }
-    } else if (!owner && config.token) {
-      res
-        .status(401)
-        .json({ error: "Enter the server access token to connect." });
-      return;
-    }
-    if (!["GET", "HEAD", "OPTIONS"].includes(req.method)) {
-      const origin = req.headers.origin;
       if (
-        origin &&
-        (() => {
-          try {
-            return new URL(origin).host !== req.headers.host;
-          } catch {
-            return true;
-          }
-        })()
+        config.token.length < 24 &&
+        (await observatory.db.apiKeys.hasIssuedKeys())
       ) {
-        res.status(403).json({ error: "Cross-origin writes are not allowed" });
+        res.status(503).json({
+          error:
+            "Scoped key access requires a workspace owner token of at least 24 characters. Restore owner access before using this workspace.",
+        });
         return;
       }
-      if (!req.is("application/json")) {
-        res.status(415).json({ error: "JSON content type required" });
+      const credential =
+        req.headers.authorization?.replace(/^Bearer /, "") || "";
+      const actual = Buffer.from(credential);
+      const expected = Buffer.from(config.token);
+      const owner =
+        config.token &&
+        actual.length === expected.length &&
+        timingSafeEqual(actual, expected);
+      if (!owner && credential.startsWith("oct_key_")) {
+        try {
+          const key = await observatory.db.apiKeys.authenticate(credential);
+          const scope = requiredApiKeyScope(
+            req.method,
+            `/api${req.path.replace(/\/+$/, "")}`,
+          );
+          if (!scope || !key.scopes.includes(scope))
+            throw new ApiKeyError(
+              403,
+              "This API key does not permit this operation.",
+            );
+          res.locals.apiKeyId = key.id;
+        } catch (e) {
+          res.status(e instanceof ApiKeyError ? e.status : 401).json({
+            error: e instanceof ApiKeyError ? e.message : "Invalid API key.",
+          });
+          return;
+        }
+      } else if (!owner && config.token) {
+        res
+          .status(401)
+          .json({ error: "Enter the server access token to connect." });
         return;
       }
-    }
-    next();
-  });
+      if (!["GET", "HEAD", "OPTIONS"].includes(req.method)) {
+        const origin = req.headers.origin;
+        if (
+          origin &&
+          (() => {
+            try {
+              return new URL(origin).host !== req.headers.host;
+            } catch {
+              return true;
+            }
+          })()
+        ) {
+          res
+            .status(403)
+            .json({ error: "Cross-origin writes are not allowed" });
+          return;
+        }
+        if (!req.is("application/json")) {
+          res.status(415).json({ error: "JSON content type required" });
+          return;
+        }
+      }
+      next();
+    });
   app.use("/api/observations", express.json({ limit: "160kb" }));
   app.use("/api/provider-lab/suites", express.json({ limit: "256kb" }));
   app.use(express.json({ limit: "24kb" }));
-  apiKeyRoutes(app, observatory.db.apiKeys);
+  apiKeyRoutes(app, observatory.db.apiKeys, !!accounts);
   observationRoutes(app, observatory);
   workspaceRoutes(app, observatory);
   fundingRoutes(app, funding, stripeFunding);

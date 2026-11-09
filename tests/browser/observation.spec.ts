@@ -388,6 +388,10 @@ test("workspace authentication clears old data and recovers without navigation",
   const s = await makeSession(request);
   const token = "OBSERVATION_TEST_TOKEN";
   await page.route("**/api/**", async (route) => {
+    if (new URL(route.request().url()).pathname === "/api/auth/config") {
+      await route.continue();
+      return;
+    }
     if (route.request().headers().authorization === `Bearer ${token}`)
       await route.continue();
     else
