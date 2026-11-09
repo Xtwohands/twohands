@@ -16,6 +16,9 @@ import { Input } from "./components/ui/input";
 import { InlineError } from "./observation-ui";
 import "./account.css";
 type AccountContext = {
+  authClient?: SupabaseClient | null;
+  sessionEpoch?: number;
+  verifyAdminMfa?: (factorId: string, code: string) => Promise<void>;
   enabled: boolean;
   profile?: AccountProfile;
   workspaceId: string;
@@ -161,8 +164,21 @@ export function AccountGate({ children }: { children: ReactNode }) {
     [route, setRoute] = useState(location.hash);
   const client = useRef<SupabaseClient | null>(null),
     currentSession = useRef<Session | null>(null),
+    sessionEpoch = useRef(0),
     version = useRef(0),
     creationKey = useRef(crypto.randomUUID());
+  const mfaAdoptions = useRef(
+    new Map<string, { epoch: number; userId: string }>(),
+  );
+  const memoryAuthStorage = useRef(new Map<string, string>());
+  const staleMfa = (token?: string) => {
+    const attempt = token && mfaAdoptions.current.get(token);
+    return (
+      !!attempt &&
+      (attempt.epoch !== sessionEpoch.current ||
+        attempt.userId !== currentSession.current?.user.id)
+    );
+  };
   const activeWorkspace = useRef("");
   const routedAccount = useRef("");
   const select = (id: string) => {
@@ -179,6 +195,7 @@ export function AccountGate({ children }: { children: ReactNode }) {
     } catch {}
   };
   const clear = () => {
+    sessionEpoch.current++;
     canPreviewRef.current = false;
     previewRef.current = null;
     targetRef.current = null;
@@ -331,6 +348,37 @@ export function AccountGate({ children }: { children: ReactNode }) {
           auth: {
             flowType: "pkce",
             persistSession: true,
+            // Fence only staged MFA adoption. The SDK otherwise persists a late
+            // setSession result even if the operator signed out during getUser.
+            storage: {
+              getItem: (key) => {
+                try {
+                  return localStorage.getItem(key);
+                } catch {
+                  return memoryAuthStorage.current.get(key) ?? null;
+                }
+              },
+              setItem: (key, value) => {
+                let token: string | undefined;
+                try {
+                  token = JSON.parse(value)?.access_token;
+                } catch {}
+                // Throw before SDK save/notification/broadcast, rather than
+                // silently skipping storage then allowing a stale SIGNED_IN.
+                if (staleMfa(token))
+                  throw new Error("Administrator verification was superseded.");
+                memoryAuthStorage.current.set(key, value);
+                try {
+                  localStorage.setItem(key, value);
+                } catch {}
+              },
+              removeItem: (key) => {
+                memoryAuthStorage.current.delete(key);
+                try {
+                  localStorage.removeItem(key);
+                } catch {}
+              },
+            },
             autoRefreshToken: true,
             detectSessionInUrl: true,
           },
@@ -338,6 +386,8 @@ export function AccountGate({ children }: { children: ReactNode }) {
         client.current = supabase;
         const apply = (value: Session | null) => {
           if (disposed) return;
+          if (currentSession.current?.access_token !== value?.access_token)
+            sessionEpoch.current++;
           const changed = currentSession.current?.user.id !== value?.user.id;
           if (changed) {
             version.current++;
@@ -355,6 +405,7 @@ export function AccountGate({ children }: { children: ReactNode }) {
           if (!value) setReady(true);
         };
         const { data } = supabase.auth.onAuthStateChange((event, value) => {
+          if (staleMfa(value?.access_token)) return;
           if (event === "PASSWORD_RECOVERY") setMode("recover");
           apply(value);
         });
@@ -406,6 +457,68 @@ export function AccountGate({ children }: { children: ReactNode }) {
   const publicPage =
     !location.pathname.startsWith("/research") && (!route || route === "#home");
   const context: AccountContext = {
+    authClient: client.current,
+    sessionEpoch: sessionEpoch.current,
+    verifyAdminMfa: async (factorId, code) => {
+      const source = currentSession.current;
+      const epoch = sessionEpoch.current;
+      const main = client.current;
+      if (!source || !main || !config?.enabled)
+        throw new Error("Sign in again.");
+      const current = () =>
+        epoch === sessionEpoch.current &&
+        currentSession.current?.user.id === source.user.id;
+      const { createClient } = await import("@supabase/supabase-js");
+      if (!current()) return;
+      // Challenge/verify must not persist into the main browser session. Adopt
+      // only a still-current result, fencing both storage and auth callbacks.
+      const isolated = createClient(config.url, config.publishableKey, {
+        auth: {
+          persistSession: false,
+          autoRefreshToken: false,
+          detectSessionInUrl: false,
+          storageKey: `octolab-mfa-${crypto.randomUUID()}`,
+        },
+      });
+      try {
+        const seeded = await isolated.auth.setSession({
+          access_token: source.access_token,
+          refresh_token: source.refresh_token,
+        });
+        if (!current()) return;
+        if (seeded.error) throw seeded.error;
+        const verified = await isolated.auth.mfa.challengeAndVerify({
+          factorId,
+          code,
+        });
+        if (!current()) return;
+        if (verified.error) throw verified.error;
+        const token = verified.data.access_token;
+        const claims = JSON.parse(
+          atob(token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/")),
+        ) as { sub?: string; exp?: number };
+        if (
+          claims.sub !== source.user.id ||
+          !claims.exp ||
+          claims.exp * 1000 < Date.now() + 60000
+        )
+          throw new Error(
+            "Repeat administrator verification with a current session.",
+          );
+        mfaAdoptions.current.set(token, { epoch, userId: source.user.id });
+        try {
+          const adopted = await main.auth.setSession({
+            access_token: token,
+            refresh_token: verified.data.refresh_token,
+          });
+          if (adopted.error && current()) throw adopted.error;
+        } finally {
+          mfaAdoptions.current.delete(token);
+        }
+      } finally {
+        isolated.auth.stopAutoRefresh();
+      }
+    },
     enabled: !!config?.enabled,
     profile,
     workspaceId,
@@ -445,7 +558,19 @@ export function AccountGate({ children }: { children: ReactNode }) {
     select,
     signOut,
     refresh: async () => {
-      if (currentSession.current) await loadProfile(currentSession.current);
+      const started = version.current;
+      const userId = currentSession.current?.user.id;
+      const fresh = await client.current?.auth.getSession();
+      if (
+        started !== version.current ||
+        currentSession.current?.user.id !== userId
+      )
+        return;
+      const value = fresh?.data.session ?? currentSession.current;
+      if (value) {
+        currentSession.current = value;
+        await loadProfile(value);
+      }
     },
     create: () => {
       creationKey.current = crypto.randomUUID();

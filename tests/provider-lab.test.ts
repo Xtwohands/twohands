@@ -771,3 +771,34 @@ it("preserves cancellation and review during concurrent provider settlement", as
     release();
   }
 });
+
+it("retains settings exclusion when the response read fails after background admission", async () => {
+  const { settingsWrite } = await import("../server/provider-settings-gate");
+  let release!: () => void,
+    started = false;
+  const gate = new Promise<void>((r) => (release = r));
+  const execute = vi
+    .spyOn(
+      lab as unknown as { execute: (id: string) => Promise<void> },
+      "execute",
+    )
+    .mockImplementation(async () => {
+      started = true;
+      await gate;
+    });
+  vi.spyOn(lab, "get").mockRejectedValueOnce(
+    new Error("Fixture response read failure"),
+  );
+  await expect(
+    lab.start({ requestKey: "failed-response-read", providers: ["exa"] }),
+  ).rejects.toThrow("Fixture response read failure");
+  expect(started).toBe(true);
+  await expect(settingsWrite(async () => 42)).rejects.toMatchObject({
+    status: 409,
+  });
+  release();
+  await vi.waitFor(() => expect(execute.mock.results[0]?.type).toBe("return"));
+  await vi.waitFor(async () =>
+    expect(await settingsWrite(async () => 42)).toBe(42),
+  );
+});

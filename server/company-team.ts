@@ -22,6 +22,7 @@ export class CompanyTeam {
     id: string,
     client: Pick<PoolClient, "query"> = this.pool,
   ) {
+    if (this.accounts.isAdmin(identity.userId)) this.accounts.assertAdmin(identity);
     const preview = this.accounts.previewsCompany(identity, id);
     if (!z.uuid().safeParse(id).success)
       throw new AccountError(404, "Company not found.");

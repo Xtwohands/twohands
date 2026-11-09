@@ -41,6 +41,7 @@ export class Companies {
   async previewTargets(
     identity: VerifiedIdentity,
   ): Promise<CompanyPreviewTarget[]> {
+    this.accounts.assertAdmin(identity, true);
     if (!this.accounts.isPlatformAdmin(identity.userId))
       throw new AccountError(
         403,
@@ -102,6 +103,7 @@ export class Companies {
     ).rows;
   }
   async get(identity: VerifiedIdentity, id: string): Promise<ToolCompany> {
+    if (this.accounts.isAdmin(identity.userId)) this.accounts.assertAdmin(identity);
     const preview = this.accounts.previewsCompany(identity, id);
     if (!z.uuid().safeParse(id).success)
       throw new AccountError(404, "Company not found.");
@@ -244,6 +246,7 @@ export class Companies {
     }
   }
   private admin(identity: VerifiedIdentity) {
+    this.accounts.assertAdmin(identity);
     if (!this.accounts.isAdmin(identity.userId))
       throw new AccountError(403, "Platform administrator access is required.");
   }

@@ -62,6 +62,8 @@ suite("authenticated account and tenant boundaries", () => {
         email: name + "@fixture.invalid",
         sessionId: randomUUID(),
         expiresAt: Date.now() + 3600000,
+        aal: "aal2" as const,
+        mfaVerified: true,
       };
       identities.set("fixture-" + name, identity);
       await db.pool.query(

@@ -1,3 +1,4 @@
+import { providerWork } from "./provider-settings-gate.js";
 import {
   applyOperatorAllowance,
   operatorAllows,
@@ -17,7 +18,7 @@ import {
   toolCapabilities,
   providerSelectionGuidance,
 } from "./provider-capabilities.js";
-import { config, providerEstimate } from "./config.js";
+import { config, providerRpm, providerEstimate } from "./config.js";
 import { search, scrape, ProviderError } from "./providers.js";
 import { publicEvidenceUrl } from "./url-policy.js";
 import { digest, ObservationStore } from "./observation-store.js";
@@ -455,7 +456,9 @@ export class Observatory {
             controlled: controlled[provider] ?? null,
           },
           ...toolCapabilities[tool],
-          available: providerRegistry.credentialStatus(tool).configured,
+          available:
+            providerRegistry.credentialStatus(tool).configured &&
+            providerRegistry.credentialStatus(tool).enabled,
           adapterVersion: providerRegistry.get(tool).version,
           operatorAllowance,
           operatorAllowed: operatorAllows(
@@ -579,6 +582,9 @@ export class Observatory {
     };
   }
   async execute(id: string, raw: unknown, apiKeyId?: string) {
+    return providerWork(() => this.executeCurrent(id, raw, apiKeyId));
+  }
+  private async executeCurrent(id: string, raw: unknown, apiKeyId?: string) {
     const input = legacyCallInput.parse(raw);
     if (apiKeyId) await this.db.apiKeys.toolAccess(apiKeyId, input.tool);
     const adapter = providerRegistry.get(input.tool);
@@ -654,6 +660,11 @@ export class Observatory {
           409,
           "Approve the recorded intent and budget in APILayer before calling providers.",
         );
+      if (!providerRegistry.credentialStatus(input.tool).enabled)
+        throw new ObservationError(
+          409,
+          "This provider is disabled or unavailable on the server.",
+        );
       if (!providerRegistry.credentialStatus(input.tool).configured)
         throw new ObservationError(
           409,
@@ -669,7 +680,7 @@ export class Observatory {
         provider,
         (this.timestamps.get(provider) || []).filter((t) => now - t < 60000),
       );
-      if (this.timestamps.get(provider)!.length >= config.rpm)
+      if (this.timestamps.get(provider)!.length >= providerRpm(provider))
         throw new ObservationError(
           429,
           "Provider request limit reached. Try later with the same request key.",

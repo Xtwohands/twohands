@@ -3,6 +3,7 @@ import type { Express, Request, Response } from "express";
 import { z } from "zod";
 import { randomUUID } from "node:crypto";
 import { ObservationError } from "./observation.js";
+import { SettingsBusyError } from "./provider-settings-gate.js";
 import type { ProviderLab } from "./provider-lab.js";
 export function providerLabRoutes(app: Express, lab: ProviderLab) {
   const route =
@@ -21,7 +22,10 @@ export function providerLabRoutes(app: Express, lab: ProviderLab) {
           res
             .status(400)
             .json({ error: e.issues.map((i) => i.message).join("; ") });
-        else if (e instanceof ObservationError)
+        else if (
+          e instanceof ObservationError ||
+          e instanceof SettingsBusyError
+        )
           res.status(e.status).json({ error: e.message });
         else
           res.status(500).json({

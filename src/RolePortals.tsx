@@ -1,4 +1,5 @@
 import { AdminNavigation } from "./AdminNavigation";
+import { AdminMfa } from "./AdminMfa";
 import { CompanyTeamView } from "./CompanyTeamView";
 import {
   CompanyDashboard,
@@ -887,6 +888,7 @@ export function AccountSettings() {
           <p>Manage your account and product access.</p>
         </div>
       </div>
+      <AdminMfa />
       {canPreview && (
         <Panel
           title="Preview as"

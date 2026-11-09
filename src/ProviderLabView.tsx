@@ -60,6 +60,7 @@ export interface LabOverview {
   providers: {
     id: ProviderId;
     configured: boolean;
+    enabled?: boolean;
     estimateMicros: number;
     plannedCalls: number;
   }[];
@@ -181,7 +182,9 @@ export function ProviderLabView({
           setData(d);
           if (!initializedProviders.current) {
             setProviders(
-              d.providers.filter((p) => p.configured).map((p) => p.id),
+              d.providers
+                .filter((p) => p.configured && p.enabled !== false)
+                .map((p) => p.id),
             );
             initializedProviders.current = true;
           }
@@ -300,7 +303,9 @@ export function ProviderLabView({
           .filter((p) => providers.includes(p.id))
           .reduce((n, p) => n + p.estimateMicros * plannedCalls(p.id), 0) ?? 0);
   const unavailable = data?.providers.some(
-    (p) => providers.includes(p.id) && (!p.configured || !plannedCalls(p.id)),
+    (p) =>
+      providers.includes(p.id) &&
+      (!p.configured || p.enabled === false || !plannedCalls(p.id)),
   );
   const running = data?.runs.some((r) => r.status === "running");
   const receipt = run?.calls.find((c) => c.id === receiptId);
@@ -357,6 +362,7 @@ export function ProviderLabView({
                       .filter(
                         (p) =>
                           p.configured &&
+                          p.enabled !== false &&
                           suite?.cases.some((c) =>
                             p.id === "firecrawl"
                               ? c.kind === "extract"
@@ -478,6 +484,7 @@ export function ProviderLabView({
                           busy ||
                           !!running ||
                           !p.configured ||
+                          p.enabled === false ||
                           !plannedCalls(p.id)
                         }
                         checked={providers.includes(p.id)}
@@ -493,9 +500,11 @@ export function ProviderLabView({
                       <span>
                         <strong>{providerNames[p.id]}</strong>
                         <small>
-                          {p.configured
-                            ? `${plannedCalls(p.id)} calls · ${money(p.estimateMicros * plannedCalls(p.id))} estimated`
-                            : "Not configured on backend"}
+                          {p.enabled === false
+                            ? "Paused or unavailable"
+                            : p.configured
+                              ? `${plannedCalls(p.id)} calls · ${money(p.estimateMicros * plannedCalls(p.id))} estimated`
+                              : "Not configured on backend"}
                         </small>
                       </span>
                       <Badge variant="outline">
@@ -966,6 +975,7 @@ export function ProviderLabView({
                     .filter(
                       (p) =>
                         p.configured &&
+                        p.enabled !== false &&
                         suite.cases.some((c) =>
                           p.id === "firecrawl"
                             ? c.kind === "extract"
