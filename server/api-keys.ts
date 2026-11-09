@@ -143,7 +143,13 @@ export class ApiKeyService {
       keyId: current.id,
       type,
       at: new Date(this.now()).toISOString(),
-      actor: "workspace_owner_credential",
+      actor:
+        this.store.actorScope.getStore()?.kind === "account"
+          ? "authenticated_account"
+          : "workspace_owner_credential",
+      ...(this.store.actorScope.getStore()?.kind === "account"
+        ? { actorId: this.store.actorScope.getStore()!.id }
+        : {}),
       previous,
       current,
     };

@@ -1,3 +1,4 @@
+import { Accounts } from "./accounts.js";
 import { config } from "./config.js";
 import { PostgresDatabase } from "./database.js";
 import { claimRuntime } from "./migration.js";
@@ -7,7 +8,8 @@ import { createApp } from "./app.js";
 import { Observatory } from "./observation.js";
 if (
   !["127.0.0.1", "localhost", "::1"].includes(config.host) &&
-  config.token.length < 24
+  config.token.length < 24 &&
+  config.storageBackend !== "postgres"
 )
   throw new Error(
     "Set API_TOKEN to at least 24 characters before binding beyond loopback.",
@@ -25,23 +27,36 @@ const releaseRuntime =
   store.db instanceof PostgresDatabase
     ? await claimRuntime(store.db)
     : undefined;
-if (store.db instanceof PostgresDatabase) {
-  const legacy = await store.db.pool.query(
-    "SELECT id FROM octolab.workspaces WHERE id=$1",
-    [store.legacyWorkspaceId],
-  );
-  if (!legacy.rowCount)
-    throw new Error(
-      "Legacy workspace was not found. Complete and verify the explicit import before cutover.",
-    );
-}
-await store.recover();
+
 const engine = new Engine(store);
 const observatory = new Observatory(store, undefined, engine.timestamps);
 await observatory.ready;
-await observatory.db.recover();
-const app = createApp(store, engine, observatory);
-await app.locals.providerLab.recover();
+const accounts =
+  store.db instanceof PostgresDatabase ? new Accounts(store) : undefined;
+const app = createApp(
+  store,
+  engine,
+  observatory,
+  undefined,
+  undefined,
+  undefined,
+  accounts,
+);
+const workspaceIds =
+  store.db instanceof PostgresDatabase
+    ? (
+        await store.db.pool.query(
+          "SELECT id FROM octolab.workspaces ORDER BY id",
+        )
+      ).rows.map((r) => String(r.id))
+    : [store.legacyWorkspaceId];
+for (const id of workspaceIds)
+  await store.scope.run(id, async () => {
+    await store.recover();
+    await observatory.db.applySharingPolicy();
+    await observatory.db.recover();
+    await app.locals.providerLab.recover();
+  });
 const server = app.listen(config.port, config.host, () =>
   console.log(
     `APILayer listening at http://${config.host}:${config.port}; provider credentials stay on the server.`,

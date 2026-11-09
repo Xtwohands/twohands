@@ -12,6 +12,10 @@ export class StorageConflict extends Error {
 export class Store {
   db: Database;
   readonly scope = new AsyncLocalStorage<string>();
+  readonly actorScope = new AsyncLocalStorage<{
+    kind: "account" | "api_key";
+    id: string;
+  }>();
   readonly legacyWorkspaceId: string;
   get workspaceId() {
     return this.scope.getStore() ?? this.legacyWorkspaceId;

@@ -131,7 +131,17 @@ const EVENTS = new Set([
   "charge.dispute.created",
   "charge.dispute.closed",
 ]);
+export interface WebhookIdentity {
+  eventId: string;
+  depositId: string;
+  sessionId: string;
+  paymentId: string;
+  chargeId: string;
+}
 export class StripeFundingService {
+  workspaceForWebhook?: (
+    identity: WebhookIdentity,
+  ) => Promise<string | undefined>;
   readonly active = new Map<string, Promise<StripeDeposit>>();
   readonly creating = new Map<string, Promise<StripeDeposit>>();
   private manualChecks = new Map<string, number>();
@@ -516,6 +526,55 @@ export class StripeFundingService {
     }
     if (event.livemode || !event.id.startsWith("evt_"))
       throw new FundingError(400, "Only Stripe test-mode events are accepted.");
+    if (this.workspaceForWebhook) {
+      if (!EVENTS.has(event.type)) return { received: true, ignored: true };
+      const object = event.data.object as unknown as Record<string, unknown>;
+      const identity: WebhookIdentity = {
+        eventId: event.id,
+        depositId: String(
+          (object.metadata as Record<string, string> | undefined)
+            ?.octolab_deposit_id || "",
+        ),
+        sessionId:
+          typeof object.id === "string" && object.id.startsWith("cs_test_")
+            ? object.id
+            : "",
+        paymentId:
+          typeof object.payment_intent === "string"
+            ? object.payment_intent
+            : "",
+        chargeId:
+          typeof object.charge === "string"
+            ? object.charge
+            : typeof object.id === "string" && object.id.startsWith("ch_")
+              ? object.id
+              : "",
+      };
+      let workspace = await this.workspaceForWebhook(identity);
+      if (
+        !workspace &&
+        event.type.startsWith("charge.") &&
+        /^pi_/.test(identity.paymentId)
+      ) {
+        const payment = z
+          .object({ id: z.string(), livemode: z.literal(false), metadata })
+          .parse(await this.gateway.payment(identity.paymentId));
+        if (payment.id !== identity.paymentId)
+          throw new FundingError(
+            502,
+            "Stripe returned a different payment identity.",
+          );
+        identity.depositId = payment.metadata?.octolab_deposit_id || "";
+        workspace = await this.workspaceForWebhook(identity);
+      }
+      if (!workspace) return { received: true, ignored: true };
+      return this.funding.store.scope.run(workspace, () =>
+        this.webhookEvent(event),
+      );
+    }
+    return this.webhookEvent(event);
+  }
+  private async webhookEvent(event: Stripe.Event) {
     if (
       await this.funding.store.db
         .prepare("SELECT id FROM stripe_webhook_receipts WHERE id=?")

@@ -1,3 +1,4 @@
+import { useAccount } from "./AccountGate";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
@@ -1610,6 +1611,7 @@ function ConnectionView({
   connection?: Connection;
   catalog: Catalog;
 }) {
+  const account = useAccount();
   const [client, setClient] = useState("codex");
   const command =
     client === "other"
@@ -1754,8 +1756,10 @@ function ConnectionView({
           ))}
         </div>
         <div className="ws-panel-note">
-          Missing a provider? Set its API key in the server environment, then
-          restart the server.<Go section="routing">Manage routing</Go>
+          {account.enabled && !account.profile?.isAdmin
+            ? "Provider availability is managed by octolab. Your API keys connect agents to this workspace."
+            : "Missing a provider? Set its API key in the server environment, then restart the server."}
+          <Go section="routing">Manage routing</Go>
         </div>
       </Section>
     </>

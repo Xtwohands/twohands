@@ -70,6 +70,7 @@ export class PostgresDatabase implements Database {
   readonly dialect = "postgres";
   readonly pool: pg.Pool;
   private current = new AsyncLocalStorage<PoolClient>();
+  private roleCheck?: Promise<void>;
   constructor(
     url: string,
     private workspaceId: () => string,
@@ -112,6 +113,32 @@ export class PostgresDatabase implements Database {
     const id = this.workspaceId();
     const client = await this.pool.connect();
     try {
+      this.roleCheck ??= client
+        .query(
+          "SELECT rolname,rolsuper,rolbypassrls,rolcanlogin,rolcreaterole,rolcreatedb FROM pg_roles WHERE rolname='octolab_runtime'",
+        )
+        .then(async (result) => {
+          const role = result.rows[0];
+          if (
+            !role ||
+            role.rolsuper ||
+            role.rolbypassrls ||
+            role.rolcanlogin ||
+            role.rolcreaterole ||
+            role.rolcreatedb
+          )
+            throw new Error(
+              "Unsafe database runtime role. Review PostgreSQL migrations before serving requests.",
+            );
+          const inherited = await client.query(
+            "SELECT 1 FROM pg_auth_members WHERE member=(SELECT oid FROM pg_roles WHERE rolname='octolab_runtime') LIMIT 1",
+          );
+          if (inherited.rowCount)
+            throw new Error(
+              "The database runtime role must not inherit other roles.",
+            );
+        });
+      await this.roleCheck;
       await client.query("BEGIN");
       await client.query("SET LOCAL ROLE octolab_runtime");
       await client.query("SET LOCAL search_path TO octolab, pg_catalog");
