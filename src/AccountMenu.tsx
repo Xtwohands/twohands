@@ -39,7 +39,7 @@ export function AccountMenu({
         <Popover.Trigger
           ref={trigger}
           className="account-menu-trigger"
-          aria-label="Account menu"
+          aria-label={`Account menu: ${label}${detail ? ` ${detail}` : ""}`}
         >
           <span className="account-menu-avatar" aria-hidden="true">
             <User01 />

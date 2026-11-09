@@ -16,8 +16,7 @@ test("account menu opens upward, restores focus, and keeps settings reachable lo
     ).toBeHidden();
   }
   const trigger = page.getByRole("button", {
-    name: "Account menu",
-    exact: true,
+    name: /^Account menu:/,
   });
   await trigger.click();
   const menu = page.getByRole("dialog", { name: "Account options" });
@@ -51,8 +50,7 @@ test("help opens inside the app and returns keyboard focus to the account contro
     await page.getByRole("button", { name: "Open navigation" }).click();
   }
   const trigger = page.getByRole("button", {
-    name: "Account menu",
-    exact: true,
+    name: /^Account menu:/,
   });
   await trigger.click();
   await page
