@@ -83,13 +83,11 @@ describe("administrator role preview", () => {
     expect(accounts.isAdmin("admin")).toBe(true);
     expect(
       (
-        await request(app)
-          .get("/observations")
-          .set({
-            authorization: "admin",
-            "X-Octolab-Preview": "user",
-            "X-Octolab-Workspace": "other",
-          })
+        await request(app).get("/observations").set({
+          authorization: "admin",
+          "X-Octolab-Preview": "user",
+          "X-Octolab-Workspace": "other",
+        })
       ).status,
     ).toBe(403);
   });
