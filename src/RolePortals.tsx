@@ -1,5 +1,10 @@
 import { AdminNavigation } from "./AdminNavigation";
 import { CompanyTeamView } from "./CompanyTeamView";
+import {
+  CompanyDashboard,
+  companyDashboardLinks,
+  companyDashboardSection,
+} from "./CompanyDashboard";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ArrowRight, Settings01, Menu01, XClose } from "@untitledui/icons";
 import { useAccount, AccountControls } from "./AccountGate";
@@ -138,66 +143,66 @@ export function CompanyPortal(props: { id?: string; section: string }) {
         </Panel>
       </PortalShell>
     );
-  return target?.kind === "provider" ? (
-    <IntegratedProviderPreview key={target.target} target={target} />
-  ) : (
-    <RegisteredCompanyPortal {...props} />
-  );
-}
-function InsightValues({
-  insights,
-  error,
-}: {
-  insights?: CompanyInsights;
-  error?: string;
-}) {
-  if (error) return <InlineError message={error} />;
-  if (!insights) return <p role="status">Loading live insights…</p>;
-  if (insights.status === "awaiting_release")
+  const selected =
+    account.profile?.companies.find((company) => company.id === props.id) ??
+    account.profile?.companies[0];
+  if (target?.kind === "provider")
     return (
-      <p>
-        Your integration is approved. Aggregate data access is awaiting review.
-      </p>
+      <CompanyDashboardPortal
+        key={target.target}
+        target={target}
+        section={props.section}
+      />
     );
-  if (insights.status === "insufficient_data")
+  if (
+    selected &&
+    props.id !== "new" &&
+    !["team", "details"].includes(props.section)
+  )
     return (
-      <p>
-        No report available yet. At least {insights.minimumCohort} independent
-        workspaces must contribute eligible usage before metrics appear.
-      </p>
+      <CompanyDashboardPortal
+        key={selected.id}
+        initialCompany={selected}
+        section={props.section}
+      />
     );
-  if (!insights.metrics) return <p>No recorded metrics are available.</p>;
-  const labels: Record<string, string> = {
-    offeredSessions: "Sessions offered your tool",
-    selectedSessions: "Sessions using your tool",
-    calls: "Completed calls",
-    successfulCalls: "Successful calls",
-  };
-  return (
-    <div className="summary-grid">
-      {Object.entries(insights.metrics).map(([key, value]) => (
-        <div key={key}>
-          <span>{labels[key]}</span>
-          <strong>{value}</strong>
-        </div>
-      ))}
-    </div>
-  );
+  return <RegisteredCompanyPortal {...props} />;
 }
-function IntegratedProviderPreview({
+function CompanyDashboardPortal({
   target,
+  initialCompany,
+  section,
 }: {
-  target: CompanyPreviewTarget;
+  target?: CompanyPreviewTarget;
+  initialCompany?: ToolCompany;
+  section: string;
 }) {
+  const account = useAccount();
+  const [company, setCompany] = useState(initialCompany);
   const [insights, setInsights] = useState<CompanyInsights>();
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [revision, setRevision] = useState(0);
+  const id = initialCompany?.id ?? target!.id;
   useEffect(() => {
     let active = true;
+    setInsights(undefined);
+    setError("");
     const refresh = async () => {
+      if (active) setLoading(true);
       try {
-        const value = await api<CompanyInsights>("/auth/preview-insights");
+        const current = initialCompany
+          ? await api<ToolCompany>(`/companies/${id}`)
+          : undefined;
+        if (!active) return;
+        setCompany(current);
+        const data = current
+          ? current.status === "approved" && current.providerId
+            ? await api<CompanyInsights>(`/companies/${id}/insights`)
+            : undefined
+          : await api<CompanyInsights>("/auth/preview-insights");
         if (active) {
-          setInsights(value);
+          setInsights(data);
           setError("");
         }
       } catch (e) {
@@ -205,6 +210,8 @@ function IntegratedProviderPreview({
           setInsights(undefined);
           setError((e as Error).message);
         }
+      } finally {
+        if (active) setLoading(false);
       }
     };
     void refresh();
@@ -213,42 +220,32 @@ function IntegratedProviderPreview({
       active = false;
       clearInterval(timer);
     };
-  }, [target.target]);
+  }, [id, revision, initialCompany?.status, initialCompany?.revision]);
+  const canManage =
+    company?.role === "owner" || company?.role === "platform_admin";
   return (
     <PortalShell
       area="company"
-      title={target.name}
-      links={[
-        {
-          href: `#company/${target.id}/insights`,
-          label: "Tool insights",
-          selected: true,
-        },
-      ]}
+      title={company?.name ?? target?.name ?? "Tool company"}
+      links={companyDashboardLinks(
+        id,
+        companyDashboardSection(section),
+        !!initialCompany,
+        canManage,
+      )}
     >
-      <div className="page-heading">
-        <div>
-          <h1>{target.name} tool insights</h1>
-          <p>Live recorded activity for this integrated provider.</p>
-        </div>
-      </div>
-      <Panel
-        title="Integrated provider"
-        description="No company registration or owner account has been created for this integration."
-        action={<span className="portal-status">Unregistered</span>}
-      >
-        <p>
-          This is a read-only provider preview. It does not verify a company or
-          grant membership. Metrics use recorded organic activity and the same
-          privacy thresholds as company dashboards.
-        </p>
-      </Panel>
-      <Panel
-        title="Your tool’s performance"
-        description="Live aggregate activity across eligible workspaces. Customer prompts, outputs, and individual sessions are never included."
-      >
-        <InsightValues insights={insights} error={error} />
-      </Panel>
+      <CompanyDashboard
+        id={id}
+        name={company?.name ?? target?.name ?? "Tool company"}
+        providerId={company?.providerId ?? target?.providerId ?? null}
+        company={company}
+        section={section}
+        insights={insights}
+        loading={loading}
+        error={error}
+        refresh={() => setRevision((value) => value + 1)}
+        companies={account.profile?.companies}
+      />
     </PortalShell>
   );
 }
@@ -265,7 +262,6 @@ function RegisteredCompanyPortal({
   const [editing, setEditing] = useState(false);
   const registering = id === "new" || !companies.length || editing;
   const [company, setCompany] = useState<ToolCompany | undefined>(selected);
-  const [insights, setInsights] = useState<CompanyInsights>();
   const [error, setError] = useState(""),
     [notice, setNotice] = useState(""),
     [busy, setBusy] = useState(false);
@@ -276,18 +272,12 @@ function RegisteredCompanyPortal({
     description: "",
   });
   const requestKey = useRef(crypto.randomUUID());
-  const tab =
-    section === "team"
-      ? "team"
-      : section === "insights"
-        ? "insights"
-        : "overview";
+  const tab = section === "team" ? "team" : "overview";
   const canManage =
     company?.role === "owner" || company?.role === "platform_admin";
   useEffect(() => {
     let active = true;
     setError("");
-    setInsights(undefined);
     if (registering || !selected) return;
     setCompany(selected);
     const refresh = async () => {
@@ -295,16 +285,9 @@ function RegisteredCompanyPortal({
         const value = await api<ToolCompany>(`/companies/${selected.id}`);
         if (!active) return;
         setCompany(value);
-        if (value.status === "approved" && tab === "insights") {
-          const data = await api<CompanyInsights>(
-            `/companies/${value.id}/insights`,
-          );
-          if (active) setInsights(data);
-        }
       } catch (e) {
         if (active) {
           setCompany(undefined);
-          setInsights(undefined);
           setError((e as Error).message);
         }
       }
@@ -319,25 +302,12 @@ function RegisteredCompanyPortal({
   const links = registering
     ? [{ href: "#company/new", label: "Register company", selected: true }]
     : [
-        {
-          href: `#company/${selected!.id}/overview`,
-          label: "Overview",
-          selected: tab === "overview",
-        },
-        {
-          href: `#company/${selected!.id}/insights`,
-          label: "Tool insights",
-          selected: tab === "insights",
-        },
-        ...(canManage
-          ? [
-              {
-                href: `#company/${selected!.id}/team`,
-                label: "Company team",
-                selected: tab === "team",
-              },
-            ]
-          : []),
+        ...companyDashboardLinks(
+          selected!.id,
+          section === "team" ? "team" : "details",
+          true,
+          canManage,
+        ),
         ...(!account.previewRole
           ? [
               {
@@ -365,9 +335,7 @@ function RegisteredCompanyPortal({
                 : "Bring your tool to octolab"
               : tab === "team"
                 ? "Company team"
-                : tab === "insights"
-                  ? "Tool insights"
-                  : (company?.name ?? "Company overview")}
+                : (company?.name ?? "Company overview")}
           </h1>
           <p>
             {registering
@@ -586,21 +554,7 @@ function RegisteredCompanyPortal({
                   </dl>
                 </Panel>
               </>
-            ) : (
-              <Panel
-                title="Your tool’s performance"
-                description="Aggregate activity across eligible workspaces. Customer prompts, outputs, and individual sessions are never included."
-              >
-                {company.status !== "approved" ? (
-                  <p>
-                    Insights will become available after your company and
-                    integration are approved.
-                  </p>
-                ) : (
-                  <InsightValues insights={insights} />
-                )}
-              </Panel>
-            )}
+            ) : null}
           </>
         )
       )}

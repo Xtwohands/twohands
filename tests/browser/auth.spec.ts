@@ -243,7 +243,7 @@ async function mockAuth(
   });
   const company = {
     id: "00000000-0000-4000-8000-000000000051",
-    name: "Fixture tools",
+    name: "Fixture tools dashboard",
     website: "https://tools.fixture.invalid",
     toolName: "Fixture search",
     description: "Search integration for fixture evidence.",
@@ -504,7 +504,7 @@ test("tool company registration never forces a customer workspace or exposes the
     .fill("Search integration for fixture evidence.");
   await page.getByRole("button", { name: "Submit for review" }).click();
   await expect(
-    page.getByRole("heading", { name: "Fixture tools" }),
+    page.getByRole("heading", { name: "Fixture tools dashboard" }),
   ).toBeVisible();
   await expect(page.getByText("Under review", { exact: true })).toBeVisible();
   await captureJourney(page, "company-pending");
@@ -515,11 +515,9 @@ test("tool company registration never forces a customer workspace or exposes the
   await expect(
     page.getByRole("link", { name: "API keys", exact: true }),
   ).toHaveCount(0);
-  await page.getByRole("link", { name: "Tool insights", exact: true }).click();
+  await page.getByRole("link", { name: "Live usage", exact: true }).click();
   await expect(
-    page.getByText(
-      "Insights will become available after your company and integration are approved.",
-    ),
+    page.getByRole("heading", { name: "No usage available yet", exact: true }),
   ).toBeVisible();
   await openNav(page);
   await page.getByRole("link", { name: "Company team", exact: true }).click();
@@ -537,7 +535,7 @@ test("tool company registration never forces a customer workspace or exposes the
     page.getByText("teammate@fixture.invalid", { exact: true }),
   ).toHaveCount(0);
   await openNav(page);
-  await page.getByRole("link", { name: "Tool insights", exact: true }).click();
+  await page.getByRole("link", { name: "Live usage", exact: true }).click();
   state.companies[0] = {
     ...state.companies[0],
     status: "approved",
@@ -545,11 +543,13 @@ test("tool company registration never forces a customer workspace or exposes the
     insightsEnabled: true,
   };
   await page.reload();
-  await expect(page.getByText(/No report available yet/)).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "No usage available yet", exact: true }),
+  ).toBeVisible();
   await captureJourney(page, "company-approved-no-cohort");
   state.companies[0].status = "rejected";
   state.companies[0].revision = 1;
-  await page.goto("/#company/" + state.companies[0].id + "/overview");
+  await page.goto("/#company/" + state.companies[0].id + "/details");
   await page
     .getByRole("button", { name: "Update registration", exact: true })
     .click();
@@ -564,9 +564,7 @@ test("tool company registration never forces a customer workspace or exposes the
   await page.goto("/#company/" + state.companies[0].id + "/insights");
   await page.reload();
   await expect(
-    page.getByText(
-      "Insights will become available after your company and integration are approved.",
-    ),
+    page.getByRole("heading", { name: "No usage available yet", exact: true }),
   ).toBeVisible();
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
 });
@@ -631,14 +629,16 @@ test("administrator previews standard roles from settings and can always return"
   await page.getByLabel("Company to preview").selectOption("provider:exa");
   await page.getByRole("button", { name: "Open company preview" }).click();
   await expect(
-    page.getByRole("heading", { name: "Exa tool insights" }),
+    page.getByRole("heading", { name: "Exa dashboard" }),
   ).toBeVisible();
   await expect(
     page.getByText("Previewing company", { exact: true }),
   ).toBeVisible();
-  await expect(page.getByText("Unregistered", { exact: true })).toBeVisible();
   await expect(
-    page.getByText(/At least 5 independent workspaces/),
+    page.getByText("Provider preview", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "No usage available yet", exact: true }),
   ).toBeVisible();
   await expect(page.getByText("Your areas", { exact: true })).toHaveCount(0);
   await captureJourney(page, "role-preview-company");
@@ -736,9 +736,7 @@ test("admin switches selected companies, drops late reports, and retains return 
   release();
   await expect(page.getByText("987654", { exact: true })).toHaveCount(0);
   await expect(
-    page.getByText(
-      "Insights will become available after your company and integration are approved.",
-    ),
+    page.getByRole("heading", { name: "No usage available yet", exact: true }),
   ).toBeVisible();
   await page.goto(`/#company/${b.id}/overview`);
   await expect(
@@ -756,10 +754,10 @@ test("admin switches selected companies, drops late reports, and retains return 
     .getByLabel("Preview company", { exact: true })
     .selectOption("provider:tavily");
   await expect(
-    page.getByRole("heading", { name: "Tavily tool insights" }),
+    page.getByRole("heading", { name: "Tavily dashboard" }),
   ).toBeVisible();
   await expect(
-    page.getByText(/At least 5 independent workspaces/),
+    page.getByRole("heading", { name: "No usage available yet", exact: true }),
   ).toBeVisible();
   await captureJourney(page, "company-preview-provider");
   await expect(page.locator("body")).not.toContainText("987654");
