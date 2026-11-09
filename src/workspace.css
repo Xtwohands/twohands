@@ -37,7 +37,7 @@
   cursor: pointer;
 }
 .ws-select select:focus-visible {
-  outline: 2px solid #a8b4cf;
+  outline: 2px solid var(--ring);
   outline-offset: 2px;
 }
 .ws-connect-banner {
@@ -409,7 +409,7 @@
   background: #e49292;
 }
 .ws-status-running > span {
-  background: #a8b4cf;
+  background: #bdbdbb;
 }
 .ws-status-interrupted {
   color: #b9b9b9;
@@ -515,7 +515,7 @@
 }
 .ws-category-tabs button[aria-pressed="true"] {
   color: #eee;
-  border-bottom-color: #a8b4cf;
+  border-bottom-color: #bdbdbb;
 }
 .ws-category-tabs span {
   background: #2b2b2b;
@@ -988,9 +988,9 @@
   color: #aaa;
 }
 .ws-client-picker button[aria-pressed="true"] {
-  border-color: #a8b4cf;
+  border-color: #555;
   color: #eee;
-  background: #26282d;
+  background: #303030;
 }
 .ws-setup-steps {
   list-style: none;
@@ -1748,7 +1748,7 @@
 }
 .ws-key-options input {
   margin-top: 3px;
-  accent-color: #a8b4cf;
+  accent-color: var(--ring);
   flex-shrink: 0;
 }
 .ws-key-options strong {

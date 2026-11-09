@@ -118,7 +118,7 @@
 }
 
 .status-dot.online {
-  background: var(--brand-lavender);
+  background: #bdbdbb;
 }
 
 .landing-section {
@@ -219,7 +219,7 @@
 }
 
 .landing-pill.on {
-  border-color: var(--brand-lavender);
+  border-color: #555;
   color: var(--foreground);
   background: var(--popover);
 }

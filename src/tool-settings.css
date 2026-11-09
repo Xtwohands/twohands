@@ -74,7 +74,7 @@
 }
 .admin-mfa-notice {
   white-space: normal !important;
-  color: #a8b4cf !important;
+  color: #c4c4c1 !important;
 }
 @media (max-width: 760px) {
   .platform-provider-grid,

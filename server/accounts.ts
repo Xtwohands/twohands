@@ -330,6 +330,21 @@ export class Accounts {
       );
     return result.rows[0]?.workspace_id as string | undefined;
   }
+  /** Resolve the signed-in user's existing scope, or provision one private scope once. */
+  async ensureAccountWorkspace(
+    identity: VerifiedIdentity,
+  ): Promise<AccountWorkspace> {
+    if (this.previewScope.getStore())
+      throw new AccountError(
+        403,
+        "Return to your account before setting it up.",
+      );
+    return this.createWorkspaceWithLock(
+      identity,
+      { name: "Personal account", requestKey: randomUUID() },
+      true,
+    );
+  }
   async createWorkspace(
     identity: VerifiedIdentity,
     raw: unknown,
@@ -338,6 +353,13 @@ export class Accounts {
       .object({ name: z.string().trim().min(2).max(80), requestKey: z.uuid() })
       .strict()
       .parse(raw);
+    return this.createWorkspaceWithLock(identity, input);
+  }
+  private async createWorkspaceWithLock(
+    identity: VerifiedIdentity,
+    input: { name: string; requestKey: string },
+    useExisting = false,
+  ): Promise<AccountWorkspace> {
     const client = await this.database.pool.connect();
     try {
       await client.query("BEGIN");
@@ -345,6 +367,16 @@ export class Accounts {
         "SELECT pg_advisory_xact_lock(hashtextextended($1,0))",
         ["account:" + identity.userId],
       );
+      if (useExisting) {
+        const existing = await client.query<AccountWorkspace>(
+          "SELECT w.id,w.name,m.role FROM octolab.workspace_memberships m JOIN octolab.workspaces w ON w.id=m.workspace_id WHERE m.user_id=$1 ORDER BY w.created_at,w.id LIMIT 1",
+          [identity.userId],
+        );
+        if (existing.rowCount) {
+          await client.query("COMMIT");
+          return existing.rows[0];
+        }
+      }
       const old = await client.query(
         "SELECT workspace_id,name FROM octolab.workspace_creation_requests WHERE user_id=$1 AND request_key=$2",
         [identity.userId, input.requestKey],

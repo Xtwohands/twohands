@@ -36,7 +36,7 @@
 .portal-form input:focus-visible,
 .portal-form select:focus-visible,
 .portal-company-select select:focus-visible {
-  outline: 2px solid #a8b4cf;
+  outline: 2px solid var(--ring);
   outline-offset: 2px;
 }
 .portal-form > button {
@@ -52,7 +52,7 @@
   min-height: 18px;
   width: 18px;
   flex-shrink: 0;
-  accent-color: #a8b4cf;
+  accent-color: var(--ring);
 }
 .portal-details {
   display: grid;
@@ -122,7 +122,7 @@
   cursor: pointer;
 }
 .portal-company-list button[aria-pressed="true"] {
-  border-color: #a8b4cf;
+  border-color: #555;
   background: #242426;
 }
 .portal-company-list span {

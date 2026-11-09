@@ -5,6 +5,7 @@ import { ObservationApp } from "./ObservationApp";
 import "@fontsource-variable/geist";
 import "@fontsource-variable/geist-mono";
 import "./observation.css";
+import "./design-system.css";
 const Legacy = lazy(() => import("./Legacy"));
 const insecureRemote =
   location.protocol === "http:" &&

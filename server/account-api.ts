@@ -144,6 +144,14 @@ export function accountRoutes(app: Express, accounts?: Accounts) {
       accountFailure(error, res);
     }
   });
+  router.post("/setup", async (req, res) => {
+    try {
+      z.object({}).strict().parse(req.body);
+      res.json(await accounts.ensureAccountWorkspace(res.locals.account));
+    } catch (error) {
+      accountFailure(error, res);
+    }
+  });
   router.post("/workspaces", async (req, res) => {
     try {
       res

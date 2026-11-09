@@ -341,7 +341,7 @@ test("connection page and create-intent dialog are accessible and use the dark G
     await page
       .locator("body")
       .evaluate((e) => getComputedStyle(e).backgroundColor),
-  ).toBe("rgb(21, 21, 21)");
+  ).toBe("rgb(24, 24, 24)");
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
   await page.goto("/#sessions");
   await page

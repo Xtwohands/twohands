@@ -7,11 +7,12 @@ import {
   type ReactNode,
 } from "react";
 import type { Session, SupabaseClient } from "@supabase/supabase-js";
-import { LogOut01, ArrowRight } from "@untitledui/icons";
+import { ArrowRight } from "@untitledui/icons";
 import type { AccountProfile, AuthPublicConfig } from "../server/account-types";
 import type { CompanyPreviewTarget } from "../server/company-types";
 import { setAccountSession, setPreviewRole } from "./api";
 import { Button } from "./components/ui/button";
+import { AccountMenu } from "./AccountMenu";
 import { Input } from "./components/ui/input";
 import { InlineError } from "./observation-ui";
 import "./account.css";
@@ -24,7 +25,6 @@ type AccountContext = {
   workspaceId: string;
   select: (id: string) => void;
   signOut: () => void;
-  create: () => void;
   refresh: () => Promise<void>;
   previewRole: "user" | "company" | null;
   previewTarget: string | null;
@@ -38,7 +38,6 @@ const Context = createContext<AccountContext>({
   workspaceId: "",
   select: () => {},
   signOut: () => {},
-  create: () => {},
   refresh: async () => {},
   previewRole: null,
   previewTarget: null,
@@ -56,48 +55,42 @@ export function AccountControls({
   showIdentity?: boolean;
 }) {
   const account = useAccount();
-  if (!account.enabled || !account.profile) return null;
+  if (!account.enabled)
+    return showIdentity ? (
+      <AccountMenu label="Local account" detail="Local mode" />
+    ) : null;
+  if (!account.profile) return null;
+  const selector =
+    showWorkspace &&
+    account.profile.isAdmin &&
+    account.profile.workspaces.length > 0 ? (
+      <label className="account-scope-select">
+        <span>Customer account</span>
+        <select
+          aria-label="Customer account"
+          value={account.workspaceId}
+          onChange={(e) => account.select(e.target.value)}
+        >
+          {account.profile.workspaces.map((item) => (
+            <option key={item.id} value={item.id}>
+              {item.name}
+            </option>
+          ))}
+        </select>
+      </label>
+    ) : null;
+  if (!showIdentity) return selector;
   return (
-    <div className="account-controls">
-      {showWorkspace && (
-        <label>
-          <span>Workspace</span>
-          <select
-            aria-label="Current workspace"
-            value={account.workspaceId}
-            onChange={(e) =>
-              e.target.value === "__new__"
-                ? account.create()
-                : account.select(e.target.value)
-            }
-          >
-            {account.profile.workspaces.map((w) => (
-              <option key={w.id} value={w.id}>
-                {w.name}
-              </option>
-            ))}
-            <option value="__new__">Create workspace…</option>
-          </select>
-        </label>
-      )}
-      {showIdentity && (
-        <div className="account-user">
-          <span title={account.profile.user.email}>
-            {account.profile.user.email}
-          </span>
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label="Sign out"
-            onClick={account.signOut}
-          >
-            <LogOut01 size={16} />
-          </Button>
-        </div>
-      )}
-    </div>
+    <AccountMenu
+      label={account.profile.user.email}
+      detail={account.profile.isAdmin ? "Administrator" : "Personal account"}
+      onSignOut={account.signOut}
+    >
+      {selector}
+    </AccountMenu>
   );
 }
+
 function PreviewNotice({
   role,
   target,
@@ -157,16 +150,13 @@ export function AccountGate({ children }: { children: ReactNode }) {
     "signin",
   );
   const [email, setEmail] = useState(""),
-    [password, setPassword] = useState(""),
-    [name, setName] = useState("");
+    [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false),
-    [creating, setCreating] = useState(false),
     [route, setRoute] = useState(location.hash);
   const client = useRef<SupabaseClient | null>(null),
     currentSession = useRef<Session | null>(null),
     sessionEpoch = useRef(0),
-    version = useRef(0),
-    creationKey = useRef(crypto.randomUUID());
+    version = useRef(0);
   const mfaAdoptions = useRef(
     new Map<string, { epoch: number; userId: string }>(),
   );
@@ -215,7 +205,6 @@ export function AccountGate({ children }: { children: ReactNode }) {
     setProfile(undefined);
     setWorkspaceId("");
     setPassword("");
-    setCreating(false);
   };
   const signOut = () => {
     clear();
@@ -236,6 +225,11 @@ export function AccountGate({ children }: { children: ReactNode }) {
           },
         }),
         data = await response.json();
+      if (
+        request !== version.current ||
+        currentSession.current?.user.id !== value.user.id
+      )
+        return;
       if (response.status === 401) {
         signOut();
         setError(data.error || "Your session ended. Sign in again.");
@@ -243,12 +237,41 @@ export function AccountGate({ children }: { children: ReactNode }) {
       }
       if (!response.ok)
         throw new Error(data.error || "Could not load account access.");
-      if (
-        request !== version.current ||
-        currentSession.current?.user.id !== value.user.id
-      )
-        return;
       const result = data as AccountProfile;
+      const customerArea =
+        location.hash &&
+        !/^#(?:home|signin|company|admin|settings)/.test(location.hash) &&
+        !location.pathname.startsWith("/research");
+      if (
+        customerArea &&
+        !result.isAdmin &&
+        !result.canPreview &&
+        !result.workspaces.length &&
+        !(location.hash === "#dashboard" && result.companies?.length)
+      ) {
+        const setup = await fetch("/api/auth/setup", {
+          method: "POST",
+          headers: {
+            Authorization: "Bearer " + value.access_token,
+            "Content-Type": "application/json",
+          },
+          body: "{}",
+        });
+        const account = await setup.json();
+        if (
+          request !== version.current ||
+          currentSession.current?.user.id !== value.user.id
+        )
+          return;
+        if (setup.status === 401) {
+          signOut();
+          setError(account.error || "Your session ended. Sign in again.");
+          return;
+        }
+        if (!setup.ok)
+          throw new Error(account.error || "Could not set up your account.");
+        result.workspaces = [account];
+      }
       canPreviewRef.current = !!(result.canPreview || result.isAdmin);
       let preferred = "";
       try {
@@ -264,6 +287,7 @@ export function AccountGate({ children }: { children: ReactNode }) {
           if (result.isAdmin) location.hash = "admin";
           else if (!result.workspaces.length && result.companies?.length)
             location.hash = "company";
+          else if (location.hash === "#signin") location.hash = "dashboard";
         }
       }
       setProfile(result);
@@ -432,6 +456,16 @@ export function AccountGate({ children }: { children: ReactNode }) {
     if (session) void loadProfile(session);
   }, [session?.access_token]);
   useEffect(() => {
+    if (
+      session &&
+      profile &&
+      !profile.workspaces.length &&
+      !profile.isAdmin &&
+      !profile.canPreview
+    )
+      void loadProfile(session);
+  }, [route]);
+  useEffect(() => {
     const invalid = () => {
       if (config?.enabled && currentSession.current) {
         clear();
@@ -572,11 +606,6 @@ export function AccountGate({ children }: { children: ReactNode }) {
         await loadProfile(value);
       }
     },
-    create: () => {
-      creationKey.current = crypto.randomUUID();
-      setCreating(true);
-      setError("");
-    },
   };
   if (switching)
     return (
@@ -595,12 +624,7 @@ export function AccountGate({ children }: { children: ReactNode }) {
     route.startsWith("#admin") ||
     route.startsWith("#settings") ||
     (profile?.isAdmin && !workspaceId);
-  if (
-    profile &&
-    (workspaceId || independentArea) &&
-    !creating &&
-    mode !== "recover"
-  )
+  if (profile && (workspaceId || independentArea) && mode !== "recover")
     return (
       <Context.Provider value={context}>
         <div
@@ -628,9 +652,9 @@ export function AccountGate({ children }: { children: ReactNode }) {
         </div>
       </Context.Provider>
     );
-  const workspaceForm = !!session && !!profile && (!workspaceId || creating);
-  const title = workspaceForm
-    ? "Create your workspace"
+  const emptyPreview = !!profile && previewRole === "user" && !workspaceId;
+  const title = emptyPreview
+    ? "No customer account available to preview"
     : mode === "signup"
       ? "Create your account"
       : mode === "reset"
@@ -654,10 +678,14 @@ export function AccountGate({ children }: { children: ReactNode }) {
             onExit={() => void context.preview(null)}
           />
         )}
-        <h1>{!ready ? "Loading your workspace…" : title}</h1>
+        <h1>
+          {!ready || (session && !profile && !error)
+            ? "Loading your account…"
+            : title}
+        </h1>
         <p>
-          {workspaceForm
-            ? "Use tools through your agent. Your workspace holds activity, routing settings, credits, and API keys."
+          {emptyPreview
+            ? "This preview has no customer account activity yet."
             : route.startsWith("#company")
               ? "Sign in to register or manage your tool company."
               : "Sign in to manage your tools and usage."}
@@ -668,184 +696,113 @@ export function AccountGate({ children }: { children: ReactNode }) {
             {notice}
           </p>
         )}
-        {workspaceForm && !workspaceId && (
-          <div className="account-purpose">
-            <p>Here to provide a tool?</p>
-            <Button
-              variant="outline"
-              onClick={() => {
-                setCreating(false);
-                location.hash = "company";
-              }}
-            >
-              Register a tool company
-            </Button>
-            <p>
-              Company registration has its own review and does not need a user
-              workspace.
-            </p>
-          </div>
-        )}
-        {ready &&
-          config?.enabled &&
-          (workspaceForm || !session || mode === "recover") && (
-            <form
-              onSubmit={async (e) => {
-                e.preventDefault();
-                if (busy || !client.current) return;
-                setBusy(true);
-                setError("");
-                setNotice("");
-                try {
-                  const actionUser = currentSession.current?.user.id;
-                  if (workspaceForm) {
-                    const response = await fetch("/api/auth/workspaces", {
-                        method: "POST",
-                        headers: {
-                          Authorization:
-                            "Bearer " + currentSession.current!.access_token,
-                          "Content-Type": "application/json",
-                        },
-                        body: JSON.stringify({
-                          name,
-                          requestKey: creationKey.current,
-                        }),
-                      }),
-                      data = await response.json();
-                    if (!response.ok)
-                      throw new Error(
-                        data.error || "Could not create workspace.",
-                      );
-                    if (currentSession.current?.user.id !== actionUser) return;
-                    try {
-                      localStorage.setItem(
-                        "octolab.workspace." + profile!.user.id,
-                        data.id,
-                      );
-                    } catch {}
-                    await loadProfile(currentSession.current!);
-                    setCreating(false);
-                    setName("");
-                  } else {
-                    const auth = client.current.auth,
-                      redirect =
-                        location.origin +
-                        "/?auth_callback=1" +
-                        (route.startsWith("#company")
-                          ? "#company"
-                          : route.startsWith("#admin")
-                            ? "#admin"
-                            : "#dashboard");
-                    if (mode === "signin") {
-                      const { error } = await auth.signInWithPassword({
-                        email,
-                        password,
-                      });
-                      if (error) throw error;
-                      setPassword("");
-                    } else if (mode === "signup") {
-                      const { error, data } = await auth.signUp({
-                        email,
-                        password,
-                        options: { emailRedirectTo: redirect },
-                      });
-                      if (error) throw error;
-                      setPassword("");
-                      if (!data.session)
-                        setNotice(
-                          "Check your email to confirm your account, then sign in.",
-                        );
-                    } else if (mode === "reset") {
-                      const { error } = await auth.resetPasswordForEmail(
-                        email,
-                        { redirectTo: redirect },
-                      );
-                      if (error) throw error;
-                      setNotice(
-                        "If the account exists, a reset link will arrive by email.",
-                      );
-                    } else {
-                      const { error } = await auth.updateUser({ password });
-                      if (error) throw error;
-                      setPassword("");
-                      setMode("signin");
-                      setNotice("Password updated.");
-                    }
-                  }
-                } catch (e) {
-                  setError((e as Error).message);
-                } finally {
-                  setBusy(false);
+        {ready && config?.enabled && (!session || mode === "recover") && (
+          <form
+            onSubmit={async (e) => {
+              e.preventDefault();
+              if (busy || !client.current) return;
+              setBusy(true);
+              setError("");
+              setNotice("");
+              try {
+                const auth = client.current.auth,
+                  redirect =
+                    location.origin +
+                    "/?auth_callback=1" +
+                    (route.startsWith("#company")
+                      ? "#company"
+                      : route.startsWith("#admin")
+                        ? "#admin"
+                        : "#dashboard");
+                if (mode === "signin") {
+                  const { error } = await auth.signInWithPassword({
+                    email,
+                    password,
+                  });
+                  if (error) throw error;
+                  setPassword("");
+                } else if (mode === "signup") {
+                  const { error, data } = await auth.signUp({
+                    email,
+                    password,
+                    options: { emailRedirectTo: redirect },
+                  });
+                  if (error) throw error;
+                  setPassword("");
+                  if (!data.session)
+                    setNotice(
+                      "Check your email to confirm your account, then sign in.",
+                    );
+                } else if (mode === "reset") {
+                  const { error } = await auth.resetPasswordForEmail(email, {
+                    redirectTo: redirect,
+                  });
+                  if (error) throw error;
+                  setNotice(
+                    "If the account exists, a reset link will arrive by email.",
+                  );
+                } else {
+                  const { error } = await auth.updateUser({ password });
+                  if (error) throw error;
+                  setPassword("");
+                  setMode("signin");
+                  setNotice("Password updated.");
                 }
-              }}
-            >
-              {workspaceForm ? (
+              } catch (e) {
+                setError((e as Error).message);
+              } finally {
+                setBusy(false);
+              }
+            }}
+          >
+            <>
+              {mode !== "recover" && (
                 <label>
-                  Workspace name
+                  Email
                   <Input
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
                     required
-                    minLength={2}
-                    maxLength={80}
-                    autoComplete="organization"
-                    placeholder="My workspace"
+                    autoComplete="email"
                   />
                 </label>
-              ) : (
-                <>
-                  {mode !== "recover" && (
-                    <label>
-                      Email
-                      <Input
-                        type="email"
-                        value={email}
-                        onChange={(e) => setEmail(e.target.value)}
-                        required
-                        autoComplete="email"
-                      />
-                    </label>
-                  )}
-                  {mode !== "reset" && (
-                    <label>
-                      Password
-                      <Input
-                        type="password"
-                        value={password}
-                        onChange={(e) => setPassword(e.target.value)}
-                        required
-                        minLength={mode === "signin" ? 1 : 12}
-                        maxLength={256}
-                        autoComplete={
-                          mode === "signin"
-                            ? "current-password"
-                            : "new-password"
-                        }
-                      />
-                    </label>
-                  )}
-                </>
               )}
-              <Button type="submit" disabled={busy || !client.current}>
-                {busy
-                  ? "Working…"
-                  : workspaceForm
-                    ? "Create workspace"
-                    : mode === "signup"
-                      ? "Create account"
-                      : mode === "reset"
-                        ? "Send reset link"
-                        : mode === "recover"
-                          ? "Update password"
-                          : "Sign in"}
-                <ArrowRight size={16} />
-              </Button>
-            </form>
-          )}
+              {mode !== "reset" && (
+                <label>
+                  Password
+                  <Input
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                    minLength={mode === "signin" ? 1 : 12}
+                    maxLength={256}
+                    autoComplete={
+                      mode === "signin" ? "current-password" : "new-password"
+                    }
+                  />
+                </label>
+              )}
+            </>
+            <Button type="submit" disabled={busy || !client.current}>
+              {busy
+                ? "Working…"
+                : mode === "signup"
+                  ? "Create account"
+                  : mode === "reset"
+                    ? "Send reset link"
+                    : mode === "recover"
+                      ? "Update password"
+                      : "Sign in"}
+              <ArrowRight size={16} />
+            </Button>
+          </form>
+        )}
         {ready && session && !profile && mode !== "recover" && (
           <div className="account-actions">
             <Button onClick={() => void loadProfile(session)}>
-              Retry workspace access
+              Retry account access
             </Button>
             <Button variant="ghost" onClick={signOut}>
               Sign out
@@ -854,16 +811,6 @@ export function AccountGate({ children }: { children: ReactNode }) {
         )}
         {ready && (!config || (config.enabled && !client.current)) && (
           <Button onClick={() => location.reload()}>Retry</Button>
-        )}
-        {workspaceForm && (
-          <Button variant="ghost" onClick={signOut}>
-            Sign out
-          </Button>
-        )}
-        {workspaceForm && creating && workspaceId && (
-          <Button variant="ghost" onClick={() => setCreating(false)}>
-            Back to workspace
-          </Button>
         )}
         {ready && config?.enabled && !session && (
           <div className="account-links">

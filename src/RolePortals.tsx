@@ -7,7 +7,7 @@ import {
   companyDashboardSection,
 } from "./CompanyDashboard";
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { ArrowRight, Settings01, Menu01, XClose } from "@untitledui/icons";
+import { ArrowRight, Menu01, XClose } from "@untitledui/icons";
 import { useAccount, AccountControls } from "./AccountGate";
 import { api } from "./api";
 import { Button } from "./components/ui/button";
@@ -51,13 +51,6 @@ export function PortalShell({
         <img src="/octolab.svg" width="32" height="32" alt="" />
         octolab
       </a>
-      <div className="portal-area">
-        {area === "settings"
-          ? "Account"
-          : area === "company"
-            ? "Tool company"
-            : "Administration"}
-      </div>
       <nav
         aria-label={
           area === "settings"
@@ -84,10 +77,6 @@ export function PortalShell({
         )}
       </nav>
       <div className="sidebar-bottom">
-        <a href="#settings">
-          <Settings01 />
-          Settings
-        </a>
         <AccountControls showWorkspace={false} />
       </div>
     </>
