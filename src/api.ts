@@ -17,6 +17,11 @@ export class ApiError extends Error {
   }
 }
 let accessToken = "";
+let previewRole: "user" | "company" | null = null;
+export function setPreviewRole(role: typeof previewRole) {
+  previewRole = role;
+  contextEpoch++;
+}
 let workspaceId = "",
   accountId = "",
   contextEpoch = 0;
@@ -34,6 +39,7 @@ export function apiHeaders(): Record<string, string> {
   return {
     ...(accessToken ? { Authorization: "Bearer " + accessToken } : {}),
     ...(workspaceId ? { "X-Octolab-Workspace": workspaceId } : {}),
+    ...(previewRole ? { "X-Octolab-Preview": previewRole } : {}),
   };
 }
 export function setToken(value: string) {

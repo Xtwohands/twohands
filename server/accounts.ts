@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import { AsyncLocalStorage } from "node:async_hooks";
 import { createClient } from "@supabase/supabase-js";
 import type { Request } from "express";
 import { z } from "zod";
@@ -107,6 +108,7 @@ export function supabaseVerifier(settings: AccountSettings): IdentityVerifier {
   };
 }
 export class Accounts {
+  readonly previewScope = new AsyncLocalStorage<"user" | "company">();
   readonly companies = new Companies(this);
   readonly database: PostgresDatabase;
   private cache = new Map<
@@ -158,7 +160,10 @@ export class Accounts {
     };
   }
   isAdmin(userId: string) {
-    return this.settings.adminUserIds.includes(userId);
+    return (
+      !this.previewScope.getStore() &&
+      this.settings.adminUserIds.includes(userId)
+    );
   }
   async identity(req: Request): Promise<VerifiedIdentity> {
     const token = req.header("authorization")?.match(/^Bearer ([^\s]+)$/)?.[1];
@@ -222,6 +227,7 @@ export class Accounts {
       user: { id: identity.userId, email: identity.email },
       workspaces: result.rows,
       isAdmin: this.isAdmin(identity.userId),
+      canPreview: this.settings.adminUserIds.includes(identity.userId),
       companies: await this.companies.list(identity),
     };
   }

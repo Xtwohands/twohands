@@ -7,6 +7,7 @@ export interface AccountProfile {
   user: { id: string; email: string };
   workspaces: AccountWorkspace[];
   isAdmin: boolean;
+  canPreview?: boolean;
   companies: import("./company-types.js").ToolCompany[];
 }
 export type AuthPublicConfig =

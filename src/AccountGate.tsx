@@ -9,7 +9,7 @@ import {
 import type { Session, SupabaseClient } from "@supabase/supabase-js";
 import { LogOut01, ArrowRight } from "@untitledui/icons";
 import type { AccountProfile, AuthPublicConfig } from "../server/account-types";
-import { setAccountSession } from "./api";
+import { setAccountSession, setPreviewRole } from "./api";
 import { Button } from "./components/ui/button";
 import { Input } from "./components/ui/input";
 import { InlineError } from "./observation-ui";
@@ -22,6 +22,8 @@ type AccountContext = {
   signOut: () => void;
   create: () => void;
   refresh: () => Promise<void>;
+  previewRole: "user" | "company" | null;
+  preview: (role: "user" | "company" | null) => Promise<void>;
 };
 const Context = createContext<AccountContext>({
   enabled: false,
@@ -30,12 +32,16 @@ const Context = createContext<AccountContext>({
   signOut: () => {},
   create: () => {},
   refresh: async () => {},
+  previewRole: null,
+  preview: async () => {},
 });
 export const useAccount = () => useContext(Context);
 export function AccountControls({
   showWorkspace = true,
+  showIdentity = true,
 }: {
   showWorkspace?: boolean;
+  showIdentity?: boolean;
 }) {
   const account = useAccount();
   if (!account.enabled || !account.profile) return null;
@@ -62,19 +68,37 @@ export function AccountControls({
           </select>
         </label>
       )}
-      <div className="account-user">
-        <span title={account.profile.user.email}>
-          {account.profile.user.email}
-        </span>
-        <Button
-          variant="ghost"
-          size="icon"
-          aria-label="Sign out"
-          onClick={account.signOut}
-        >
-          <LogOut01 size={16} />
-        </Button>
-      </div>
+      {showIdentity && (
+        <div className="account-user">
+          <span title={account.profile.user.email}>
+            {account.profile.user.email}
+          </span>
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="Sign out"
+            onClick={account.signOut}
+          >
+            <LogOut01 size={16} />
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+function PreviewNotice({
+  role,
+  onExit,
+}: {
+  role: "user" | "company";
+  onExit: () => void;
+}) {
+  return (
+    <div className="preview-notice" role="status">
+      <span>Previewing as {role === "user" ? "user" : "tool company"}</span>
+      <Button variant="outline" size="sm" onClick={onExit}>
+        Return to admin
+      </Button>
     </div>
   );
 }
@@ -82,6 +106,10 @@ export function AccountGate({ children }: { children: ReactNode }) {
   const [config, setConfig] = useState<AuthPublicConfig>();
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<AccountProfile>();
+  const [switching, setSwitching] = useState(false);
+  const [previewRole, setPreview] = useState<"user" | "company" | null>(null);
+  const previewRef = useRef<"user" | "company" | null>(null);
+  const canPreviewRef = useRef(false);
   const [workspaceId, setWorkspaceId] = useState("");
   const [ready, setReady] = useState(false),
     [error, setError] = useState(""),
@@ -115,6 +143,10 @@ export function AccountGate({ children }: { children: ReactNode }) {
     } catch {}
   };
   const clear = () => {
+    canPreviewRef.current = false;
+    previewRef.current = null;
+    setPreviewRole(null);
+    setPreview(null);
     version.current++;
     routedAccount.current = "";
     currentSession.current = null;
@@ -135,7 +167,12 @@ export function AccountGate({ children }: { children: ReactNode }) {
     const request = ++version.current;
     try {
       const response = await fetch("/api/auth/me", {
-          headers: { Authorization: "Bearer " + value.access_token },
+          headers: {
+            Authorization: "Bearer " + value.access_token,
+            ...(previewRef.current
+              ? { "X-Octolab-Preview": previewRef.current }
+              : {}),
+          },
         }),
         data = await response.json();
       if (!response.ok)
@@ -146,6 +183,7 @@ export function AccountGate({ children }: { children: ReactNode }) {
       )
         return;
       const result = data as AccountProfile;
+      canPreviewRef.current = !!(result.canPreview || result.isAdmin);
       let preferred = "";
       try {
         preferred =
@@ -296,6 +334,26 @@ export function AccountGate({ children }: { children: ReactNode }) {
     enabled: !!config?.enabled,
     profile,
     workspaceId,
+    previewRole,
+    preview: async (role) => {
+      if (!currentSession.current || !canPreviewRef.current) return;
+      previewRef.current = role;
+      setPreviewRole(role);
+      setPreview(role);
+      setSwitching(true);
+      setProfile(undefined);
+      try {
+        await loadProfile(currentSession.current);
+      } finally {
+        setSwitching(false);
+      }
+      location.hash =
+        role === "company"
+          ? "company"
+          : role === "user"
+            ? "dashboard"
+            : "admin";
+    },
     select,
     signOut,
     refresh: async () => {
@@ -307,12 +365,22 @@ export function AccountGate({ children }: { children: ReactNode }) {
       setError("");
     },
   };
+  if (switching)
+    return (
+      <main className="account-page">
+        <section className="account-card">
+          <h1>Switching experience…</h1>
+          <p>Applying your access permissions.</p>
+        </section>
+      </main>
+    );
   if (config && !config.enabled) return <>{children}</>;
   if (publicPage)
     return <Context.Provider value={context}>{children}</Context.Provider>;
   const independentArea =
     route.startsWith("#company") ||
     route.startsWith("#admin") ||
+    route.startsWith("#settings") ||
     (profile?.isAdmin && !workspaceId);
   if (
     profile &&
@@ -323,10 +391,16 @@ export function AccountGate({ children }: { children: ReactNode }) {
     return (
       <Context.Provider value={context}>
         <div
-          key={profile.user.id + ":" + workspaceId}
+          key={profile.user.id + ":" + workspaceId + ":" + previewRole}
           className="account-workspace"
         >
           {children}
+          {previewRole && (
+            <PreviewNotice
+              role={previewRole}
+              onExit={() => void context.preview(null)}
+            />
+          )}
         </div>
       </Context.Provider>
     );
@@ -347,6 +421,12 @@ export function AccountGate({ children }: { children: ReactNode }) {
         octolab
       </a>
       <section className="account-card">
+        {previewRole && (
+          <PreviewNotice
+            role={previewRole}
+            onExit={() => void context.preview(null)}
+          />
+        )}
         <h1>{!ready ? "Loading your workspace…" : title}</h1>
         <p>
           {workspaceForm

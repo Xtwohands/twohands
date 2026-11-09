@@ -914,7 +914,7 @@ function Metric({
   );
 }
 function UsageChart({ usage }: { usage: WorkspaceUsage }) {
-  const maximum = Math.max(1, ...usage.series.map((d) => d.requests));
+  const maximum = Math.max(2, ...usage.series.map((d) => d.requests));
   return (
     <div
       className="ws-chart"

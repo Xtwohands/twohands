@@ -1,4 +1,8 @@
-import { CompanyPortal, AdminCompanyReview, RoleLinks } from "./RolePortals";
+import {
+  CompanyPortal,
+  AdminCompanyReview,
+  AccountSettings,
+} from "./RolePortals";
 import { AccountControls, useAccount } from "./AccountGate";
 import { DisputeReviewView } from "./DisputeReviewView";
 import { ToolOptions } from "./components/ToolOptions";
@@ -72,7 +76,7 @@ import type {
   SessionDetail,
   ObservationEvent,
 } from "../server/observation-types";
-import type { ServerHealth, TaskSummary } from "../server/types";
+import type { TaskSummary } from "../server/types";
 import {
   Panel,
   Empty,
@@ -302,7 +306,6 @@ export function ObservationApp() {
   const [sessions, setSessions] = useState<ObservationListItem[]>([]);
   const [summary, setSummary] = useState<Summary>();
   const [catalog, setCatalog] = useState<Catalog>([]);
-  const [health, setHealth] = useState<ServerHealth>();
   const [legacy, setLegacy] = useState<TaskSummary[]>([]);
   const [connection, setConnection] = useState<{
     lastSeenAt: string | null;
@@ -356,7 +359,7 @@ export function ObservationApp() {
     if (independentArea || route.page === "home") return true;
     const current = ++generation.current;
     try {
-      const [ss, sm, ct, h, l, c] = await Promise.all([
+      const [ss, sm, ct, l, c] = await Promise.all([
         operatorArea
           ? api<ObservationListItem[]>("/observations")
           : Promise.resolve([]),
@@ -364,7 +367,6 @@ export function ObservationApp() {
           ? api<Summary>("/observations/summary")
           : Promise.resolve(undefined),
         api<Catalog>("/observations/catalog"),
-        api<ServerHealth>("/health"),
         operatorArea ? api<TaskSummary[]>("/tasks") : Promise.resolve([]),
         api<typeof connection>("/observations/connection"),
       ]);
@@ -372,7 +374,6 @@ export function ObservationApp() {
       setSessions(ss);
       setSummary(sm);
       setCatalog(ct);
-      setHealth(h);
       setLegacy(l);
       setConnection(c);
       setError("");
@@ -380,14 +381,12 @@ export function ObservationApp() {
     } catch (e) {
       if (current === generation.current) {
         setError((e as Error).message);
-        setHealth(undefined);
         if (e instanceof ApiError && (e.status === 401 || e.status === 403)) {
           detailGeneration.current++;
           setSessions([]);
           setSummary(undefined);
           setCatalog([]);
           setLegacy([]);
-          setHealth(undefined);
           setSelected(undefined);
           setConnection({ lastSeenAt: null, clientName: null });
         }
@@ -481,6 +480,7 @@ export function ObservationApp() {
             ? "Connections & settings"
             : pages.find((p) => p.id === route.page)?.label || "Sessions";
   if (route.page === "home") return <LandingView />;
+  if (account.enabled && route.page === "settings") return <AccountSettings />;
   if (account.enabled && route.page === "company")
     return (
       <CompanyPortal
@@ -551,7 +551,7 @@ export function ObservationApp() {
       </a>
       <div className="portal-area">
         {surface === "user"
-          ? "User workspace"
+          ? "Dashboard"
           : surface === "business"
             ? "Tool company preview"
             : "Administration"}
@@ -597,7 +597,7 @@ export function ObservationApp() {
               </a>
             </div>
             <div className="ws-nav-group">
-              <span>Workspace</span>
+              <span>Account</span>
               <a
                 href="#dashboard/activity"
                 className={route.id === "activity" ? "selected" : ""}
@@ -689,48 +689,14 @@ export function ObservationApp() {
         )}
       </nav>
       <div className="sidebar-bottom">
-        <RoleLinks
-          current={
-            surface === "user"
-              ? "user"
-              : surface === "business"
-                ? "company"
-                : "admin"
-          }
-        />
-        <div className="host-card">
-          <span className="host-icon">
-            <TerminalSquare />
-          </span>
-          <div>
-            <strong>
-              {surface === "user"
-                ? "My workspace"
-                : surface === "business"
-                  ? "Tool company preview"
-                  : "Agent workspace"}
-            </strong>
-            <span>
-              {surface === "user"
-                ? "Your tools and sessions"
-                : surface === "business"
-                  ? "Demo & local lab"
-                  : "Local observation"}
-            </span>
-          </div>
-        </div>
         <a
-          href={surface === "user" ? "#dashboard/connections" : "#settings"}
+          href="#settings"
           className={route.page === "settings" ? "selected" : ""}
         >
           <Settings01 />
-          {surface === "user" ? "Connection setup" : "Operator settings"}
+          Settings
         </a>
-        <AccountControls />
-        <div className="workspace-status">
-          <span className={health ? "status-dot online" : "status-dot"} />
-          {health ? "Local server ready" : "Connecting to server"}
-        </div>
+        <AccountControls showWorkspace={false} />
       </div>
     </>
   );
@@ -785,10 +751,6 @@ export function ObservationApp() {
             )}
           </div>
           <div className="topbar-right">
-            <span className="local-label">
-              <span className="status-dot online" />
-              {account.enabled ? "Workspace" : "Local workspace"}
-            </span>
             <Button
               variant="outline"
               size="sm"

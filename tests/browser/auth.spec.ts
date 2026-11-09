@@ -126,7 +126,10 @@ async function mockAuth(
         : {
             user: { id: userId, email: "account@fixture.invalid" },
             workspaces: state.workspaces,
-            isAdmin: state.role === "admin",
+            isAdmin:
+              state.role === "admin" &&
+              !route.request().headers()["x-octolab-preview"],
+            canPreview: state.role === "admin",
             companies: state.companies,
           },
     }),
@@ -315,10 +318,12 @@ test("workspace switching discards late responses from the previous workspace", 
   await page.getByRole("button", { name: "Refresh workspace" }).click();
   await expect.poll(() => state.waiting).toBeGreaterThan(0);
   await openNav(page);
+  await page.getByRole("link", { name: "Settings", exact: true }).click();
   await page
     .getByRole("combobox", { name: "Current workspace" })
     .selectOption(second);
   state.release();
+  await page.goto("/#dashboard/activity");
   await expect(page.locator(".ws-activity-table")).toContainText(
     "Private B receipt",
   );
@@ -489,7 +494,7 @@ test("admin company reviews work without creating a customer workspace", async (
   });
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
 });
-test("user navigation stays in the user workspace and denied admin links preserve a return path", async ({
+test("account settings replace the sidebar area switcher and preserve user navigation", async ({
   page,
 }) => {
   await mockAuth(page);
@@ -498,14 +503,53 @@ test("user navigation stays in the user workspace and denied admin links preserv
   await expect(
     page.getByRole("link", { name: "Administration", exact: true }),
   ).toHaveCount(0);
-  await page
-    .getByRole("link", { name: "Connection setup", exact: true })
-    .click();
-  await expect(page).toHaveURL(/#dashboard\/connections/);
-  await page.goto("/#settings");
+  await page.getByRole("link", { name: "Settings", exact: true }).click();
   await expect(
-    page.getByRole("heading", { name: "Administrator access required" }),
+    page.getByRole("heading", { name: "Settings", exact: true }),
   ).toBeVisible();
-  await page.getByRole("link", { name: "Open your dashboard" }).click();
+  await expect(page.getByLabel("Preview as")).toHaveCount(0);
+  await expect(page.getByText("Your areas", { exact: true })).toHaveCount(0);
+  await openNav(page);
+  await page
+    .getByRole("link", { name: "Back to dashboard", exact: true })
+    .click();
   await expect(page).toHaveURL(/#dashboard/);
+});
+
+test("administrator previews standard roles from settings and can always return", async ({
+  page,
+}) => {
+  await mockAuth(page, true, "admin");
+  await login(page);
+  await expect(
+    page.getByRole("heading", { name: "Company reviews" }),
+  ).toBeVisible();
+  await openNav(page);
+  await page.getByRole("link", { name: "Settings", exact: true }).click();
+  await page.getByLabel("Preview as").selectOption("company");
+  await expect(
+    page.getByRole("heading", { name: "Bring your tool to octolab" }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("Previewing as tool company", { exact: true }),
+  ).toBeVisible();
+  await expect(page.getByText("Your areas", { exact: true })).toHaveCount(0);
+  await page
+    .getByRole("button", { name: "Return to admin", exact: true })
+    .click();
+  await expect(
+    page.getByRole("heading", { name: "Company reviews" }),
+  ).toBeVisible();
+  await openNav(page);
+  await page.getByRole("link", { name: "Settings", exact: true }).click();
+  await page.getByLabel("Preview as").selectOption("user");
+  await expect(
+    page.getByRole("heading", { name: "Create your workspace" }),
+  ).toBeVisible();
+  await page
+    .getByRole("button", { name: "Return to admin", exact: true })
+    .click();
+  await expect(
+    page.getByRole("heading", { name: "Company reviews" }),
+  ).toBeVisible();
 });

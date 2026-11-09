@@ -35,6 +35,26 @@ export function accountFailure(error: unknown, res: Response) {
       error: "Account access could not be verified. Try again shortly.",
     });
 }
+/** Preview only removes admin privileges; membership checks still apply on every request. */
+export function accountPreviewAccess(accounts: Accounts) {
+  return async (req: Request, res: Response, next: NextFunction) => {
+    const role = req.header("x-octolab-preview");
+    if (!role) return next();
+    try {
+      if (role !== "user" && role !== "company")
+        throw new AccountError(400, "Unknown preview role.");
+      const identity = await accounts.identity(req);
+      if (!accounts.isAdmin(identity.userId))
+        throw new AccountError(
+          403,
+          "Only administrators can preview another role.",
+        );
+      accounts.previewScope.run(role, next);
+    } catch (error) {
+      accountFailure(error, res);
+    }
+  };
+}
 export function accountRoutes(app: Express, accounts?: Accounts) {
   app.get("/api/auth/config", (_req, res) =>
     res.json(accounts?.publicConfig() ?? { enabled: false }),

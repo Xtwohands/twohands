@@ -4,37 +4,6 @@
   font-size: 13px;
   font-weight: 500;
 }
-.role-links {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  padding: 10px 0;
-  border-top: 1px solid #2b2b30;
-}
-.role-links > span {
-  padding: 3px 10px;
-  color: #888891;
-  font-size: 11px;
-}
-.role-links a {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  padding: 8px 10px;
-  border-radius: 6px;
-  color: #b7b7c0;
-  font-size: 12px;
-  text-decoration: none;
-}
-.role-links svg {
-  width: 15px;
-  height: 15px;
-}
-.role-links a:hover,
-.role-links a[aria-current="page"] {
-  background: #242426;
-  color: #eee;
-}
 .portal-form {
   display: grid;
   gap: 20px;
@@ -238,4 +207,58 @@
   .portal-details {
     grid-template-columns: 80px minmax(0, 1fr);
   }
+}
+
+.settings-preview-field {
+  display: grid;
+  gap: 8px;
+  max-width: 320px;
+  font-size: 13px;
+  color: #aaa;
+}
+.settings-preview-field select {
+  min-height: 40px;
+  background-color: #202020;
+  border: 1px solid #3b3b3b;
+  border-radius: 7px;
+  padding: 8px 12px;
+  color: #eee;
+  font: inherit;
+}
+.settings-account-links {
+  display: flex;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+.settings-account-links a {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  font-size: 13px;
+  color: #ccc;
+  text-decoration: none;
+  padding-block: 8px;
+}
+.preview-notice {
+  position: fixed;
+  bottom: 16px;
+  right: 20px;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 12px;
+  max-width: calc(100vw - 32px);
+  border: 1px solid #414141;
+  border-radius: 8px;
+  background: #242424;
+  padding: 8px 10px 8px 14px;
+  color: #ccc;
+  font-size: 12px;
+  box-shadow: 0 4px 16px #0004;
+}
+
+.role-portal .obs-main .account-controls {
+  max-width: 320px;
 }

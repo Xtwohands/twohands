@@ -5,6 +5,7 @@ import {
   accountAccess,
   companyAccountRoutes,
   adminAccountAccess,
+  accountPreviewAccess,
 } from "./account-api.js";
 import express from "express";
 import { ApiKeyError, requiredApiKeyScope } from "./api-keys.js";
@@ -112,6 +113,7 @@ export function createApp(
       }),
     ),
   );
+  if (accounts) app.use("/api", accountPreviewAccess(accounts));
   accountRoutes(app, accounts);
   companyAccountRoutes(app, accounts);
   if (accounts)

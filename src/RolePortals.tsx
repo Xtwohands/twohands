@@ -1,12 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import {
-  ArrowRight,
-  Building07,
-  Grid01,
-  ShieldTick,
-  Menu01,
-  XClose,
-} from "@untitledui/icons";
+import { ArrowRight, Settings01, Menu01, XClose } from "@untitledui/icons";
 import { useAccount, AccountControls } from "./AccountGate";
 import { api } from "./api";
 import { Button } from "./components/ui/button";
@@ -19,49 +12,13 @@ import type {
   CompanyReviewItem,
 } from "../server/company-types";
 import "./roles.css";
-export function RoleLinks({
-  current,
-}: {
-  current: "user" | "company" | "admin";
-}) {
-  const account = useAccount();
-  if (!account.enabled) return null;
-  return (
-    <div className="role-links" aria-label="Your areas">
-      <span>Your areas</span>
-      <a
-        href="#dashboard"
-        aria-current={current === "user" ? "page" : undefined}
-      >
-        <Grid01 />
-        User workspace
-      </a>
-      <a
-        href="#company"
-        aria-current={current === "company" ? "page" : undefined}
-      >
-        <Building07 />
-        Tool company
-      </a>
-      {account.profile?.isAdmin && (
-        <a
-          href="#admin"
-          aria-current={current === "admin" ? "page" : undefined}
-        >
-          <ShieldTick />
-          Administration
-        </a>
-      )}
-    </div>
-  );
-}
 function PortalShell({
   area,
   title,
   links,
   children,
 }: {
-  area: "company" | "admin";
+  area: "company" | "admin" | "settings";
   title: string;
   links: { href: string; label: string; selected: boolean }[];
   children: ReactNode;
@@ -74,11 +31,19 @@ function PortalShell({
         octolab
       </a>
       <div className="portal-area">
-        {area === "company" ? "Tool company" : "Administration"}
+        {area === "settings"
+          ? "Account"
+          : area === "company"
+            ? "Tool company"
+            : "Administration"}
       </div>
       <nav
         aria-label={
-          area === "company" ? "Tool company navigation" : "Admin navigation"
+          area === "settings"
+            ? "Settings navigation"
+            : area === "company"
+              ? "Tool company navigation"
+              : "Admin navigation"
         }
       >
         {links.map((link) => (
@@ -94,7 +59,10 @@ function PortalShell({
         ))}
       </nav>
       <div className="sidebar-bottom">
-        <RoleLinks current={area} />
+        <a href="#settings">
+          <Settings01 />
+          Settings
+        </a>
         <AccountControls showWorkspace={false} />
       </div>
     </>
@@ -125,9 +93,6 @@ function PortalShell({
             {open ? <XClose /> : <Menu01 />}
           </Button>
           <span>{title}</span>
-          <span className="local-label">
-            {area === "company" ? "Company account" : "Platform admin"}
-          </span>
         </header>
         {open && <div className="portal-mobile-nav">{nav}</div>}
         <main className="obs-main" id="portal-content" tabIndex={-1}>
@@ -786,6 +751,87 @@ export function AdminCompanyReview() {
           )}
         </Panel>
       </div>
+    </PortalShell>
+  );
+}
+
+export function AccountSettings() {
+  const account = useAccount();
+  const [busy, setBusy] = useState(false);
+  const canPreview = account.profile?.canPreview || account.profile?.isAdmin;
+  const current =
+    account.previewRole || (account.profile?.isAdmin ? "admin" : "user");
+  const destination =
+    current === "company"
+      ? "#company"
+      : current === "admin"
+        ? "#admin"
+        : "#dashboard";
+  return (
+    <PortalShell
+      area="settings"
+      title="Settings"
+      links={[
+        {
+          href: destination,
+          label:
+            "Back to " +
+            (current === "company"
+              ? "company"
+              : current === "admin"
+                ? "administration"
+                : "dashboard"),
+          selected: false,
+        },
+      ]}
+    >
+      <div className="page-heading">
+        <div>
+          <h1>Settings</h1>
+          <p>Manage your account and product access.</p>
+        </div>
+      </div>
+      {canPreview && (
+        <Panel
+          title="Preview as"
+          description="Test the product with your own memberships and standard permissions. Administrator privileges are disabled during a preview. This uses real account data."
+        >
+          <label className="settings-preview-field">
+            Experience
+            <select
+              aria-label="Preview as"
+              value={current}
+              disabled={busy}
+              onChange={async (e) => {
+                const value = e.target.value;
+                setBusy(true);
+                try {
+                  await account.preview(
+                    value === "admin" ? null : (value as "user" | "company"),
+                  );
+                } finally {
+                  setBusy(false);
+                }
+              }}
+            >
+              <option value="admin">Administrator</option>
+              <option value="user">User</option>
+              <option value="company">Tool company</option>
+            </select>
+          </label>
+        </Panel>
+      )}
+      <Panel title="Account" description={account.profile?.user.email}>
+        <div className="settings-account-links">
+          <a href="#dashboard">
+            My dashboard <ArrowRight size={16} />
+          </a>
+          <a href="#company">
+            My tool company <ArrowRight size={16} />
+          </a>
+        </div>
+        <AccountControls showIdentity={false} />
+      </Panel>
     </PortalShell>
   );
 }

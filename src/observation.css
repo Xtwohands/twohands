@@ -165,48 +165,6 @@
 .sidebar-bottom {
   margin-top: auto;
 }
-.host-card {
-  display: flex;
-  gap: 10px;
-  align-items: center;
-  margin: 16px 4px;
-  border: 1px solid #2b2b2b;
-  background: #191919;
-  border-radius: 9px;
-  padding: 12px 10px;
-}
-.host-icon {
-  display: grid;
-  place-items: center;
-  width: 30px;
-  height: 30px;
-  background: #2d2d2d;
-  border: 1px solid #3f3f3f;
-  color: #c7c7c7;
-  border-radius: 7px;
-  font-weight: 600;
-}
-.host-card strong {
-  display: block;
-  font-size: 12px;
-  font-weight: 500;
-}
-.host-card div > span {
-  display: block;
-  color: #949494;
-  font-size: 11px;
-  margin-top: 2px;
-}
-.workspace-status {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  color: #919191;
-  font-size: 11px;
-  border-top: 1px solid #292929;
-  margin: 14px 9px 0;
-  padding-top: 16px;
-}
 .status-dot {
   width: 6px;
   height: 6px;
@@ -255,14 +213,6 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   color: #949494;
-}
-.local-label {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 11px;
-  color: #9d9d9d;
-  white-space: nowrap;
 }
 .obs-topbar [data-slot="button"] {
   font-size: 12px;
@@ -1606,9 +1556,6 @@
   .title-with-status {
     flex-wrap: wrap;
   }
-  .local-label {
-    display: none;
-  }
   .breadcrumb-title {
     max-width: 200px;
   }
@@ -1999,10 +1946,6 @@
   color: #dedede;
   box-shadow: inset 0 0 0 1px #353535;
 }
-.host-icon svg {
-  width: 18px;
-  height: 18px;
-}
 @media (max-width: 700px) {
   .obs-sidebar {
     display: none;
@@ -2329,4 +2272,29 @@
   .provider-quote-count {
     display: none;
   }
+}
+
+/* Keep native keyboard behavior with consistent Untitled UI chevrons. */
+.observation-shell select:not([multiple]):not([size]) {
+  appearance: none;
+  background-image: url("/icons/chevron-down.svg?v=1");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  background-size: 16px 16px;
+  padding-inline-end: 38px;
+  max-width: 100%;
+  min-width: 0;
+  text-overflow: ellipsis;
+}
+.obs-sidebar {
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+.obs-sidebar > *,
+.mobile-sidebar-content > * {
+  flex-shrink: 0;
+}
+.mobile-sidebar-content {
+  overflow-y: auto;
+  scrollbar-width: thin;
 }
