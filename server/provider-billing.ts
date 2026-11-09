@@ -379,9 +379,16 @@ export class ProviderBilling {
           requestKey: _requestKey,
           ...publicBatch
         } = batch;
-        const localIds = new Map<string, number>();
-        for (const line of records)
+        const localIds = new Map<string, number>(),
+          localRequests = new Map<string, number>();
+        for (const line of records) {
           localIds.set(line.recordId, (localIds.get(line.recordId) ?? 0) + 1);
+          if (batch.sourceKind === "invoice" && line.requestId)
+            localRequests.set(
+              line.requestId,
+              (localRequests.get(line.requestId) ?? 0) + 1,
+            );
+        }
         const isEffective = effective.includes(batch);
         const lines = records.map((line): BillingLine => {
           const candidates = line.requestId
@@ -399,6 +406,8 @@ export class ProviderBilling {
           );
           const duplicate =
             (localIds.get(line.recordId) ?? 0) > 1 ||
+            (line.requestId !== undefined &&
+              (localRequests.get(line.requestId) ?? 0) > 1) ||
             effective.some(
               (other) =>
                 other.id !== batch.id &&

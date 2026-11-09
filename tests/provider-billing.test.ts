@@ -234,6 +234,28 @@ describe("provider billing reconciliation", () => {
         .reconciledMicros,
     ).toBe(9000);
   });
+  it("withholds distinct invoice rows that point to the same request in one batch", async () => {
+    await call();
+    const batch = await billing.import(
+      input({
+        records: [
+          { recordId: "charge-A", requestId: "request-1", amountMicros: 9000 },
+          { recordId: "charge-B", requestId: "request-1", amountMicros: 9000 },
+        ],
+      }),
+    );
+    await approve(batch.id);
+    const report = await billing.overview();
+    expect(report.reconciledCalls).toBe(0);
+    expect(report.reconciledMicros).toBeNull();
+    expect(report.batches[0].lines.map((line) => line.status)).toEqual([
+      "duplicate",
+      "duplicate",
+    ]);
+    expect(
+      report.batches[0].lines.every((line) => line.reconciledMicros === null),
+    ).toBe(true);
+  });
   it("deduplicates retry keys and identical documents, rejecting changed retry payloads", async () => {
     await call();
     const raw = input();
