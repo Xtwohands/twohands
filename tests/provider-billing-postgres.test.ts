@@ -1,3 +1,4 @@
+import { grantFixtureAllowance } from "./fixtures/allowance";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { randomUUID } from "node:crypto";
 import { Store } from "../server/store";
@@ -30,6 +31,7 @@ const url = process.env.OCTOLAB_BILLING_TEST_POSTGRES_URL;
       "INSERT INTO octolab.workspaces(id,name) VALUES($1,'Billing fixture A'),($2,'Billing fixture B')",
       [a, b],
     );
+    await grantFixtureAllowance(store);
     obs = new Observatory(store, {
       search: async () => ({
         sources: [],

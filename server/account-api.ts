@@ -35,21 +35,56 @@ export function accountFailure(error: unknown, res: Response) {
       error: "Account access could not be verified. Try again shortly.",
     });
 }
-/** Preview only removes admin privileges; membership checks still apply on every request. */
+/** Keep the verified actor; restrict company preview to one explicit target per request. */
 export function accountPreviewAccess(accounts: Accounts) {
   return async (req: Request, res: Response, next: NextFunction) => {
     const role = req.header("x-octolab-preview");
-    if (!role) return next();
+    const targetHeader = req.header("x-octolab-preview-target");
+    if (!role && !targetHeader) return next();
     try {
       if (role !== "user" && role !== "company")
         throw new AccountError(400, "Unknown preview role.");
       const identity = await accounts.identity(req);
-      if (!accounts.isAdmin(identity.userId))
+      if (!accounts.isPlatformAdmin(identity.userId))
         throw new AccountError(
           403,
           "Only administrators can preview another role.",
         );
-      accounts.previewScope.run(role, next);
+      if (targetHeader && role !== "company")
+        throw new AccountError(
+          400,
+          "A company target requires company preview.",
+        );
+      if (role === "company" && !targetHeader)
+        throw new AccountError(400, "Choose a company to preview.");
+      const target = targetHeader
+        ? await accounts.companies.resolvePreviewTarget(identity, targetHeader)
+        : undefined;
+      if (target) {
+        const path = normalizedPath(req);
+        const metadata =
+          ["/auth/me", "/auth/config", "/auth/preview-targets"].includes(
+            path,
+          ) && ["GET", "HEAD"].includes(req.method);
+        const selectedCompany =
+          target.kind === "company" &&
+          new RegExp(
+            `^/companies/${target.id}(?:/(?:insights|members|access-history|resubmit))?$`,
+          ).test(path);
+        const providerInsights =
+          target.kind === "provider" &&
+          path === "/auth/preview-insights" &&
+          ["GET", "HEAD"].includes(req.method);
+        if (!metadata && !selectedCompany && !providerInsights)
+          throw new AccountError(
+            403,
+            "This action is outside the selected company preview. Return to admin to continue.",
+          );
+      }
+      accounts.previewScope.run(
+        { role, actorId: identity.userId, target },
+        next,
+      );
     } catch (error) {
       accountFailure(error, res);
     }
@@ -74,6 +109,31 @@ export function accountRoutes(app: Express, accounts?: Accounts) {
   router.get("/me", async (_req, res) => {
     try {
       res.json(await accounts.profile(res.locals.account));
+    } catch (error) {
+      accountFailure(error, res);
+    }
+  });
+  router.get("/preview-targets", async (_req, res) => {
+    try {
+      res.json(await accounts.companies.previewTargets(res.locals.account));
+    } catch (error) {
+      accountFailure(error, res);
+    }
+  });
+  router.get("/preview-insights", async (_req, res) => {
+    try {
+      const context = accounts.previewScope.getStore();
+      if (
+        context?.target?.kind !== "provider" ||
+        context.actorId !== res.locals.account.userId
+      )
+        throw new AccountError(
+          403,
+          "Select an integrated provider to preview.",
+        );
+      res.json(
+        await accounts.companies.aggregateInsights(context.target.providerId!),
+      );
     } catch (error) {
       accountFailure(error, res);
     }

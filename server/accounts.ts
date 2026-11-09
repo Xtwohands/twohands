@@ -108,7 +108,9 @@ export function supabaseVerifier(settings: AccountSettings): IdentityVerifier {
   };
 }
 export class Accounts {
-  readonly previewScope = new AsyncLocalStorage<"user" | "company">();
+  readonly previewScope = new AsyncLocalStorage<
+    import("./company-types.js").AccountPreviewContext
+  >();
   readonly companies = new Companies(this);
   readonly database: PostgresDatabase;
   private cache = new Map<
@@ -165,6 +167,23 @@ export class Accounts {
       this.settings.adminUserIds.includes(userId)
     );
   }
+  isPlatformAdmin(userId: string) {
+    return this.settings.adminUserIds.includes(userId);
+  }
+  assertCompanyTarget(id: string) {
+    const target = this.previewScope.getStore()?.target;
+    if (target && (target.kind !== "company" || target.id !== id))
+      throw new AccountError(404, "Company is outside the selected preview.");
+  }
+  previewsCompany(identity: VerifiedIdentity, id: string) {
+    const context = this.previewScope.getStore();
+    this.assertCompanyTarget(id);
+    return (
+      context?.actorId === identity.userId &&
+      context.target?.kind === "company" &&
+      context.target.id === id
+    );
+  }
   async identity(req: Request): Promise<VerifiedIdentity> {
     const token = req.header("authorization")?.match(/^Bearer ([^\s]+)$/)?.[1];
     if (!token || token.length > 8192 || token.startsWith("oct_key_"))
@@ -215,19 +234,22 @@ export class Accounts {
     return identity;
   }
   async profile(identity: VerifiedIdentity): Promise<AccountProfile> {
-    const result = this.isAdmin(identity.userId)
-      ? await this.database.pool.query(
-          "SELECT id,name,'platform_admin' AS role FROM octolab.workspaces ORDER BY created_at,id LIMIT 1000",
-        )
-      : await this.database.pool.query(
-          "SELECT w.id,w.name,m.role FROM octolab.workspace_memberships m JOIN octolab.workspaces w ON w.id=m.workspace_id WHERE m.user_id=$1 ORDER BY w.created_at,w.id LIMIT 1000",
-          [identity.userId],
-        );
+    const result = this.previewScope.getStore()?.target
+      ? { rows: [] }
+      : this.isAdmin(identity.userId)
+        ? await this.database.pool.query(
+            "SELECT id,name,'platform_admin' AS role FROM octolab.workspaces ORDER BY created_at,id LIMIT 1000",
+          )
+        : await this.database.pool.query(
+            "SELECT w.id,w.name,m.role FROM octolab.workspace_memberships m JOIN octolab.workspaces w ON w.id=m.workspace_id WHERE m.user_id=$1 ORDER BY w.created_at,w.id LIMIT 1000",
+            [identity.userId],
+          );
     return {
       user: { id: identity.userId, email: identity.email },
       workspaces: result.rows,
       isAdmin: this.isAdmin(identity.userId),
       canPreview: this.settings.adminUserIds.includes(identity.userId),
+      companyPreview: this.previewScope.getStore()?.target,
       companies: await this.companies.list(identity),
     };
   }

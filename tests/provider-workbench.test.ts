@@ -1,3 +1,4 @@
+import { grantFixtureAllowance } from "./fixtures/allowance";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import request from "supertest";
 import { Store } from "../server/store";
@@ -82,6 +83,7 @@ beforeEach(async () => {
       "INSERT INTO octolab.workspaces(id,name) VALUES($1,'Isolated provider workbench fixture')",
       [store.workspaceId],
     );
+    await grantFixtureAllowance(store);
   }
   lab = new ProviderLab(store, { search, scrape });
   obs = new Observatory(store, { search, scrape });

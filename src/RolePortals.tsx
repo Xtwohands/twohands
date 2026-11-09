@@ -11,6 +11,7 @@ import type {
   ToolCompany,
   CompanyInsights,
   CompanyReviewItem,
+  CompanyPreviewTarget,
 } from "../server/company-types";
 import "./roles.css";
 function PortalShell({
@@ -109,7 +110,132 @@ const statusLabels = {
   rejected: "Changes requested",
   suspended: "Access suspended",
 };
-export function CompanyPortal({
+export function CompanyPortal(props: { id?: string; section: string }) {
+  const account = useAccount();
+  const target = account.profile?.companyPreview;
+  if (target && props.id && props.id !== target.id)
+    return (
+      <PortalShell area="company" title="Company preview" links={[]}>
+        <Panel title="Choose a company from the preview selector">
+          <p>This page is outside the company you’re previewing.</p>
+        </Panel>
+      </PortalShell>
+    );
+  return target?.kind === "provider" ? (
+    <IntegratedProviderPreview key={target.target} target={target} />
+  ) : (
+    <RegisteredCompanyPortal {...props} />
+  );
+}
+function InsightValues({
+  insights,
+  error,
+}: {
+  insights?: CompanyInsights;
+  error?: string;
+}) {
+  if (error) return <InlineError message={error} />;
+  if (!insights) return <p role="status">Loading live insights…</p>;
+  if (insights.status === "awaiting_release")
+    return (
+      <p>
+        Your integration is approved. Aggregate data access is awaiting review.
+      </p>
+    );
+  if (insights.status === "insufficient_data")
+    return (
+      <p>
+        No report available yet. At least {insights.minimumCohort} independent
+        workspaces must contribute eligible usage before metrics appear.
+      </p>
+    );
+  if (!insights.metrics) return <p>No recorded metrics are available.</p>;
+  const labels: Record<string, string> = {
+    offeredSessions: "Sessions offered your tool",
+    selectedSessions: "Sessions using your tool",
+    calls: "Completed calls",
+    successfulCalls: "Successful calls",
+  };
+  return (
+    <div className="summary-grid">
+      {Object.entries(insights.metrics).map(([key, value]) => (
+        <div key={key}>
+          <span>{labels[key]}</span>
+          <strong>{value}</strong>
+        </div>
+      ))}
+    </div>
+  );
+}
+function IntegratedProviderPreview({
+  target,
+}: {
+  target: CompanyPreviewTarget;
+}) {
+  const [insights, setInsights] = useState<CompanyInsights>();
+  const [error, setError] = useState("");
+  useEffect(() => {
+    let active = true;
+    const refresh = async () => {
+      try {
+        const value = await api<CompanyInsights>("/auth/preview-insights");
+        if (active) {
+          setInsights(value);
+          setError("");
+        }
+      } catch (e) {
+        if (active) {
+          setInsights(undefined);
+          setError((e as Error).message);
+        }
+      }
+    };
+    void refresh();
+    const timer = setInterval(() => void refresh(), 30000);
+    return () => {
+      active = false;
+      clearInterval(timer);
+    };
+  }, [target.target]);
+  return (
+    <PortalShell
+      area="company"
+      title={target.name}
+      links={[
+        {
+          href: `#company/${target.id}/insights`,
+          label: "Tool insights",
+          selected: true,
+        },
+      ]}
+    >
+      <div className="page-heading">
+        <div>
+          <h1>{target.name} tool insights</h1>
+          <p>Live recorded activity for this integrated provider.</p>
+        </div>
+      </div>
+      <Panel
+        title="Integrated provider"
+        description="No company registration or owner account has been created for this integration."
+        action={<span className="portal-status">Unregistered</span>}
+      >
+        <p>
+          This is a read-only provider preview. It does not verify a company or
+          grant membership. Metrics use recorded organic activity and the same
+          privacy thresholds as company dashboards.
+        </p>
+      </Panel>
+      <Panel
+        title="Your tool’s performance"
+        description="Live aggregate activity across eligible workspaces. Customer prompts, outputs, and individual sessions are never included."
+      >
+        <InsightValues insights={insights} error={error} />
+      </Panel>
+    </PortalShell>
+  );
+}
+function RegisteredCompanyPortal({
   id,
   section,
 }: {
@@ -195,11 +321,15 @@ export function CompanyPortal({
               },
             ]
           : []),
-        {
-          href: "#company/new",
-          label: "Register another company",
-          selected: false,
-        },
+        ...(!account.previewRole
+          ? [
+              {
+                href: "#company/new",
+                label: "Register another company",
+                selected: false,
+              },
+            ]
+          : []),
       ];
   return (
     <PortalShell
@@ -449,37 +579,8 @@ export function CompanyPortal({
                     Insights will become available after your company and
                     integration are approved.
                   </p>
-                ) : !insights ? (
-                  <p>Loading insights…</p>
-                ) : insights.status === "awaiting_release" ? (
-                  <p>
-                    Your integration is approved. Aggregate data access is
-                    awaiting review.
-                  </p>
-                ) : insights.status === "insufficient_data" ? (
-                  <p>
-                    No report available yet. At least {insights.minimumCohort}{" "}
-                    independent workspaces must contribute eligible usage before
-                    metrics appear.
-                  </p>
                 ) : (
-                  <div className="summary-grid">
-                    {Object.entries(insights.metrics!).map(([key, value]) => (
-                      <div key={key}>
-                        <span>
-                          {
-                            {
-                              offeredSessions: "Sessions offered your tool",
-                              selectedSessions: "Sessions using your tool",
-                              calls: "Completed calls",
-                              successfulCalls: "Successful calls",
-                            }[key]
-                          }
-                        </span>
-                        <strong>{value}</strong>
-                      </div>
-                    ))}
-                  </div>
+                  <InsightValues insights={insights} />
                 )}
               </Panel>
             )}
@@ -792,6 +893,9 @@ export function AccountSettings() {
   const canPreview = account.profile?.canPreview || account.profile?.isAdmin;
   const current =
     account.previewRole || (account.profile?.isAdmin ? "admin" : "user");
+  const [experience, setExperience] = useState(current);
+  const [target, setTarget] = useState(account.previewTarget || "");
+  const selectedTarget = target || account.previewTargets[0]?.target || "";
   const destination =
     current === "company"
       ? "#company"
@@ -825,21 +929,21 @@ export function AccountSettings() {
       {canPreview && (
         <Panel
           title="Preview as"
-          description="Test the product with your own memberships and standard permissions. Administrator privileges are disabled during a preview. This uses real account data."
+          description="Preview a company’s owner experience or your user experience. Your admin identity stays intact; other administrator actions are disabled during preview."
         >
           <label className="settings-preview-field">
             Experience
             <select
               aria-label="Preview as"
-              value={current}
+              value={experience}
               disabled={busy}
               onChange={async (e) => {
                 const value = e.target.value;
+                setExperience(value);
+                if (value === "company") return;
                 setBusy(true);
                 try {
-                  await account.preview(
-                    value === "admin" ? null : (value as "user" | "company"),
-                  );
+                  await account.preview(value === "admin" ? null : "user");
                 } finally {
                   setBusy(false);
                 }
@@ -850,18 +954,82 @@ export function AccountSettings() {
               <option value="company">Tool company</option>
             </select>
           </label>
+          {experience === "company" && (
+            <div className="settings-company-preview">
+              <label className="settings-preview-field">
+                Company to preview
+                <select
+                  aria-label="Company to preview"
+                  value={selectedTarget}
+                  disabled={busy || !account.previewTargets.length}
+                  onChange={(e) => setTarget(e.target.value)}
+                >
+                  {!account.previewTargets.length && (
+                    <option value="">Loading companies…</option>
+                  )}
+                  <optgroup label="Registered companies">
+                    {account.previewTargets
+                      .filter((item) => item.kind === "company")
+                      .map((item) => (
+                        <option key={item.target} value={item.target}>
+                          {item.name} ·{" "}
+                          {statusLabels[item.status as ToolCompany["status"]]}
+                        </option>
+                      ))}
+                  </optgroup>
+                  <optgroup label="Integrated providers">
+                    {account.previewTargets
+                      .filter((item) => item.kind === "provider")
+                      .map((item) => (
+                        <option key={item.target} value={item.target}>
+                          {item.name} · unregistered
+                        </option>
+                      ))}
+                  </optgroup>
+                </select>
+              </label>
+              <InlineError message={account.previewTargetError} />
+              {account.previewTargetError && (
+                <Button
+                  variant="outline"
+                  onClick={() => void account.reloadPreviewTargets()}
+                >
+                  Reload companies
+                </Button>
+              )}
+              <Button
+                disabled={busy || !selectedTarget}
+                onClick={async () => {
+                  setBusy(true);
+                  try {
+                    await account.preview("company", selectedTarget);
+                  } finally {
+                    setBusy(false);
+                  }
+                }}
+              >
+                Open company preview
+                <ArrowRight />
+              </Button>
+            </div>
+          )}
         </Panel>
       )}
       <Panel title="Account" description={account.profile?.user.email}>
         <div className="settings-account-links">
-          <a href="#dashboard">
-            My dashboard <ArrowRight size={16} />
-          </a>
+          {account.previewRole !== "company" && (
+            <a href="#dashboard">
+              My dashboard <ArrowRight size={16} />
+            </a>
+          )}
           <a href="#company">
             My tool company <ArrowRight size={16} />
           </a>
         </div>
-        <AccountControls showIdentity={false} />
+        <AccountControls
+          showIdentity={false}
+          showWorkspace={account.previewRole !== "company"}
+        />
       </Panel>
     </PortalShell>
   );

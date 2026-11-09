@@ -52,6 +52,7 @@ for (const id of workspaceIds)
     await observatory.db.applySharingPolicy();
     await observatory.db.recover();
     await app.locals.providerLab.recover();
+    await store.allowance.recover();
   });
 const server = app.listen(config.port, config.host, () =>
   console.log(

@@ -151,28 +151,32 @@ export class ProviderLab {
       .run(run.id, run.requestKey, JSON.stringify(run));
   }
   async recover() {
-    for (const run of (await this.list()).filter(
-      (r) => r.status === "running",
-    )) {
-      for (const c of run.calls) {
-        if (c.status === "running") {
-          c.status = "interrupted";
-          c.error =
-            "Server stopped before a receipt was saved. The reserved estimate is consumed conservatively; no automatic retry.";
-          c.finishedAt = new Date().toISOString();
-          run.spentMicros += c.estimateMicros;
-        } else if (c.status === "pending") c.status = "skipped";
+    await this.store.db.atomic(async () => {
+      for (const run of (await this.list()).filter(
+        (r) => r.status === "running",
+      )) {
+        for (const c of run.calls) {
+          if (c.status === "running") {
+            c.status = "interrupted";
+            c.error =
+              "Server stopped before a receipt was saved. The reserved estimate is consumed conservatively; no automatic retry.";
+            c.finishedAt = new Date().toISOString();
+            await this.store.allowance.settle(c.id);
+            run.spentMicros += c.estimateMicros;
+          } else if (c.status === "pending") c.status = "skipped";
+        }
+        run.reservedMicros = 0;
+        run.status = "interrupted";
+        run.finishedAt = new Date().toISOString();
+        await this.save(run);
       }
-      run.reservedMicros = 0;
-      run.status = "interrupted";
-      run.finishedAt = new Date().toISOString();
-      await this.save(run);
-    }
+    });
   }
   async overview() {
     const runs = await this.summaries();
     const dailyCommittedMicros = this.committedToday(runs);
     return {
+      operatorAllowance: await this.store.allowance.status(),
       suiteVersion,
       methodology: suiteMethodology,
       cases: suiteCases,
@@ -288,6 +292,7 @@ export class ProviderLab {
         }));
       });
       const plannedMicros = calls.reduce((n, c) => n + c.estimateMicros, 0);
+      await this.store.allowance.assert(plannedMicros);
       if (plannedMicros > config.providerTestBudgetMicros)
         throw new ObservationError(
           409,
@@ -349,6 +354,7 @@ export class ProviderLab {
                 c.finishedAt = new Date().toISOString();
                 c.error =
                   "Execution stopped before settlement could be saved. No automatic retry.";
+                await this.store.allowance.settle(c.id);
                 failed.spentMicros += c.estimateMicros;
               } else if (c.status === "pending") c.status = "skipped";
             }
@@ -390,6 +396,11 @@ export class ProviderLab {
           run.budgetMicros
         )
           throw new Error("Test ledger would exceed its cap");
+        await this.store.allowance.reserve(
+          call.id,
+          "provider_lab",
+          call.estimateMicros,
+        );
         call.status = "running";
         call.providerAccountReference = await providerAccountForCall(
           this.store,
@@ -436,6 +447,7 @@ export class ProviderLab {
           httpStatus,
           ...(result ? { result, measurements: measure(test, result) } : {}),
         });
+        await this.store.allowance.settle(call.id);
         run.reservedMicros -= call.estimateMicros;
         run.spentMicros += call.estimateMicros;
         await this.save(run);

@@ -8,6 +8,7 @@ export interface AccountProfile {
   workspaces: AccountWorkspace[];
   isAdmin: boolean;
   canPreview?: boolean;
+  companyPreview?: import("./company-types.js").CompanyPreviewTarget;
   companies: import("./company-types.js").ToolCompany[];
 }
 export type AuthPublicConfig =

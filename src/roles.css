@@ -282,3 +282,23 @@
 .portal-team-member + form {
   margin-top: 24px;
 }
+
+.settings-company-preview {
+  display: grid;
+  justify-items: start;
+  gap: 16px;
+  margin-top: 20px;
+}
+.preview-notice select {
+  appearance: none;
+  max-width: 210px;
+  min-width: 0;
+  border: 1px solid #414141;
+  border-radius: 6px;
+  background: #202020 url("/icons/chevron-down.svg?v=1") no-repeat right 8px
+    center / 14px 14px;
+  color: #ddd;
+  font: inherit;
+  padding: 6px 28px 6px 10px;
+  text-overflow: ellipsis;
+}

@@ -1,3 +1,4 @@
+import { AllowanceError } from "./workspace-allowance.js";
 import type { Express, Request, Response } from "express";
 import { z } from "zod";
 import { randomUUID } from "node:crypto";
@@ -10,7 +11,15 @@ export function providerLabRoutes(app: Express, lab: ProviderLab) {
       try {
         await fn(req, res);
       } catch (e) {
-        if (e instanceof z.ZodError)
+        if (e instanceof AllowanceError)
+          res
+            .status(e.status)
+            .json({
+              error: e.message,
+              code: e.code,
+              operatorAllowance: e.operatorAllowance,
+            });
+        else if (e instanceof z.ZodError)
           res
             .status(400)
             .json({ error: e.issues.map((i) => i.message).join("; ") });

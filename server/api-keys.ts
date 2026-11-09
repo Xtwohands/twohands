@@ -352,7 +352,11 @@ export function requiredApiKeyScope(
     return "tools:discover";
   if (method === "POST" && path === "/api/workspace/preview")
     return "tools:discover";
-  if (method === "GET" && path === "/api/workspace/usage") return "usage:read";
+  if (
+    method === "GET" &&
+    ["/api/workspace/usage", "/api/workspace/operator-allowance"].includes(path)
+  )
+    return "usage:read";
   if (method === "GET" && path === "/api/workspace/activity")
     return "research:read";
   if (

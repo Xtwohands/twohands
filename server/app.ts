@@ -1,3 +1,4 @@
+import { workspaceAllowanceAdminRoutes } from "./workspace-allowance-api.js";
 import { providerActivity } from "./provider-activity.js";
 import { toolCapabilities } from "./provider-capabilities.js";
 import { type Accounts } from "./accounts.js";
@@ -117,6 +118,7 @@ export function createApp(
   if (accounts) app.use("/api", accountPreviewAccess(accounts));
   accountRoutes(app, accounts);
   companyAccountRoutes(app, accounts);
+  workspaceAllowanceAdminRoutes(app, store, accounts);
   if (accounts)
     stripeFunding.workspaceForWebhook = (identity) =>
       accounts.paymentWorkspace(identity);
