@@ -188,6 +188,7 @@ function readRoute() {
       "benchmarks",
       "plans",
       "insights",
+      "team",
     ].includes(section)
       ? section
       : "overview",

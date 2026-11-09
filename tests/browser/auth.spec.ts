@@ -1,6 +1,8 @@
 import { test, expect, type Page } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
-test.use({ baseURL: "http://127.0.0.1:3102" });
+const authBrowserUrl =
+  process.env.OCTOLAB_AUTH_BROWSER_URL || "http://127.0.0.1:3102";
+test.use({ baseURL: authBrowserUrl });
 const authOrigin = "https://octolab-fixture.supabase.co";
 const userId = "00000000-0000-4000-8000-000000000011";
 const first = "00000000-0000-4000-8000-000000000021",
@@ -35,6 +37,14 @@ async function mockAuth(
     companies: [] as any[],
     role,
     reviewed: null as any,
+    members: [
+      {
+        id: userId,
+        email: "account@fixture.invalid",
+        role: "owner",
+        createdAt: new Date().toISOString(),
+      },
+    ],
     workspaces:
       empty || role !== "user"
         ? []
@@ -50,14 +60,17 @@ async function mockAuth(
   const gate = new Promise<void>((resolve) => {
     state.release = resolve;
   });
-  await page.route(/^http:\/\/127\.0\.0\.1:3102\/(?:\?.*)?$/, async (route) => {
-    const response = await route.fetch(),
-      headers = response.headers();
-    headers["content-security-policy"] = headers[
-      "content-security-policy"
-    ].replace("connect-src 'self'", "connect-src 'self' " + authOrigin);
-    await route.fulfill({ response, headers });
-  });
+  await page.route(
+    (url) => url.origin === authBrowserUrl && url.pathname === "/",
+    async (route) => {
+      const response = await route.fetch(),
+        headers = response.headers();
+      headers["content-security-policy"] = headers[
+        "content-security-policy"
+      ].replace("connect-src 'self'", "connect-src 'self' " + authOrigin);
+      await route.fulfill({ response, headers });
+    },
+  );
   await page.route("**/api/auth/config", (route) =>
     route.fulfill({
       json: {
@@ -189,6 +202,7 @@ async function mockAuth(
     toolName: "Fixture search",
     description: "Search integration for fixture evidence.",
     status: "pending",
+    role: "owner",
     providerId: null,
     insightsEnabled: false,
     feedback: "",
@@ -246,6 +260,23 @@ async function mockAuth(
     };
     await route.fulfill({ json: state.companies[0] });
   });
+  await page.route("**/api/companies/*/members", async (route) => {
+    if (route.request().method() === "POST") {
+      const body = route.request().postDataJSON();
+      if (body.action === "grant")
+        state.members.push({
+          id: "00000000-0000-4000-8000-000000000099",
+          email: body.email,
+          role: "analyst",
+          createdAt: new Date().toISOString(),
+        });
+      else state.members = state.members.filter((m) => m.id !== body.userId);
+      await route.fulfill({ json: { replayed: false } });
+    } else await route.fulfill({ json: state.members });
+  });
+  await page.route("**/api/companies/*/access-history", (route) =>
+    route.fulfill({ json: [] }),
+  );
   await page.route("**/api/admin/companies?**", (route) =>
     route.fulfill({
       status: state.role === "admin" ? 200 : 403,
@@ -439,6 +470,23 @@ test("tool company registration never forces a customer workspace or exposes the
       "Insights will become available after your company and integration are approved.",
     ),
   ).toBeVisible();
+  await openNav(page);
+  await page.getByRole("link", { name: "Company team", exact: true }).click();
+  await page
+    .getByLabel("Analyst email", { exact: true })
+    .fill("teammate@fixture.invalid");
+  await page.getByRole("button", { name: "Add analyst", exact: true }).click();
+  await expect(
+    page.getByText("teammate@fixture.invalid", { exact: true }),
+  ).toBeVisible();
+  await page
+    .getByRole("button", { name: "Remove access", exact: true })
+    .click();
+  await expect(
+    page.getByText("teammate@fixture.invalid", { exact: true }),
+  ).toHaveCount(0);
+  await openNav(page);
+  await page.getByRole("link", { name: "Tool insights", exact: true }).click();
   state.companies[0] = {
     ...state.companies[0],
     status: "approved",

@@ -1,5 +1,6 @@
 import type { ProviderId } from "./types.js";
 export interface ToolCompany {
+  role?: "owner" | "analyst" | "platform_admin";
   id: string;
   name: string;
   website: string;

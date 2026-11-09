@@ -54,7 +54,7 @@ suite("authenticated account and tenant boundaries", () => {
     db = store.db as PostgresDatabase;
     await applyMigrations(db);
     await db.pool.query(
-      "CREATE SCHEMA IF NOT EXISTS auth; CREATE TABLE IF NOT EXISTS auth.users(id UUID PRIMARY KEY,deleted_at TIMESTAMPTZ,banned_until TIMESTAMPTZ); ALTER TABLE auth.users ADD COLUMN IF NOT EXISTS email TEXT; CREATE TABLE IF NOT EXISTS auth.sessions(id UUID PRIMARY KEY,user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,not_after TIMESTAMPTZ);",
+      "CREATE SCHEMA IF NOT EXISTS auth; CREATE TABLE IF NOT EXISTS auth.users(id UUID PRIMARY KEY,deleted_at TIMESTAMPTZ,banned_until TIMESTAMPTZ); ALTER TABLE auth.users ADD COLUMN IF NOT EXISTS email TEXT; ALTER TABLE auth.users ADD COLUMN IF NOT EXISTS email_confirmed_at TIMESTAMPTZ; CREATE TABLE IF NOT EXISTS auth.sessions(id UUID PRIMARY KEY,user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,not_after TIMESTAMPTZ);",
     );
     for (const name of ["a", "b", "admin"] as const) {
       const identity = {
@@ -64,10 +64,10 @@ suite("authenticated account and tenant boundaries", () => {
         expiresAt: Date.now() + 3600000,
       };
       identities.set("fixture-" + name, identity);
-      await db.pool.query("INSERT INTO auth.users(id,email) VALUES($1,$2)", [
-        identity.userId,
-        identity.email,
-      ]);
+      await db.pool.query(
+        "INSERT INTO auth.users(id,email,email_confirmed_at) VALUES($1,$2,now())",
+        [identity.userId, identity.email],
+      );
       await db.pool.query(
         "INSERT INTO auth.sessions(id,user_id) VALUES($1,$2)",
         [identity.sessionId, identity.userId],
@@ -636,6 +636,286 @@ suite("authenticated account and tenant boundaries", () => {
           .set(headers("fixture-admin"))
       ).body.items.some((c: any) => c.id === id),
     ).toBe(false);
+  });
+  it("grants read-only company team access with immediate audited revocation", async () => {
+    const input = {
+      name: "Team fixture",
+      website: "https://team.fixture.invalid",
+      toolName: "Team tool",
+      description: "An isolated provider company for role tests.",
+      requestKey: randomUUID(),
+    };
+    const registration = await request(app)
+      .post("/api/auth/companies")
+      .set(headers("fixture-a"))
+      .send(input);
+    const id = registration.body.id;
+    expect(
+      (
+        await request(app)
+          .get(`/api/companies/${id}/members`)
+          .set(headers("fixture-b"))
+      ).status,
+    ).toBe(403);
+    expect(
+      (
+        await request(app)
+          .post(`/api/companies/${id}/members`)
+          .set(headers("fixture-a"))
+          .send({
+            action: "grant",
+            email: "a@fixture.invalid",
+            requestKey: randomUUID(),
+          })
+      ).status,
+    ).toBe(409);
+    const grant = {
+      action: "grant",
+      email: "b@fixture.invalid",
+      requestKey: randomUUID(),
+    };
+    const granted = await request(app)
+      .post(`/api/companies/${id}/members`)
+      .set(headers("fixture-a"))
+      .send(grant);
+    expect(granted.status).toBe(200);
+    expect(
+      (
+        await request(app)
+          .post(`/api/companies/${id}/members`)
+          .set(headers("fixture-a"))
+          .send({ ...grant, requestKey: randomUUID() })
+      ).status,
+    ).toBe(409);
+    expect(
+      (
+        await request(app)
+          .post(`/api/companies/${id}/members`)
+          .set(headers("fixture-a"))
+          .send(grant)
+      ).body.replayed,
+    ).toBe(true);
+    const memberProfile = await request(app)
+      .get("/api/auth/me")
+      .set(headers("fixture-b"));
+    expect(
+      memberProfile.body.companies.find((c: any) => c.id === id)?.role,
+    ).toBe("analyst");
+    expect(
+      (await request(app).get(`/api/companies/${id}`).set(headers("fixture-b")))
+        .status,
+    ).toBe(200);
+    expect(
+      (
+        await request(app)
+          .get(`/api/companies/${id}/members`)
+          .set(headers("fixture-b"))
+      ).status,
+    ).toBe(403);
+    expect(
+      (
+        await request(app)
+          .post(`/api/companies/${id}/members`)
+          .set(headers("fixture-b"))
+          .send({
+            ...grant,
+            email: "a@fixture.invalid",
+            requestKey: randomUUID(),
+          })
+      ).status,
+    ).toBe(403);
+    expect(
+      (
+        await request(app)
+          .post(`/api/companies/${id}/members`)
+          .set(headers("fixture-a"))
+          .send({ action: "revoke", userId: ids.a, requestKey: randomUUID() })
+      ).status,
+    ).toBe(409);
+    expect(
+      (
+        await request(app)
+          .post(`/api/admin/companies/${id}/review`)
+          .set(headers("fixture-admin"))
+          .send({
+            revision: 0,
+            status: "approved",
+            providerId: "tavily",
+            insightsEnabled: true,
+            feedback: "Ownership verified for the isolated team.",
+          })
+      ).status,
+    ).toBe(200);
+    const report = await request(app)
+      .get(`/api/companies/${id}/insights`)
+      .set(headers("fixture-b"));
+    expect(report.status).toBe(200);
+    expect(report.body.metrics).toBeNull();
+    const audit = await request(app)
+      .get(`/api/companies/${id}/access-history`)
+      .set(headers("fixture-a"));
+    expect(
+      audit.body.some(
+        (e: any) => e.action === "report_accessed" && e.actorId === ids.b,
+      ),
+    ).toBe(true);
+    expect(
+      (
+        await request(app)
+          .post(`/api/companies/${id}/members`)
+          .set(headers("fixture-a"))
+          .send({ action: "revoke", userId: ids.b, requestKey: randomUUID() })
+      ).status,
+    ).toBe(200);
+    expect(
+      (
+        await request(app)
+          .get(`/api/companies/${id}/insights`)
+          .set(headers("fixture-b"))
+      ).status,
+    ).toBe(404);
+    await request(app)
+      .post(`/api/companies/${id}/members`)
+      .set(headers("fixture-a"))
+      .send(grant);
+    expect(
+      (await request(app).get(`/api/companies/${id}`).set(headers("fixture-b")))
+        .status,
+    ).toBe(404);
+  });
+  it("suppresses small company cohorts and excludes ineligible offers and calls before exposure", async () => {
+    const registration = await request(app)
+      .post("/api/auth/companies")
+      .set(headers("fixture-b"))
+      .send({
+        name: "Metric fixture company",
+        website: "https://metrics.fixture.invalid",
+        toolName: "Metric tool",
+        description: "Isolated synthetic cohort measurement integration.",
+        requestKey: randomUUID(),
+      });
+    const id = registration.body.id;
+    expect(
+      (
+        await request(app)
+          .post(`/api/admin/companies/${id}/review`)
+          .set(headers("fixture-admin"))
+          .send({
+            revision: 0,
+            status: "approved",
+            providerId: "firecrawl",
+            insightsEnabled: true,
+            feedback: "Ownership and aggregate access approved for fixtures.",
+          })
+      ).status,
+    ).toBe(200);
+    const tenants = [] as {
+      workspace: string;
+      session: string;
+      event: number;
+      call: string;
+    }[];
+    for (let n = 0; n < 5; n++) {
+      const workspace = randomUUID(),
+        session = randomUUID(),
+        call = randomUUID();
+      await db.pool.query(
+        "INSERT INTO octolab.workspaces(id,name) VALUES($1,$2)",
+        [workspace, "Isolated aggregate fixture"],
+      );
+      await db.pool.query(
+        "INSERT INTO octolab.observation_sessions(id,body,workspace_id) VALUES($1,$2,$3)",
+        [
+          session,
+          JSON.stringify({
+            commercialConsent: true,
+            objective: "PRIVATE_INTENT_MUST_NOT_LEAVE",
+            model: "PRIVATE_MODEL",
+          }),
+          workspace,
+        ],
+      );
+      const event = await db.pool.query(
+        "INSERT INTO octolab.observation_events(session_id,body,workspace_id) VALUES($1,$2,$3) RETURNING id",
+        [
+          session,
+          JSON.stringify({
+            type: "tools_offered",
+            at: "2026-01-01T10:00:00.000Z",
+            data: {
+              tools: [
+                {
+                  provider: "firecrawl",
+                  available: true,
+                  discoveryMatches: [
+                    { status: n === 4 ? "ineligible" : "eligible" },
+                  ],
+                },
+              ],
+            },
+          }),
+          workspace,
+        ],
+      );
+      await db.pool.query(
+        "INSERT INTO octolab.observation_calls(id,session_id,request_key,signature,body,workspace_id) VALUES($1,$2,$1,$3,$4,$5)",
+        [
+          call,
+          session,
+          "fixture",
+          JSON.stringify({
+            provider: "firecrawl",
+            status: "succeeded",
+            startedAt: "2026-01-01T10:01:00.000Z",
+            result: { text: "PRIVATE_OUTPUT_MUST_NOT_LEAVE" },
+          }),
+          workspace,
+        ],
+      );
+      tenants.push({ workspace, session, event: event.rows[0].id, call });
+    }
+    const get = () =>
+      request(app)
+        .get(`/api/companies/${id}/insights`)
+        .set(headers("fixture-b"));
+    expect((await get()).body).toMatchObject({
+      status: "insufficient_data",
+      metrics: null,
+    });
+    const last = tenants[4];
+    await db.pool.query(
+      "UPDATE octolab.observation_events SET body=jsonb_set(body::jsonb,'{data,tools,0,discoveryMatches,0,status}','\"eligible\"'::jsonb)::text WHERE workspace_id=$1 AND id=$2",
+      [last.workspace, last.event],
+    );
+    await db.pool.query(
+      "UPDATE octolab.observation_calls SET body=jsonb_set(body::jsonb,'{startedAt}','\"2026-01-01T09:00:00.000Z\"'::jsonb)::text WHERE workspace_id=$1 AND id=$2",
+      [last.workspace, last.call],
+    );
+    expect((await get()).body.metrics).toBeNull();
+    await db.pool.query(
+      "UPDATE octolab.observation_calls SET body=jsonb_set(body::jsonb,'{startedAt}','\"2026-01-01T10:01:00.000Z\"'::jsonb)::text WHERE workspace_id=$1 AND id=$2",
+      [last.workspace, last.call],
+    );
+    const report = await get();
+    expect(report.status).toBe(200);
+    expect(report.body).toMatchObject({
+      status: "available",
+      metrics: {
+        offeredSessions: 5,
+        selectedSessions: 5,
+        calls: 5,
+        successfulCalls: 5,
+      },
+    });
+    expect(JSON.stringify(report.body)).not.toContain("PRIVATE_");
+    expect(JSON.stringify(report.body)).not.toContain(last.workspace);
+    expect(
+      (
+        await request(app)
+          .get(`/api/companies/${id}/insights`)
+          .set(headers("fixture-a"))
+      ).status,
+    ).toBe(404);
   });
   it("rejects revoked or banned sessions even while identity verification is cached", async () => {
     await request(app).get("/api/auth/me").set(headers("fixture-a"));

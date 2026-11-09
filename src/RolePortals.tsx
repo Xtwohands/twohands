@@ -1,3 +1,4 @@
+import { CompanyTeamView } from "./CompanyTeamView";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ArrowRight, Settings01, Menu01, XClose } from "@untitledui/icons";
 import { useAccount, AccountControls } from "./AccountGate";
@@ -132,7 +133,14 @@ export function CompanyPortal({
     description: "",
   });
   const requestKey = useRef(crypto.randomUUID());
-  const tab = section === "insights" ? "insights" : "overview";
+  const tab =
+    section === "team"
+      ? "team"
+      : section === "insights"
+        ? "insights"
+        : "overview";
+  const canManage =
+    company?.role === "owner" || company?.role === "platform_admin";
   useEffect(() => {
     let active = true;
     setError("");
@@ -178,6 +186,15 @@ export function CompanyPortal({
           label: "Tool insights",
           selected: tab === "insights",
         },
+        ...(canManage
+          ? [
+              {
+                href: `#company/${selected!.id}/team`,
+                label: "Company team",
+                selected: tab === "team",
+              },
+            ]
+          : []),
         {
           href: "#company/new",
           label: "Register another company",
@@ -199,9 +216,11 @@ export function CompanyPortal({
               ? editing
                 ? "Update company details"
                 : "Bring your tool to octolab"
-              : tab === "insights"
-                ? "Tool insights"
-                : (company?.name ?? "Company overview")}
+              : tab === "team"
+                ? "Company team"
+                : tab === "insights"
+                  ? "Tool insights"
+                  : (company?.name ?? "Company overview")}
           </h1>
           <p>
             {registering
@@ -332,7 +351,18 @@ export function CompanyPortal({
                 </select>
               </label>
             )}
-            {tab === "overview" ? (
+            {tab === "team" ? (
+              canManage ? (
+                <CompanyTeamView key={company.id} companyId={company.id} />
+              ) : (
+                <Panel title="Company owner access required">
+                  <p>
+                    Only a company owner can manage the team and review access
+                    history.
+                  </p>
+                </Panel>
+              )
+            ) : tab === "overview" ? (
               <>
                 <Panel
                   title="Integration status"
@@ -342,22 +372,23 @@ export function CompanyPortal({
                     </span>
                   }
                 >
-                  {["pending", "rejected"].includes(company.status) && (
-                    <Button
-                      variant="outline"
-                      onClick={() => {
-                        setForm({
-                          name: company.name,
-                          website: company.website,
-                          toolName: company.toolName,
-                          description: company.description,
-                        });
-                        setEditing(true);
-                      }}
-                    >
-                      Update registration
-                    </Button>
-                  )}
+                  {canManage &&
+                    ["pending", "rejected"].includes(company.status) && (
+                      <Button
+                        variant="outline"
+                        onClick={() => {
+                          setForm({
+                            name: company.name,
+                            website: company.website,
+                            toolName: company.toolName,
+                            description: company.description,
+                          });
+                          setEditing(true);
+                        }}
+                      >
+                        Update registration
+                      </Button>
+                    )}
                   <ol className="portal-steps">
                     <li>
                       <strong>Company registered</strong>

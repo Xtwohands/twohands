@@ -262,3 +262,23 @@
 .role-portal .obs-main .account-controls {
   max-width: 320px;
 }
+.portal-team-member {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 16px 0;
+  border-bottom: 1px solid #303035;
+  font-size: 13px;
+}
+.portal-team-member p {
+  margin: 5px 0 0;
+  color: #9999a4;
+  font-size: 12px;
+}
+.portal-team-member strong {
+  overflow-wrap: anywhere;
+}
+.portal-team-member + form {
+  margin-top: 24px;
+}

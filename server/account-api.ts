@@ -256,6 +256,40 @@ export function companyAccountRoutes(app: Express, accounts?: Accounts) {
     ),
   );
   router.get(
+    "/companies/:id/members",
+    route(async (req, res) =>
+      res.json(
+        await accounts.companies.team.list(
+          res.locals.account,
+          String(req.params.id),
+        ),
+      ),
+    ),
+  );
+  router.post(
+    "/companies/:id/members",
+    route(async (req, res) =>
+      res.json(
+        await accounts.companies.team.change(
+          res.locals.account,
+          String(req.params.id),
+          req.body,
+        ),
+      ),
+    ),
+  );
+  router.get(
+    "/companies/:id/access-history",
+    route(async (req, res) =>
+      res.json(
+        await accounts.companies.team.audit(
+          res.locals.account,
+          String(req.params.id),
+        ),
+      ),
+    ),
+  );
+  router.get(
     "/companies/:id/insights",
     route(async (req, res) =>
       res.json(

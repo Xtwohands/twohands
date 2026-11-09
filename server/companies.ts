@@ -1,3 +1,4 @@
+import { CompanyTeam } from "./company-team.js";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import {
@@ -28,14 +29,17 @@ const registration = z
   })
   .strict();
 export class Companies {
-  constructor(private accounts: Accounts) {}
+  readonly team: CompanyTeam;
+  constructor(private accounts: Accounts) {
+    this.team = new CompanyTeam(accounts);
+  }
   private get pool() {
     return this.accounts.database.pool;
   }
   async list(identity: VerifiedIdentity): Promise<ToolCompany[]> {
     return (
       await this.pool.query(
-        `SELECT ${fields} FROM octolab.tool_companies WHERE owner_user_id=$1 ORDER BY created_at,id`,
+        `SELECT ${fields},(SELECT role FROM octolab.company_memberships m WHERE m.company_id=tool_companies.id AND m.user_id=$1) AS role FROM octolab.tool_companies WHERE EXISTS(SELECT 1 FROM octolab.company_memberships m WHERE m.company_id=tool_companies.id AND m.user_id=$1) ORDER BY created_at,id`,
         [identity.userId],
       )
     ).rows;
@@ -44,7 +48,7 @@ export class Companies {
     if (!z.uuid().safeParse(id).success)
       throw new AccountError(404, "Company not found.");
     const rows = await this.pool.query(
-      `SELECT ${fields} FROM octolab.tool_companies WHERE id=$1 AND (owner_user_id=$2 OR $3)`,
+      `SELECT ${fields},CASE WHEN $3 THEN 'platform_admin' ELSE (SELECT role FROM octolab.company_memberships m WHERE m.company_id=tool_companies.id AND m.user_id=$2) END AS role FROM octolab.tool_companies WHERE id=$1 AND ($3 OR EXISTS(SELECT 1 FROM octolab.company_memberships m WHERE m.company_id=tool_companies.id AND m.user_id=$2))`,
       [id, identity.userId, this.accounts.isAdmin(identity.userId)],
     );
     if (!rows.rowCount) throw new AccountError(404, "Company not found.");
@@ -67,6 +71,15 @@ export class Companies {
         [identity.userId, input.requestKey],
       );
       if (old.rowCount) {
+        const member = await client.query(
+          "SELECT 1 FROM octolab.company_memberships WHERE company_id=$1 AND user_id=$2 AND role='owner'",
+          [old.rows[0].id, identity.userId],
+        );
+        if (!member.rowCount)
+          throw new AccountError(
+            403,
+            "You no longer own this company registration.",
+          );
         const row = old.rows[0];
         if (
           row.name !== input.name ||
@@ -100,6 +113,10 @@ export class Companies {
         ],
       );
       await client.query(
+        "INSERT INTO octolab.company_memberships(company_id,user_id,role) VALUES($1,$2,'owner')",
+        [result.rows[0].id, identity.userId],
+      );
+      await client.query(
         "INSERT INTO octolab.company_review_events(id,company_id,actor_user_id,revision,data) VALUES($1,$2,$3,0,$4)",
         [
           randomUUID(),
@@ -127,11 +144,12 @@ export class Companies {
       .extend({ revision: z.number().int().nonnegative() })
       .parse(raw);
     await this.get(identity, id);
+    await this.team.requireOwner(identity, id);
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
       const result = await client.query(
-        `UPDATE octolab.tool_companies SET name=$1,website=$2,tool_name=$3,description=$4,status='pending',provider_id=NULL,insights_enabled=false,revision=revision+1,updated_at=now() WHERE id=$5 AND owner_user_id=$6 AND revision=$7 AND status IN ('pending','rejected') RETURNING ${fields}`,
+        `UPDATE octolab.tool_companies SET name=$1,website=$2,tool_name=$3,description=$4,status='pending',provider_id=NULL,insights_enabled=false,revision=revision+1,updated_at=now() WHERE id=$5 AND owner_user_id=$6 AND revision=$7 AND status IN ('pending','rejected') AND EXISTS(SELECT 1 FROM octolab.company_memberships m WHERE m.company_id=tool_companies.id AND m.user_id=$6 AND m.role='owner') RETURNING ${fields}`,
         [
           input.name,
           input.website,
@@ -303,8 +321,10 @@ export class Companies {
       providerId: company.providerId,
       minimumCohort: config.minCohort,
     };
-    if (!company.insightsEnabled)
+    if (!company.insightsEnabled) {
+      await this.team.reportAccess(identity, id, "awaiting_release");
       return { ...base, status: "awaiting_release", metrics: null };
+    }
     // Only aggregate counts leave the backend. No queries, outputs, IDs, or consumer-level slices.
     // Require independent workspaces as well as sessions; repeated calls by one tenant cannot unlock sharing.
     const result = await this.pool.query(
@@ -332,8 +352,11 @@ export class Companies {
       row.tenants < config.minCohort ||
       row.selected_tenants < config.minCohort ||
       row.selected < config.minCohort
-    )
+    ) {
+      await this.team.reportAccess(identity, id, "insufficient_data");
       return { ...base, status: "insufficient_data", metrics: null };
+    }
+    await this.team.reportAccess(identity, id, "available");
     return {
       ...base,
       status: "available",
