@@ -7,10 +7,13 @@ import {
   type VerifiedIdentity,
 } from "./accounts.js";
 import { config } from "./config.js";
+import { providerTools } from "./provider-identifiers.js";
+import type { ProviderId } from "./types.js";
 import type {
   ToolCompany,
   CompanyInsights,
   CompanyReviewItem,
+  CompanyPreviewTarget,
 } from "./company-types.js";
 const fields = `id,name,website,tool_name AS "toolName",description,status,provider_id AS "providerId",insights_enabled AS "insightsEnabled",feedback,revision,created_at AS "createdAt",updated_at AS "updatedAt"`;
 const registration = z
@@ -36,7 +39,62 @@ export class Companies {
   private get pool() {
     return this.accounts.database.pool;
   }
+  async previewTargets(
+    identity: VerifiedIdentity,
+  ): Promise<CompanyPreviewTarget[]> {
+    if (!this.accounts.isPlatformAdmin(identity.userId))
+      throw new AccountError(
+        403,
+        "Administrator access is required to choose a company preview.",
+      );
+    const result = await this.pool.query(
+      'SELECT id,name,status,provider_id AS "providerId" FROM octolab.tool_companies ORDER BY lower(name),id',
+    );
+    const targets: CompanyPreviewTarget[] = result.rows.map((row) => ({
+      ...row,
+      kind: "company",
+      target: `company:${row.id}`,
+    }));
+    const names: Record<ProviderId, string> = {
+      exa: "Exa",
+      tavily: "Tavily",
+      firecrawl: "Firecrawl",
+    };
+    for (const provider of new Set(Object.values(providerTools))) {
+      if (!result.rows.some((row) => row.providerId === provider))
+        targets.push({
+          target: `provider:${provider}`,
+          kind: "provider",
+          id: provider,
+          name: names[provider],
+          providerId: provider,
+          status: "unregistered",
+        });
+    }
+    return targets;
+  }
+  async resolvePreviewTarget(
+    identity: VerifiedIdentity,
+    target: string,
+  ): Promise<CompanyPreviewTarget> {
+    if (target.length > 64)
+      throw new AccountError(400, "Invalid company preview target.");
+    const selected = (await this.previewTargets(identity)).find(
+      (item) => item.target === target,
+    );
+    if (!selected)
+      throw new AccountError(
+        409,
+        "This preview target changed or is no longer available. Choose a company again in Settings.",
+      );
+    return selected;
+  }
   async list(identity: VerifiedIdentity): Promise<ToolCompany[]> {
+    const target = this.accounts.previewScope.getStore()?.target;
+    if (target)
+      return target.kind === "company"
+        ? [await this.get(identity, target.id)]
+        : [];
     return (
       await this.pool.query(
         `SELECT ${fields},(SELECT role FROM octolab.company_memberships m WHERE m.company_id=tool_companies.id AND m.user_id=$1) AS role FROM octolab.tool_companies WHERE EXISTS(SELECT 1 FROM octolab.company_memberships m WHERE m.company_id=tool_companies.id AND m.user_id=$1) ORDER BY created_at,id`,
@@ -45,14 +103,15 @@ export class Companies {
     ).rows;
   }
   async get(identity: VerifiedIdentity, id: string): Promise<ToolCompany> {
+    const preview = this.accounts.previewsCompany(identity, id);
     if (!z.uuid().safeParse(id).success)
       throw new AccountError(404, "Company not found.");
     const rows = await this.pool.query(
       `SELECT ${fields},CASE WHEN $3 THEN 'platform_admin' ELSE (SELECT role FROM octolab.company_memberships m WHERE m.company_id=tool_companies.id AND m.user_id=$2) END AS role FROM octolab.tool_companies WHERE id=$1 AND ($3 OR EXISTS(SELECT 1 FROM octolab.company_memberships m WHERE m.company_id=tool_companies.id AND m.user_id=$2))`,
-      [id, identity.userId, this.accounts.isAdmin(identity.userId)],
+      [id, identity.userId, this.accounts.isAdmin(identity.userId) || preview],
     );
     if (!rows.rowCount) throw new AccountError(404, "Company not found.");
-    return rows.rows[0];
+    return preview ? { ...rows.rows[0], role: "owner" } : rows.rows[0];
   }
   async register(
     identity: VerifiedIdentity,
@@ -149,7 +208,7 @@ export class Companies {
     try {
       await client.query("BEGIN");
       const result = await client.query(
-        `UPDATE octolab.tool_companies SET name=$1,website=$2,tool_name=$3,description=$4,status='pending',provider_id=NULL,insights_enabled=false,revision=revision+1,updated_at=now() WHERE id=$5 AND owner_user_id=$6 AND revision=$7 AND status IN ('pending','rejected') AND EXISTS(SELECT 1 FROM octolab.company_memberships m WHERE m.company_id=tool_companies.id AND m.user_id=$6 AND m.role='owner') RETURNING ${fields}`,
+        `UPDATE octolab.tool_companies SET name=$1,website=$2,tool_name=$3,description=$4,status='pending',provider_id=NULL,insights_enabled=false,revision=revision+1,updated_at=now() WHERE id=$5 AND revision=$7 AND status IN ('pending','rejected') AND ($8 OR (owner_user_id=$6 AND EXISTS(SELECT 1 FROM octolab.company_memberships m WHERE m.company_id=tool_companies.id AND m.user_id=$6 AND m.role='owner'))) RETURNING ${fields}`,
         [
           input.name,
           input.website,
@@ -158,6 +217,7 @@ export class Companies {
           id,
           identity.userId,
           input.revision,
+          this.accounts.previewsCompany(identity, id),
         ],
       );
       if (!result.rowCount)
@@ -317,14 +377,22 @@ export class Companies {
         403,
         "Company approval is required before insights are available.",
       );
+    const data: CompanyInsights = company.insightsEnabled
+      ? await this.aggregateInsights(company.providerId)
+      : {
+          providerId: company.providerId,
+          minimumCohort: config.minCohort,
+          status: "awaiting_release",
+          metrics: null,
+        };
+    await this.team.reportAccess(identity, id, data.status);
+    return data;
+  }
+  async aggregateInsights(providerId: ProviderId): Promise<CompanyInsights> {
     const base = {
-      providerId: company.providerId,
+      providerId,
       minimumCohort: config.minCohort,
     };
-    if (!company.insightsEnabled) {
-      await this.team.reportAccess(identity, id, "awaiting_release");
-      return { ...base, status: "awaiting_release", metrics: null };
-    }
     // Only aggregate counts leave the backend. No queries, outputs, IDs, or consumer-level slices.
     // Require independent workspaces as well as sessions; repeated calls by one tenant cannot unlock sharing.
     const result = await this.pool.query(
@@ -340,23 +408,30 @@ export class Companies {
     ), calls AS (
       SELECT c.workspace_id,c.session_id,c.body::jsonb AS body FROM octolab.observation_calls c JOIN eligible e ON e.workspace_id=c.workspace_id AND e.id=c.session_id
       WHERE c.body::jsonb->>'startedAt'>=e.offered_at AND c.body::jsonb->>'provider'=$1 AND c.body::jsonb->>'status' IN ('succeeded','failed')
-    ) SELECT (SELECT count(DISTINCT workspace_id) FROM eligible)::integer AS tenants,
+    ) SELECT EXISTS(SELECT 1 FROM octolab.tool_companies WHERE provider_id=$1) AS claimed,
+      (SELECT count(DISTINCT workspace_id) FROM eligible)::integer AS tenants,
       (SELECT count(*) FROM eligible)::integer AS offered,
       (SELECT count(*) FROM (SELECT DISTINCT workspace_id,session_id FROM calls) x)::integer AS selected,
       (SELECT count(*) FROM (SELECT DISTINCT workspace_id FROM calls) x)::integer AS selected_tenants,
       count(*)::integer AS calls,count(*) FILTER (WHERE body->>'status'='succeeded')::integer AS succeeded FROM calls`,
-      [company.providerId],
+      [providerId],
     );
     const row = result.rows[0];
+    if (
+      this.accounts.previewScope.getStore()?.target?.kind === "provider" &&
+      row.claimed
+    )
+      throw new AccountError(
+        409,
+        "This provider now has a company registration. Choose that company in Settings.",
+      );
     if (
       row.tenants < config.minCohort ||
       row.selected_tenants < config.minCohort ||
       row.selected < config.minCohort
     ) {
-      await this.team.reportAccess(identity, id, "insufficient_data");
       return { ...base, status: "insufficient_data", metrics: null };
     }
-    await this.team.reportAccess(identity, id, "available");
     return {
       ...base,
       status: "available",

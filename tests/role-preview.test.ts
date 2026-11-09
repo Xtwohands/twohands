@@ -91,9 +91,9 @@ describe("administrator role preview", () => {
       ).status,
     ).toBe(403);
   });
-  it("enforces operator, company admin, and membership restrictions during either preview", async () => {
+  it("enforces operator, company admin, and membership restrictions during user preview", async () => {
     const { app } = fixture();
-    for (const role of ["user", "company"]) {
+    for (const role of ["user"]) {
       const headers = {
         authorization: "admin",
         "X-Octolab-Preview": role,

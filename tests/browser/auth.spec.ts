@@ -132,22 +132,67 @@ async function mockAuth(
     }
     await route.fulfill({ json: user(), headers });
   });
-  await page.route("**/api/auth/me", (route) =>
+  const previewTargets = () => [
+    ...state.companies.map((company) => ({
+      target: `company:${company.id}`,
+      kind: "company",
+      id: company.id,
+      name: company.name,
+      status: company.status,
+      providerId: company.providerId,
+    })),
+    ...["exa", "tavily", "firecrawl"]
+      .filter(
+        (id) => !state.companies.some((company) => company.providerId === id),
+      )
+      .map((id) => ({
+        target: `provider:${id}`,
+        kind: "provider",
+        id,
+        name: { exa: "Exa", tavily: "Tavily", firecrawl: "Firecrawl" }[id],
+        status: "unregistered",
+        providerId: id,
+      })),
+  ];
+  await page.route("**/api/auth/preview-targets", (route) =>
+    route.fulfill({ json: previewTargets() }),
+  );
+  await page.route("**/api/auth/preview-insights", (route) =>
     route.fulfill({
+      json: {
+        providerId: route
+          .request()
+          .headers()
+          ["x-octolab-preview-target"]?.split(":")[1],
+        minimumCohort: 5,
+        status: "insufficient_data",
+        metrics: null,
+      },
+    }),
+  );
+  await page.route("**/api/auth/me", (route) => {
+    const headers = route.request().headers();
+    const target = previewTargets().find(
+      (target) => target.target === headers["x-octolab-preview-target"],
+    );
+    return route.fulfill({
       status: state.revoked ? 401 : 200,
       json: state.revoked
         ? { error: "This session ended." }
         : {
             user: { id: userId, email: "account@fixture.invalid" },
-            workspaces: state.workspaces,
-            isAdmin:
-              state.role === "admin" &&
-              !route.request().headers()["x-octolab-preview"],
+            workspaces: target ? [] : state.workspaces,
+            isAdmin: state.role === "admin" && !headers["x-octolab-preview"],
             canPreview: state.role === "admin",
-            companies: state.companies,
+            companyPreview: target,
+            companies: target
+              ? state.companies
+                  .filter((company) => company.id === target.id)
+                  .map((company) => ({ ...company, role: "owner" }))
+              : state.companies,
           },
-    }),
-  );
+    });
+  });
   await page.route("**/api/auth/workspaces", async (route) => {
     const body = route.request().postDataJSON(),
       workspace = { id: first, name: body.name, role: "owner" };
@@ -227,7 +272,9 @@ async function mockAuth(
     });
   });
   await page.route("**/api/companies/*/insights", async (route) => {
-    const item = state.companies[0];
+    const item = state.companies.find((company) =>
+      route.request().url().includes(company.id),
+    );
     await route.fulfill({
       status: item?.status === "approved" ? 200 : 403,
       json:
@@ -581,11 +628,17 @@ test("administrator previews standard roles from settings and can always return"
   await openNav(page);
   await page.getByRole("link", { name: "Settings", exact: true }).click();
   await page.getByLabel("Preview as").selectOption("company");
+  await page.getByLabel("Company to preview").selectOption("provider:exa");
+  await page.getByRole("button", { name: "Open company preview" }).click();
   await expect(
-    page.getByRole("heading", { name: "Bring your tool to octolab" }),
+    page.getByRole("heading", { name: "Exa tool insights" }),
   ).toBeVisible();
   await expect(
-    page.getByText("Previewing as tool company", { exact: true }),
+    page.getByText("Previewing company", { exact: true }),
+  ).toBeVisible();
+  await expect(page.getByText("Unregistered", { exact: true })).toBeVisible();
+  await expect(
+    page.getByText(/At least 5 independent workspaces/),
   ).toBeVisible();
   await expect(page.getByText("Your areas", { exact: true })).toHaveCount(0);
   await captureJourney(page, "role-preview-company");
@@ -607,6 +660,118 @@ test("administrator previews standard roles from settings and can always return"
   await expect(
     page.getByRole("heading", { name: "Company reviews" }),
   ).toBeVisible();
+});
+
+test("admin switches selected companies, drops late reports, and retains return access", async ({
+  page,
+}) => {
+  const state = await mockAuth(page, true, "admin");
+  const makeCompany = (id: string, name: string, status = "approved") => ({
+    id,
+    name,
+    website: "https://preview.fixture.invalid",
+    toolName: name,
+    description: "Isolated company preview fixture.",
+    status,
+    role: "owner",
+    providerId: status === "approved" ? "exa" : null,
+    insightsEnabled: true,
+    revision: 0,
+    feedback: "",
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  });
+  const a = makeCompany(
+    "00000000-0000-4000-8000-000000000061",
+    "Preview Alpha",
+  );
+  const b = makeCompany(
+    "00000000-0000-4000-8000-000000000062",
+    "Preview Beta",
+    "pending",
+  );
+  state.companies = [a, b];
+  let release = () => {},
+    waiting = false;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route(`**/api/companies/${a.id}/insights`, async (route) => {
+    expect(route.request().headers()["x-octolab-preview-target"]).toBe(
+      `company:${a.id}`,
+    );
+    waiting = true;
+    await gate;
+    await route.fulfill({
+      json: {
+        providerId: "exa",
+        minimumCohort: 5,
+        status: "available",
+        metrics: {
+          offeredSessions: 987654,
+          selectedSessions: 987654,
+          calls: 987654,
+          successfulCalls: 987654,
+        },
+      },
+    });
+  });
+  await login(page);
+  await openNav(page);
+  await page.getByRole("link", { name: "Settings", exact: true }).click();
+  await page.getByLabel("Preview as").selectOption("company");
+  await page.getByLabel("Company to preview").selectOption(`company:${a.id}`);
+  await captureJourney(page, "company-preview-picker");
+  await page.getByRole("button", { name: "Open company preview" }).click();
+  await expect(
+    page.getByRole("banner").filter({ hasText: a.name }),
+  ).toBeVisible();
+  await expect.poll(() => waiting).toBe(true);
+  await page
+    .getByLabel("Preview company", { exact: true })
+    .selectOption(`company:${b.id}`);
+  await expect(
+    page.getByRole("banner").filter({ hasText: b.name }),
+  ).toBeVisible();
+  release();
+  await expect(page.getByText("987654", { exact: true })).toHaveCount(0);
+  await expect(
+    page.getByText(
+      "Insights will become available after your company and integration are approved.",
+    ),
+  ).toBeVisible();
+  await page.goto(`/#company/${b.id}/overview`);
+  await expect(
+    page.getByText("Under review", { exact: true }).first(),
+  ).toBeVisible();
+  await captureJourney(page, "company-preview-pending");
+  await expect(
+    page.getByRole("link", { name: "Register another company" }),
+  ).toHaveCount(0);
+  await page.goto(`/#company/${a.id}/insights`);
+  await expect(
+    page.getByText("This page is outside the company you’re previewing."),
+  ).toBeVisible();
+  await page
+    .getByLabel("Preview company", { exact: true })
+    .selectOption("provider:tavily");
+  await expect(
+    page.getByRole("heading", { name: "Tavily tool insights" }),
+  ).toBeVisible();
+  await expect(
+    page.getByText(/At least 5 independent workspaces/),
+  ).toBeVisible();
+  await captureJourney(page, "company-preview-provider");
+  await expect(page.locator("body")).not.toContainText("987654");
+  await page
+    .getByRole("button", { name: "Return to admin", exact: true })
+    .click();
+  await expect(
+    page.getByRole("heading", { name: "Company reviews" }),
+  ).toBeVisible();
+  await expect(page.getByLabel("Preview company", { exact: true })).toHaveCount(
+    0,
+  );
 });
 
 test("workspace members get usable connection guidance without owner-only key controls", async ({

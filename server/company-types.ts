@@ -1,4 +1,17 @@
 import type { ProviderId } from "./types.js";
+export interface CompanyPreviewTarget {
+  target: string;
+  kind: "company" | "provider";
+  id: string;
+  name: string;
+  providerId: ProviderId | null;
+  status: ToolCompany["status"] | "unregistered";
+}
+export interface AccountPreviewContext {
+  role: "user" | "company";
+  actorId: string;
+  target?: CompanyPreviewTarget;
+}
 export interface ToolCompany {
   role?: "owner" | "analyst" | "platform_admin";
   id: string;
