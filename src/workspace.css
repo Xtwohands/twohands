@@ -47,29 +47,6 @@
   background: var(--secondary);
   border-color: var(--border-strong);
 }
-.ws-connect-banner {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  padding: 19px 22px;
-  background: linear-gradient(100deg, var(--muted), var(--card));
-  border: 1px solid var(--border);
-  border-radius: 9px;
-  margin-bottom: 24px;
-}
-.ws-connect-banner strong {
-  font-size: 13px;
-  font-weight: 550;
-}
-.ws-connect-banner p {
-  color: var(--muted-foreground);
-  margin: 4px 0 0;
-  font-size: 12px;
-}
-.ws-connect-banner > a {
-  margin-left: auto;
-  flex-shrink: 0;
-}
 .ws-banner-icon {
   background: var(--secondary);
   border: 1px solid var(--border);
@@ -439,40 +416,6 @@
 .ws-panel-note strong {
   color: var(--foreground);
   font-weight: 500;
-}
-.ws-tool-strip {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-}
-.ws-tool-strip > button {
-  display: flex;
-  align-items: center;
-  gap: 11px;
-  padding: 20px;
-  text-align: left;
-  border-right: 1px solid var(--border);
-  min-width: 0;
-}
-.ws-tool-strip > button:hover {
-  background: var(--muted);
-}
-.ws-tool-strip > button:last-child {
-  border: 0;
-}
-.ws-tool-strip strong {
-  display: block;
-  font-size: 12px;
-  font-weight: 500;
-}
-.ws-tool-strip small {
-  font-size: 10px;
-  color: var(--muted-foreground);
-  display: block;
-  margin-top: 3px;
-}
-.ws-tool-strip > button > [data-slot="badge"] {
-  margin-left: auto;
-  font-size: 9px;
 }
 .ws-filters {
   display: flex;
@@ -909,13 +852,6 @@
   z-index: 2;
 }
 @media (max-width: 1250px) {
-  .ws-tool-strip {
-    grid-template-columns: 1fr;
-  }
-  .ws-tool-strip > button {
-    border-right: 0;
-    border-bottom: 1px solid var(--border);
-  }
   .ws-metric {
     padding: 16px;
   }
@@ -963,21 +899,6 @@
   }
   .ws-heading-actions > :last-child {
     margin-left: auto;
-  }
-  .ws-connect-banner {
-    padding: 16px;
-    flex-wrap: wrap;
-    gap: 12px;
-  }
-  .ws-connect-banner > div {
-    flex: 1;
-    min-width: 180px;
-  }
-  .ws-connect-banner > a {
-    margin-left: 54px;
-  }
-  .ws-connect-banner p {
-    font-size: 11px;
   }
   .ws-metrics {
     gap: 10px;

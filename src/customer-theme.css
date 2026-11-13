@@ -144,3 +144,13 @@ body:has(.observation-shell[data-surface="user"], .th-landing, .account-page)
 .observation-shell[data-surface="user"] .obs-empty p {
   color: var(--muted-foreground);
 }
+
+.observation-shell[data-surface="user"] .empty-symbol {
+  border-color: var(--border);
+  background: var(--muted);
+  box-shadow: none;
+}
+
+.observation-shell[data-surface="user"] .empty-symbol span {
+  background: var(--muted-foreground);
+}
