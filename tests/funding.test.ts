@@ -221,9 +221,7 @@ describe("funding HTTP boundary", () => {
     config.token = "test-funding-token";
     try {
       const app = createApp(store, undefined, undefined, undefined, service);
-      expect((await request(app).get("/api/account/funding")).status).toBe(
-        401,
-      );
+      expect((await request(app).get("/api/account/funding")).status).toBe(401);
       const summary = await request(app)
         .get("/api/account/funding")
         .set("Authorization", "Bearer test-funding-token");

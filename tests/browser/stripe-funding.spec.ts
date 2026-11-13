@@ -50,9 +50,7 @@ test("Stripe fixture checkout, signed webhook credits, refunds, and shared ledge
   await expect(
     page.getByRole("link", { name: "Continue to Stripe" }),
   ).toHaveCount(0);
-  const after = await (
-    await request.get(`${base}/api/account/funding`)
-  ).json();
+  const after = await (await request.get(`${base}/api/account/funding`)).json();
   expect(after.balanceUnits).toBe(before.balanceUnits + 12340000);
   expect(
     after.entries.filter((e: any) => e.sourceId === intent.id),

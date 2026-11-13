@@ -15,6 +15,7 @@ import { AdminNavigation } from "./AdminNavigation";
 import { ToolAccessView, OperatorAllowanceNotice } from "./ToolAccessView";
 import { AccountControls, useAccount } from "./AccountGate";
 import { CustomerFunding, useCustomerFunding } from "./customer-funding";
+import { testUsdc } from "./FundingView";
 import { DisputeReviewView } from "./DisputeReviewView";
 import { ToolOptions } from "./components/ToolOptions";
 import { ProviderLogo } from "./components/shared";
@@ -648,58 +649,60 @@ export function ObservationApp() {
               <Link01 />
               Tool catalog
             </a>
-            <div className="ws-nav-group">
-              <span>Account</span>
-              <a
-                href="#dashboard/activity"
-                className={route.id === "activity" ? "selected" : ""}
-                aria-current={route.id === "activity" ? "page" : undefined}
-              >
-                <Activity />
-                Activity
-              </a>
-              <a
-                href="#dashboard/usage"
-                className={route.id === "usage" ? "selected" : ""}
-                aria-current={route.id === "usage" ? "page" : undefined}
-              >
-                <BarChartSquare02 />
-                Usage
-              </a>
-            </div>
-            <div className="ws-nav-group">
-              <span>Funding</span>
-              <a
-                href="#dashboard/credits"
-                className={route.id === "credits" ? "selected" : ""}
-                aria-current={route.id === "credits" ? "page" : undefined}
-              >
-                <CreditCard01 />
-                Credits
-                <Badge variant="outline" className="ws-testnet-nav">
-                  Testnet
-                </Badge>
-              </a>
-            </div>
-            <div className="ws-nav-group">
-              <span>Integration</span>
-              <a
-                href="#dashboard/keys"
-                className={route.id === "keys" ? "selected" : ""}
-                aria-current={route.id === "keys" ? "page" : undefined}
-              >
-                <Key01 />
-                API keys
-              </a>
-              <a
-                href="#dashboard/connections"
-                className={route.id === "connections" ? "selected" : ""}
-                aria-current={route.id === "connections" ? "page" : undefined}
-              >
-                <TerminalSquare />
-                Connections
-              </a>
-            </div>
+            <a
+              href="#dashboard/activity"
+              className={route.id === "activity" ? "selected" : ""}
+              aria-current={route.id === "activity" ? "page" : undefined}
+              onClick={() => setMenuOpen(false)}
+            >
+              <Activity />
+              Activity
+            </a>
+            {ownerAccess && (
+              <>
+                <a
+                  href="#dashboard/keys"
+                  className={route.id === "keys" ? "selected" : ""}
+                  aria-current={route.id === "keys" ? "page" : undefined}
+                  onClick={() => setMenuOpen(false)}
+                >
+                  <Key01 />
+                  API keys
+                </a>
+                <div className="customer-navigation-divider" />
+                <a
+                  href="#dashboard/credits"
+                  className={`customer-navigation-credits${route.id === "credits" ? " selected" : ""}`}
+                  aria-current={route.id === "credits" ? "page" : undefined}
+                  onClick={() => setMenuOpen(false)}
+                >
+                  <CreditCard01 />
+                  Credits
+                  {funding.summary && (
+                    <span className="customer-navigation-balance">
+                      {testUsdc(funding.summary.balanceUnits)} test
+                      <span className="sr-only"> credits</span>
+                    </span>
+                  )}
+                </a>
+                <Button
+                  className="customer-add-funds"
+                  variant="brand"
+                  size="sm"
+                  asChild
+                >
+                  <a
+                    href="#dashboard/credits/add-funds"
+                    onClick={() => {
+                      if (menuOpen) navigatingFromMenu.current = true;
+                      setMenuOpen(false);
+                    }}
+                  >
+                    Add test funds
+                  </a>
+                </Button>
+              </>
+            )}
           </>
         ) : surface === "business" ? (
           [
@@ -745,7 +748,7 @@ export function ObservationApp() {
         )}
       </nav>
       <div className="sidebar-bottom">
-        <AccountControls />
+        <AccountControls compact={customerSidebar} />
       </div>
     </>
   );

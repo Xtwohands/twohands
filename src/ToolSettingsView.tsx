@@ -316,9 +316,7 @@ export function ToolSettingsView() {
                   ))}
                 </div>
                 <p>
-                  <a href="#tool-access">
-                    Manage account spending allowances
-                  </a>
+                  <a href="#tool-access">Manage account spending allowances</a>
                 </p>
               </Panel>
               <Panel

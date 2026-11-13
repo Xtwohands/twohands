@@ -83,9 +83,7 @@ test("fixture test deposit creates, verifies, and credits exactly once", async (
       "already been credited",
     );
   }
-  const after = await (
-    await request.get(`${base}/api/account/funding`)
-  ).json();
+  const after = await (await request.get(`${base}/api/account/funding`)).json();
   expect(after.onchainBalanceUnits).toBe(10000000);
   expect(after.onchainDeposits).toBe(1);
   await expect(page.getByRole("dialog")).toHaveCSS("opacity", "1");
@@ -105,16 +103,13 @@ test("turning payments off preserves historical credits and receipts", async ({
     await request.get(base + "/api/account/funding")
   ).json();
   if (!before.entries?.length) {
-    const created = await request.post(
-      base + "/api/account/funding/deposits",
-      {
-        data: {
-          requestKey: crypto.randomUUID(),
-          amount: "10",
-          sender: `0x${"11".repeat(20)}`,
-        },
+    const created = await request.post(base + "/api/account/funding/deposits", {
+      data: {
+        requestKey: crypto.randomUUID(),
+        amount: "10",
+        sender: `0x${"11".repeat(20)}`,
       },
-    );
+    });
     expect(created.status()).toBe(201);
     const deposit = await created.json();
     const verified = await request.post(

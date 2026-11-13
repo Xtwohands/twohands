@@ -83,13 +83,13 @@ const money = (micros: number) =>
 export function ApiKeysView() {
   const [keys, setKeys] = useState<ScopedApiKey[]>([]);
   const [enabled, setEnabled] = useState(false);
-  const [unavailable, setUnavailable] = useState("");
+  const [localSetupRequired, setLocalSetupRequired] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("all");
   const [mode, setMode] = useState<
-    "create" | "edit" | "secret" | "revoke" | null
+    "create" | "edit" | "secret" | "revoke" | "setup" | null
   >(null);
   const [selected, setSelected] = useState<ScopedApiKey>();
   const [name, setName] = useState("");
@@ -134,6 +134,7 @@ export function ApiKeysView() {
           setBusy(false);
           setLoading(false);
           setEnabled(false);
+          setLocalSetupRequired(false);
           setFormError("");
           setError(e.message);
         }
@@ -148,12 +149,14 @@ export function ApiKeysView() {
       const data = await ownerApi<{
         keys: ScopedApiKey[];
         enabled: boolean;
-        unavailableReason: string | null;
+        accountModel: "authenticated_account" | "local_account";
       }>("/account/api-keys");
       if (current === generation.current) {
         setKeys(data.keys);
         setEnabled(data.enabled);
-        setUnavailable(data.unavailableReason ?? "");
+        setLocalSetupRequired(
+          !data.enabled && data.accountModel === "local_account",
+        );
         setError("");
       }
     } catch (e) {
@@ -205,12 +208,11 @@ export function ApiKeysView() {
       setBusy(false);
     }
   }
+  const searchTerm = search.trim().toLowerCase();
   const matching = keys.filter(
     (k) =>
       (filter === "all" || k.status === filter) &&
-      `${k.name} ${k.prefix}`
-        .toLowerCase()
-        .includes(search.trim().toLowerCase()),
+      `${k.name} ${k.prefix}`.toLowerCase().includes(searchTerm),
   );
   const selectedIsReadOnly = !!selected && !canEdit(selected);
 
@@ -253,12 +255,7 @@ export function ApiKeysView() {
           </Button>
         </div>
       )}
-      {!loading && !enabled && (
-        <p className="ws-panel-note">
-          {unavailable || "Owner access is required to manage API keys."}
-        </p>
-      )}
-      {notice && (
+      {!mode && notice && (
         <p role="status" className="ws-panel-note">
           {notice}
         </p>
@@ -301,6 +298,24 @@ export function ApiKeysView() {
           <p role="status" className="ws-panel-note">
             Loading API keys…
           </p>
+        ) : localSetupRequired && keys.length === 0 ? (
+          <Empty
+            title="Key creation is unavailable"
+            action={
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={(event) => {
+                  dialogTrigger.current = event.currentTarget;
+                  setMode("setup");
+                }}
+              >
+                View local setup
+              </Button>
+            }
+          >
+            Finish setting up this local server to create API keys.
+          </Empty>
         ) : matching.length ? (
           <div role="region" aria-label="API keys">
             <table
@@ -463,36 +478,42 @@ export function ApiKeysView() {
         }}
       >
         <DialogContent
-          className="ws-detail-dialog translate-x-0 translate-y-0"
+          className="ws-detail-dialog api-key-dialog translate-x-0 translate-y-0"
           onCloseAutoFocus={(event) => {
             event.preventDefault();
             const trigger = dialogTrigger.current;
-            if (trigger?.isConnected && !trigger.disabled) trigger.focus();
-            else if (createTrigger.current && !createTrigger.current.disabled)
-              createTrigger.current.focus();
-            else searchInput.current?.focus();
+            requestAnimationFrame(() => {
+              if (trigger?.isConnected && !trigger.disabled) trigger.focus();
+              else if (createTrigger.current && !createTrigger.current.disabled)
+                createTrigger.current.focus();
+              else searchInput.current?.focus();
+            });
           }}
         >
           <DialogHeader>
             <DialogTitle>
               {mode === "create"
                 ? "Create API key"
-                : mode === "secret"
-                  ? "Save your API key"
-                  : mode === "revoke"
-                    ? "Revoke API key"
-                    : selectedIsReadOnly
-                      ? "View API key"
-                      : "Manage API key"}
+                : mode === "setup"
+                  ? "Set up local API keys"
+                  : mode === "secret"
+                    ? "Save your API key"
+                    : mode === "revoke"
+                      ? "Revoke API key"
+                      : selectedIsReadOnly
+                        ? "View API key"
+                        : "Manage API key"}
             </DialogTitle>
             <DialogDescription>
               {mode === "secret"
                 ? "Copy this credential now. Its full value cannot be retrieved again."
-                : mode === "revoke"
-                  ? "New requests stop immediately. Already admitted provider calls can finish and settle their reserved estimates."
-                  : selectedIsReadOnly
-                    ? "Review this key’s permissions, allowed tools, and spend."
-                    : "Set permissions, allowed tools, and a total estimated-spend limit."}
+                : mode === "setup"
+                  ? "Set API_TOKEN to a private value of at least 24 characters in the local server environment. Restart the server, then enter that access token when prompted."
+                  : mode === "revoke"
+                    ? "New requests stop immediately. Already admitted provider calls can finish and settle their reserved estimates."
+                    : selectedIsReadOnly
+                      ? "Review this key’s permissions, allowed tools, and spend."
+                      : "Set permissions, allowed tools, and a total estimated-spend limit."}
             </DialogDescription>
           </DialogHeader>
           <InlineError message={formError} />
@@ -501,7 +522,11 @@ export function ApiKeysView() {
               {notice}
             </p>
           )}
-          {mode === "secret" ? (
+          {mode === "setup" ? (
+            <Button variant="outline" onClick={close}>
+              Done
+            </Button>
+          ) : mode === "secret" ? (
             <div className="ws-deposit-detail">
               <strong>{selected?.name}</strong>
               {secret ? (
@@ -744,8 +769,8 @@ export function ApiKeysView() {
                 />
                 <small>
                   $0–$1,000, up to six decimal places. Includes estimates spent
-                  and currently reserved. This is a lifetime limit, separate
-                  from each session’s backend cap.
+                  and currently reserved across all sessions using this key.
+                  Provider invoices can differ.
                 </small>
               </label>
               {mode === "create" ? (

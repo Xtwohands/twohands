@@ -430,19 +430,24 @@ export function UserDashboardView({
         </div>
         <div className="ws-heading-actions">
           {showPeriod && (
-            <NativeSelect
-              label="Date range"
+            <Select
               value={days}
-              onChange={(v) => {
+              onValueChange={(v) => {
                 setDays(v);
                 setPage(1);
               }}
-              options={[
-                ["7", "Last 7 days"],
-                ["30", "Last 30 days"],
-                ["90", "Last 90 days"],
-              ]}
-            />
+            >
+              <SelectTrigger aria-label="Date range">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {[7, 30, 90].map((days) => (
+                  <SelectItem key={days} value={String(days)}>
+                    Last {days} days
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           )}
           {section !== "tools" && (section !== "overview" || error) && (
             <Button
@@ -2167,7 +2172,7 @@ function ExportActivity({
               columns.join(","),
               ...items.map((i) => columns.map((c) => cell(i[c])).join(",")),
             ].join("\r\n");
-            download(`octolab-activity-${days}d.csv`, csv, "text/csv");
+            download(`two-hands-activity-${days}d.csv`, csv, "text/csv");
           } catch (e) {
             setError((e as Error).message);
           } finally {

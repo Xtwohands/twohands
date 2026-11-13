@@ -56,8 +56,8 @@ The UI clears credentials, dialogs, and key metadata on current owner-authorizat
 
 All management routes require a workspace owner or platform administrator account in PostgreSQL mode, or the configured owner credential in SQLite mode. Requests use existing JSON/origin protection.
 
-| Method | Route                                | Behavior                                                                                         |
-| ------ | ------------------------------------ | ------------------------------------------------------------------------------------------------ |
+| Method | Route                              | Behavior                                                                                         |
+| ------ | ---------------------------------- | ------------------------------------------------------------------------------------------------ |
 | GET    | `/api/account/api-keys`            | Configuration status, workspace UUID, public key metadata, supported scopes/tools.               |
 | POST   | `/api/account/api-keys`            | `{requestKey,name,scopes,allowedTools,limitUsd,expiresInDays}`; returns `{key,secret,replayed}`. |
 | GET    | `/api/account/api-keys/:id`        | Public metadata and latest 100 policy audit events.                                              |

@@ -41,16 +41,23 @@ const Context = createContext<AccountContext>({
   preview: async () => {},
 });
 export const useAccount = () => useContext(Context);
-export function AccountControls() {
+export function AccountControls({ compact = false }: { compact?: boolean }) {
   const account = useAccount();
   if (!account.enabled)
-    return <AccountMenu label="Local account" detail="Local mode" />;
+    return (
+      <AccountMenu
+        label="Local account"
+        detail="Local mode"
+        compact={compact}
+      />
+    );
   if (!account.profile) return null;
   return (
     <AccountMenu
       label={account.profile.user.email}
       detail={account.profile.isAdmin ? "Administrator" : "Personal account"}
       onSignOut={account.signOut}
+      compact={compact}
     />
   );
 }

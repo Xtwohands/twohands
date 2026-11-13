@@ -86,11 +86,7 @@ export class AccountAllowance {
   async assert(amount: number) {
     const current = await this.status();
     if (!operatorAllows(current, amount))
-      throw new AllowanceError(
-        403,
-        deniedMessage(current),
-        current,
-      );
+      throw new AllowanceError(403, deniedMessage(current), current);
     return current;
   }
   async reserve(

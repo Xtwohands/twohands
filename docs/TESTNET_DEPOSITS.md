@@ -52,8 +52,8 @@ The append-only `funding_ledger` combines on-chain credits and Stripe credit adj
 
 All routes enforce [workspace access](AUTH.md) and same-origin write protection. PostgreSQL funding access requires a workspace owner or platform administrator account; members and scoped keys are denied. SQLite retains the configured owner bearer-token boundary.
 
-| Method | Route                                        | Behavior                                                                                                                                                                                                |
-| ------ | -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Method | Route                                      | Behavior                                                                                                                                                                                                |
+| ------ | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | GET    | `/api/account/funding`                     | Both method statuses, public network/address details, combined test balance, per-method counts, latest 100 receipts per method, and latest 100 ledger entries. Never returns RPC or Stripe credentials. |
 | POST   | `/api/account/funding/deposits`            | Create or replay `{requestKey, amount, sender}`. Amount is a decimal string.                                                                                                                            |
 | GET    | `/api/account/funding/deposits/:id`        | Read one saved request.                                                                                                                                                                                 |

@@ -150,9 +150,7 @@ test("a delayed older task response cannot restore a company accepted before its
     .getByRole("combobox", { name: "Inspect research session" })
     .selectOption(taskId);
   await expect.poll(() => intercepted).toBe(true);
-  await page
-    .getByRole("button", { name: "Research", exact: true })
-    .click();
+  await page.getByRole("button", { name: "Research", exact: true }).click();
   await card.getByRole("button", { name: "Extract page", exact: true }).click();
   await expect(page.locator(".company-item")).toHaveCount(0);
   release();

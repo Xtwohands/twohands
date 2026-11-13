@@ -58,13 +58,13 @@ Existing `funding_credits` on-chain receipts are imported once into the unified 
 
 ## API
 
-| Method | Route                                         | Behavior                                                                                                                                                                                               |
-| ------ | --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Method | Route                                       | Behavior                                                                                                                                                                                               |
+| ------ | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | GET    | `/api/account/funding`                      | Both method statuses, public on-chain configuration, combined balance, per-method counts, latest 100 receipts per method, and latest 100 ledger entries. Never returns Stripe keys or RPC credentials. |
 | POST   | `/api/account/funding/stripe`               | Create/recover `{requestKey, amount}`; amount is a decimal USD string.                                                                                                                                 |
 | GET    | `/api/account/funding/stripe/:id`           | Read a saved card receipt.                                                                                                                                                                             |
 | POST   | `/api/account/funding/stripe/:id/reconcile` | Verify current Stripe payment state; body `{}`.                                                                                                                                                        |
-| POST   | `/api/webhooks/stripe`                        | Signed raw JSON snapshot events; no workspace bearer token.                                                                                                                                            |
+| POST   | `/api/webhooks/stripe`                      | Signed raw JSON snapshot events; no workspace bearer token.                                                                                                                                            |
 
 Each workspace allows 1,000 saved Stripe intents. PostgreSQL uses authenticated workspace ownership; members and scoped keys cannot use funding controls. SQLite retains shared local authorization. External payment/event identities stay globally unique across workspaces. This remains a test-payment integration surface, not production customer financial accounting.
 

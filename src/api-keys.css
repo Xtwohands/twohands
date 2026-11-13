@@ -2,9 +2,15 @@
   --api-key-border: #e7e7e7;
   --api-key-radius: 7px;
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 20px;
   min-width: 0;
   color: var(--foreground);
+}
+
+.obs-main:has(.ws-api-keys),
+.tool-workspace:has(.ws-api-keys) {
+  min-width: 0;
 }
 
 .api-keys-heading,
@@ -14,6 +20,15 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+}
+
+.api-keys-error {
+  flex-wrap: wrap;
+}
+
+.api-keys-error > .inline-error {
+  flex: 1 1 220px;
+  margin: 0;
 }
 
 .api-keys-heading h1 {
@@ -75,6 +90,7 @@
 
 .api-keys-library[data-slot="card"],
 .api-key-connection[data-slot="card"] {
+  min-width: 0;
   padding: 0;
   gap: 0;
   border: 1px solid var(--api-key-border);
@@ -102,10 +118,30 @@
 }
 
 .api-keys-library > header span,
+.api-keys-library .obs-empty p,
 .api-key-connection p {
   color: var(--muted-foreground);
   font-size: 12px;
   line-height: 18px;
+}
+
+.api-keys-library .empty-symbol {
+  border-color: var(--border);
+  background: var(--muted);
+}
+
+.api-key-dialog[data-slot="dialog-content"] {
+  background: var(--popover);
+  border-color: var(--border);
+}
+
+.api-key-dialog [data-slot="input"] {
+  background: var(--card);
+  border-color: var(--input);
+}
+
+.api-key-dialog [data-slot="input"]::placeholder {
+  color: var(--muted-foreground);
 }
 
 .api-keys-table {
