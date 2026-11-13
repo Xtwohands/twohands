@@ -33,6 +33,7 @@
   .customer-navigation
   > a:hover:not(:where(.customer-add-funds, .selected)) {
   background: var(--secondary);
+  color: var(--muted-foreground);
 }
 
 .customer-sidebar .customer-navigation > a.selected {

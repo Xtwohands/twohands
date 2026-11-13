@@ -210,8 +210,19 @@ test("key issuance is disabled until the local owner credential is protected", a
     page.getByRole("button", { name: "Create API key", exact: true }),
   ).toBeDisabled();
   await expect(
-    page.getByText(/Protect this workspace with an owner access token/),
+    page.getByRole("heading", { name: "Key creation is unavailable" }),
   ).toBeVisible();
+  await expect(
+    page.getByText(/Protect this workspace with an owner access token/),
+  ).toHaveCount(0);
+  await page.getByRole("button", { name: "View local setup" }).click();
+  await expect(
+    page.getByRole("dialog", { name: "Set up local API keys" }),
+  ).toContainText("API_TOKEN");
+  await page.getByRole("button", { name: "Done", exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: "View local setup" }),
+  ).toBeFocused();
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
 });
 

@@ -14,6 +14,12 @@
   flex-wrap: wrap;
 }
 
+.catalog-page-heading .dashboard-connect[data-slot="button"] {
+  gap: 8px;
+  padding-inline: 11.5px;
+  font-size: 13px;
+}
+
 .tool-catalog {
   display: grid;
   gap: 20px;
@@ -65,6 +71,11 @@
   text-overflow: ellipsis;
 }
 
+.tool-catalog .catalog-search input::placeholder {
+  color: var(--muted-foreground);
+  opacity: 1;
+}
+
 .tool-catalog .catalog-select[data-slot="select-trigger"] {
   width: 100%;
   height: 36px;
@@ -72,7 +83,7 @@
   border-radius: 7px;
   background: var(--card);
   color: var(--foreground);
-  box-shadow: none;
+  box-shadow: var(--shadow-sm);
   font-size: 12px;
   font-weight: 400;
 }
@@ -145,6 +156,10 @@
   flex-wrap: wrap;
 }
 
+.catalog-card-header {
+  gap: 4px 8px;
+}
+
 .catalog-card-identity {
   gap: 9px;
   min-width: 0;
@@ -162,6 +177,18 @@
 .catalog-dialog-title .ws-provider-icon img {
   width: 22px;
   height: 22px;
+}
+
+.catalog-provider-mark {
+  display: block;
+  width: 22px;
+  height: 22px;
+  flex: 0 0 22px;
+  object-fit: contain;
+}
+
+.catalog-provider-mark[src*="catalog-exa"] {
+  border-radius: 6px;
 }
 
 .tool-catalog h2[data-slot="card-title"] {
@@ -345,6 +372,11 @@
 .catalog-adapter-details summary {
   width: fit-content;
   cursor: pointer;
+}
+
+.catalog-secondary-actions {
+  display: flex;
+  justify-content: flex-end;
 }
 
 @media (max-width: 1140px) {

@@ -83,13 +83,13 @@ const money = (micros: number) =>
 export function ApiKeysView() {
   const [keys, setKeys] = useState<WorkspaceApiKey[]>([]);
   const [enabled, setEnabled] = useState(false);
-  const [unavailable, setUnavailable] = useState("");
+  const [localSetupRequired, setLocalSetupRequired] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("all");
   const [mode, setMode] = useState<
-    "create" | "edit" | "secret" | "revoke" | null
+    "create" | "edit" | "secret" | "revoke" | "setup" | null
   >(null);
   const [selected, setSelected] = useState<WorkspaceApiKey>();
   const [name, setName] = useState("");
@@ -134,6 +134,7 @@ export function ApiKeysView() {
           setBusy(false);
           setLoading(false);
           setEnabled(false);
+          setLocalSetupRequired(false);
           setFormError("");
           setError(e.message);
         }
@@ -148,12 +149,14 @@ export function ApiKeysView() {
       const data = await ownerApi<{
         keys: WorkspaceApiKey[];
         enabled: boolean;
-        unavailableReason: string | null;
+        accountModel: "authenticated_workspace" | "local_shared_workspace";
       }>("/workspace/api-keys");
       if (current === generation.current) {
         setKeys(data.keys);
         setEnabled(data.enabled);
-        setUnavailable(data.unavailableReason ?? "");
+        setLocalSetupRequired(
+          !data.enabled && data.accountModel === "local_shared_workspace",
+        );
         setError("");
       }
     } catch (e) {
@@ -252,11 +255,6 @@ export function ApiKeysView() {
           </Button>
         </div>
       )}
-      {!loading && !enabled && (
-        <p className="ws-panel-note">
-          {unavailable || "Owner access is required to manage API keys."}
-        </p>
-      )}
       {!mode && notice && (
         <p role="status" className="ws-panel-note">
           {notice}
@@ -300,6 +298,24 @@ export function ApiKeysView() {
           <p role="status" className="ws-panel-note">
             Loading API keys…
           </p>
+        ) : localSetupRequired && keys.length === 0 ? (
+          <Empty
+            title="Key creation is unavailable"
+            action={
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={(event) => {
+                  dialogTrigger.current = event.currentTarget;
+                  setMode("setup");
+                }}
+              >
+                View local setup
+              </Button>
+            }
+          >
+            Finish setting up this local server to create API keys.
+          </Empty>
         ) : matching.length ? (
           <div role="region" aria-label="API keys">
             <table
@@ -478,22 +494,26 @@ export function ApiKeysView() {
             <DialogTitle>
               {mode === "create"
                 ? "Create API key"
-                : mode === "secret"
-                  ? "Save your API key"
-                  : mode === "revoke"
-                    ? "Revoke API key"
-                    : selectedIsReadOnly
-                      ? "View API key"
-                      : "Manage API key"}
+                : mode === "setup"
+                  ? "Set up local API keys"
+                  : mode === "secret"
+                    ? "Save your API key"
+                    : mode === "revoke"
+                      ? "Revoke API key"
+                      : selectedIsReadOnly
+                        ? "View API key"
+                        : "Manage API key"}
             </DialogTitle>
             <DialogDescription>
               {mode === "secret"
                 ? "Copy this credential now. Its full value cannot be retrieved again."
-                : mode === "revoke"
-                  ? "New requests stop immediately. Already admitted provider calls can finish and settle their reserved estimates."
-                  : selectedIsReadOnly
-                    ? "Review this key’s permissions, allowed tools, and spend."
-                    : "Set permissions, allowed tools, and a total estimated-spend limit."}
+                : mode === "setup"
+                  ? "Set API_TOKEN to a private value of at least 24 characters in the local server environment. Restart the server, then enter that access token when prompted."
+                  : mode === "revoke"
+                    ? "New requests stop immediately. Already admitted provider calls can finish and settle their reserved estimates."
+                    : selectedIsReadOnly
+                      ? "Review this key’s permissions, allowed tools, and spend."
+                      : "Set permissions, allowed tools, and a total estimated-spend limit."}
             </DialogDescription>
           </DialogHeader>
           <InlineError message={formError} />
@@ -502,7 +522,11 @@ export function ApiKeysView() {
               {notice}
             </p>
           )}
-          {mode === "secret" ? (
+          {mode === "setup" ? (
+            <Button variant="outline" onClick={close}>
+              Done
+            </Button>
+          ) : mode === "secret" ? (
             <div className="ws-deposit-detail">
               <strong>{selected?.name}</strong>
               {secret ? (

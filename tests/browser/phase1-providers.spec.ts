@@ -63,11 +63,18 @@ test("the tool catalog lists every provider as ready when keys are configured", 
   await page.goto("/#dashboard/tools");
   const cards = page.locator(".ws-tool-card");
   await expect(cards).toHaveCount(providerIds.length - 1);
-  for (const { label, tool } of providerCatalog) {
+  for (const { id, label, tool } of providerCatalog) {
     const grouped = tool === "parallel_search" || tool === "parallel_extract";
+    const expectedName = grouped
+      ? "Parallel"
+      : id === "browserbase"
+        ? "Browserbase"
+        : id === "perplexity"
+          ? "Perplexity"
+          : label;
     const card = cards.filter({
       has: page.getByRole("heading", {
-        name: grouped ? "Parallel" : label,
+        name: expectedName,
         exact: true,
       }),
     });

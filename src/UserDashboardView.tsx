@@ -21,6 +21,7 @@ import {
   ChevronRight,
   Download01,
   GitBranch01,
+  Pin01,
   RefreshCw01,
   SearchLg,
   SearchMd,
@@ -68,6 +69,8 @@ import "./dashboard-overview.css";
 import claudeMark from "./assets/claude-mark.svg";
 import codexMark from "./assets/codex-mark.png";
 import cursorMark from "./assets/cursor-mark.svg";
+import catalogExaMark from "./assets/catalog-exa.svg";
+import catalogFirecrawlMark from "./assets/catalog-firecrawl.png";
 import "./tool-catalog.css";
 import { ApiKeysView } from "./ApiKeysView";
 import { FundingView } from "./FundingView";
@@ -278,6 +281,9 @@ export function UserDashboardView({
   const [refreshTick, setRefreshTick] = useState(0);
   const [notice, setNotice] = useState("");
   const [selectedCall, setSelectedCall] = useState<ActivityItem>();
+  const [pinnedProviders, setPinnedProviders] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
   const [selectedTool, setSelectedTool] = useState<Catalog[number]>();
   const catalogTrigger = useRef<HTMLButtonElement>(null);
   const generation = useRef(0);
@@ -443,44 +449,27 @@ export function UserDashboardView({
               ]}
             />
           )}
-          <Button
-            variant="outline"
-            size="sm"
-            aria-label="Refresh account"
-            onClick={() => {
-              void load();
-              void refreshCatalog();
-              setRefreshTick((v) => v + 1);
-            }}
-          >
-            <RefreshCw01 size={15} />
-          </Button>
-          {section === "tools" && (
-            <>
-              <Button variant="outline" size="sm" asChild>
-                <a href="#dashboard/routing">
-                  <Settings02 />
-                  Configure
-                </a>
-              </Button>
-              <Button variant="brand" size="sm" asChild>
-                <a href="#dashboard/connections">
-                  <TerminalSquare />
-                  Connect agent
-                </a>
-              </Button>
-            </>
-          )}
-          {section === "routing" && (
-            <Button variant="outline" size="sm" asChild>
-              <a href="#dashboard/tools">
-                <ChevronLeft />
-                Back to catalog
-              </a>
+          {section !== "tools" && (section !== "overview" || error) && (
+            <Button
+              variant="outline"
+              size="sm"
+              aria-label="Refresh account"
+              onClick={() => {
+                void load();
+                void refreshCatalog();
+                setRefreshTick((v) => v + 1);
+              }}
+            >
+              <RefreshCw01 size={15} />
             </Button>
           )}
-          {section === "overview" && (
-            <Button variant="brand" size="sm" asChild>
+          {(section === "tools" || section === "overview") && (
+            <Button
+              className="dashboard-connect"
+              variant="brand"
+              size="sm"
+              asChild
+            >
               <a href="#dashboard/connections">
                 <span className="ws-agent-marks" aria-hidden="true">
                   <img src={claudeMark} alt="" />
@@ -488,6 +477,14 @@ export function UserDashboardView({
                   <img src={cursorMark} alt="" />
                 </span>
                 Connect agent
+              </a>
+            </Button>
+          )}
+          {section === "routing" && (
+            <Button variant="outline" size="sm" asChild>
+              <a href="#dashboard/tools">
+                <ChevronLeft />
+                Back to catalog
               </a>
             </Button>
           )}
@@ -563,7 +560,18 @@ export function UserDashboardView({
                     title="By provider"
                     action={<Go section="usage">Details</Go>}
                   >
-                    <OverviewProviders usage={usage} />
+                    <OverviewProviders
+                      usage={usage}
+                      pinned={pinnedProviders}
+                      onPin={(provider) =>
+                        setPinnedProviders((current) => {
+                          const next = new Set(current);
+                          if (next.has(provider)) next.delete(provider);
+                          else next.add(provider);
+                          return next;
+                        })
+                      }
+                    />
                   </Section>
                 </div>
               )}
@@ -877,7 +885,7 @@ export function UserDashboardView({
         >
           <DialogHeader>
             <DialogTitle className="catalog-dialog-title">
-              {detailTool && <ProviderIcon provider={detailTool.provider} />}
+              {detailTool && <CatalogMark provider={detailTool.provider} />}
               {detailTool ? catalogProviderLabel(detailTool.provider) : "Tool"}
               {detailTool && (
                 <CatalogStatus label={toolAvailability(detailTool, enabled)} />
@@ -1082,14 +1090,32 @@ function OverviewRequests({
   );
 }
 
-function OverviewProviders({ usage }: { usage?: WorkspaceUsage }) {
+const requestShare = new Intl.NumberFormat(undefined, {
+  style: "percent",
+  maximumFractionDigits: 1,
+});
+
+function OverviewProviders({
+  usage,
+  pinned,
+  onPin,
+}: {
+  usage?: WorkspaceUsage;
+  pinned: ReadonlySet<string>;
+  onPin: (provider: string) => void;
+}) {
   const [query, setQuery] = useState("");
   const term = query.trim().toLowerCase();
-  const providers =
-    usage?.providers.filter(
-      ({ provider, requests }) =>
-        requests > 0 && providerLabel(provider).toLowerCase().includes(term),
-    ) ?? [];
+  const metrics = new Map(
+    usage?.providers.map((item) => [item.provider, item]),
+  );
+  const providers = providerIds
+    .filter((provider) => providerLabel(provider).toLowerCase().includes(term))
+    .sort(
+      (a, b) =>
+        Number(pinned.has(b)) - Number(pinned.has(a)) ||
+        (metrics.get(b)?.requests ?? 0) - (metrics.get(a)?.requests ?? 0),
+    );
   return (
     <div className="ws-overview-providers">
       <label className="ws-overview-provider-search">
@@ -1102,38 +1128,59 @@ function OverviewProviders({ usage }: { usage?: WorkspaceUsage }) {
           onChange={(event) => setQuery(event.target.value)}
         />
       </label>
-      {providers.map(({ provider, requests, estimatedMicros }) => (
-        <div className="ws-overview-provider" key={provider}>
-          <h3>
-            <ProviderLogo provider={provider} size={22} />
-            {providerLabel(provider)}
-          </h3>
-          <dl>
-            <div>
-              <dt>Requests</dt>
-              <dd>{requests.toLocaleString()}</dd>
-            </div>
-            <div>
-              <dt>Estimated cost</dt>
-              <dd>{money(estimatedMicros)}</dd>
-            </div>
-            <div>
-              <dt>Request share</dt>
-              <dd>
-                {usage?.requests
-                  ? Math.round((requests / usage.requests) * 100)
-                  : 0}
-                %
-              </dd>
-            </div>
-          </dl>
-        </div>
-      ))}
-      {!providers.length && (
+      {providers.length ? (
+        <ul className="ws-overview-provider-list" aria-label="Provider usage">
+          {providers.map((provider) => {
+            const totals = metrics.get(provider);
+            const label = providerLabel(provider);
+            return (
+              <li className="ws-overview-provider" key={provider}>
+                <div className="ws-overview-provider-heading">
+                  <h3>
+                    <CatalogMark provider={provider} />
+                    {label}
+                  </h3>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-xs"
+                    className="ws-overview-pin"
+                    aria-label={"Pin " + label}
+                    aria-pressed={pinned.has(provider)}
+                    onClick={() => onPin(provider)}
+                  >
+                    <Pin01 />
+                  </Button>
+                </div>
+                <dl>
+                  <div>
+                    <dt>Requests</dt>
+                    <dd>{totals?.requests.toLocaleString() ?? "—"}</dd>
+                  </div>
+                  <div>
+                    <dt>Estimated cost</dt>
+                    <dd>{totals ? money(totals.estimatedMicros) : "—"}</dd>
+                  </div>
+                  <div>
+                    <dt>Request share</dt>
+                    <dd>
+                      {totals
+                        ? requestShare.format(
+                            usage?.requests
+                              ? totals.requests / usage.requests
+                              : 0,
+                          )
+                        : "—"}
+                    </dd>
+                  </div>
+                </dl>
+              </li>
+            );
+          })}
+        </ul>
+      ) : (
         <p className="ws-panel-note" role="status">
-          {term
-            ? "No matching providers"
-            : "Provider usage appears after your agent runs a tool."}
+          No matching providers
         </p>
       )}
     </div>
@@ -1243,6 +1290,32 @@ const toolCategories = [
   ["extract", "Extraction"],
 ] as const;
 
+const catalogCopy: Partial<
+  Record<Catalog[number]["provider"], { name?: string; summary: string }>
+> = {
+  brave: { summary: "Search Brave’s independent web index." },
+  browserbase: {
+    name: "Browserbase",
+    summary: "Read hard-to-access web pages as Markdown.",
+  },
+  exa: { summary: "Search the web and retrieve full page text." },
+  firecrawl: { summary: "Extract readable content from a web page." },
+  jina: { summary: "Convert a web page into text for your agent." },
+  linkup: {
+    summary: "Search the web and retrieve content from the original sources.",
+  },
+  parallel: {
+    name: "Parallel",
+    summary: "Find ranked excerpts or extract the full content of a page.",
+  },
+  perplexity: {
+    name: "Perplexity",
+    summary: "Get ranked web results with page excerpts.",
+  },
+  serper: { summary: "Get Google web results with short snippets." },
+  tavily: { summary: "Search the web and return relevant excerpts." },
+};
+
 type ToolAvailability =
   "Available" | "Paused" | "Not configured" | "Restricted";
 type ToolEnabled = (tool: ToolName) => boolean;
@@ -1253,7 +1326,21 @@ function catalogProviderId(provider: Catalog[number]["provider"]) {
 
 function catalogProviderLabel(provider: Catalog[number]["provider"]) {
   const id = catalogProviderId(provider);
-  return id === "parallel" ? "Parallel" : providerLabel(id);
+  return catalogCopy[id]?.name ?? providerLabel(id);
+}
+
+function CatalogMark({ provider }: { provider: Catalog[number]["provider"] }) {
+  if (provider === "exa" || provider === "firecrawl")
+    return (
+      <img
+        className="catalog-provider-mark"
+        src={provider === "exa" ? catalogExaMark : catalogFirecrawlMark}
+        width={22}
+        height={22}
+        alt=""
+      />
+    );
+  return <ProviderIcon provider={provider} />;
 }
 
 function toolAvailability(
@@ -1316,7 +1403,14 @@ function CatalogView({
     .filter(
       ({ label, endpoints, matchingEndpoint }) =>
         matchingEndpoint &&
-        [label, ...endpoints.flatMap((tool) => [tool.tool, tool.description])]
+        [
+          label,
+          ...endpoints.flatMap((tool) => [
+            providerLabel(tool.provider),
+            tool.tool,
+            tool.description,
+          ]),
+        ]
           .join(" ")
           .toLowerCase()
           .includes(term),
@@ -1403,7 +1497,7 @@ function CatalogView({
                   <div className="catalog-card-intro">
                     <div className="catalog-card-header">
                       <div className="catalog-card-identity">
-                        <ProviderIcon provider={id} />
+                        <CatalogMark provider={id} />
                         <CardTitle>{label}</CardTitle>
                       </div>
                       <CatalogStatus
@@ -1415,9 +1509,9 @@ function CatalogView({
                       />
                     </div>
                     <p className="catalog-summary">
-                      {multiple
-                        ? "Find ranked excerpts or extract the full content of a page."
-                        : (providerEntry(id)?.summary ?? endpoint.description)}
+                      {catalogCopy[id]?.summary ??
+                        providerEntry(id)?.summary ??
+                        endpoint.description}
                     </p>
                   </div>
                   <div className="catalog-estimate">
@@ -1476,6 +1570,14 @@ function CatalogView({
           </Button>
         </Card>
       )}
+      <div className="catalog-secondary-actions">
+        <Button variant="ghost" size="sm" asChild>
+          <a href="#dashboard/routing">
+            <Settings02 />
+            Configure routing
+          </a>
+        </Button>
+      </div>
     </section>
   );
 }

@@ -151,9 +151,9 @@
   box-shadow: var(--navigation-button-shadow);
 }
 /* Hover acknowledges the pointer without looking like the current page. */
-.obs-sidebar nav > a:hover:not(.selected),
+.obs-sidebar:not(.customer-sidebar) nav > a:hover:not(.selected),
 .obs-sidebar nav .ws-nav-group > a:hover:not(.selected),
-.mobile-sidebar-content nav > a:hover:not(.selected),
+.mobile-sidebar-content:not(.customer-sidebar) nav > a:hover:not(.selected),
 .mobile-sidebar-content nav .ws-nav-group > a:hover:not(.selected),
 .portal-mobile-nav nav > a:hover:not(.selected) {
   --surface-decoration: none;

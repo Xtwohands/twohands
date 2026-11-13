@@ -28,7 +28,10 @@ test("sidebar pages have independent routes, browser history, and accessible lay
     ).toBe(true);
   }
   await page.goto("/#dashboard/tools");
-  const configure = page.getByRole("link", { name: "Configure", exact: true });
+  const configure = page.getByRole("link", {
+    name: "Configure routing",
+    exact: true,
+  });
   await configure.click();
   await expect(page).toHaveURL(/#dashboard\/routing$/);
   await expect(
