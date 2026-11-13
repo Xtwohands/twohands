@@ -1,5 +1,5 @@
+import { providerIds, providerLabel } from "../server/provider-catalog";
 import { AdminNavigation } from "./AdminNavigation";
-import { AdminMfa } from "./AdminMfa";
 import { CompanyTeamView } from "./CompanyTeamView";
 import {
   CompanyDashboard,
@@ -645,11 +645,10 @@ export function AdminCompanyReview() {
         </p>
       )}
       {!account.profile?.workspaces.length && (
-        <Panel title="Workspace operations">
+        <Panel title="Customer accounts">
           <p>
-            There are no customer workspaces yet. Company review works
-            independently; customer activity and disputes appear once a
-            workspace exists.
+            There are no customer accounts yet. Customer activity and disputes
+            will appear after customers sign up and use octolab.
           </p>
         </Panel>
       )}
@@ -775,9 +774,11 @@ export function AdminCompanyReview() {
                     }
                   >
                     <option value="">Choose an integration</option>
-                    <option value="exa">Exa</option>
-                    <option value="tavily">Tavily</option>
-                    <option value="firecrawl">Firecrawl</option>
+                    {providerIds.map((p) => (
+                      <option key={p} value={p}>
+                        {providerLabel(p)}
+                      </option>
+                    ))}
                   </select>
                 </label>
                 <label className="portal-checkbox">
@@ -877,7 +878,6 @@ export function AccountSettings() {
           <p>Manage your account and product access.</p>
         </div>
       </div>
-      <AdminMfa />
       {canPreview && (
         <Panel
           title="Preview as"

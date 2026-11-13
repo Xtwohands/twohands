@@ -1,3 +1,7 @@
+import type {
+  ExtractProviderId,
+  SearchProviderId,
+} from "./provider-catalog.js";
 import { randomUUID } from "node:crypto";
 import { config, providerAuthMode } from "./config.js";
 import type { ProviderId, Source } from "./types.js";
@@ -32,7 +36,7 @@ function clean(value: unknown, max: number) {
   return typeof value === "string" ? value.slice(0, max) : "";
 }
 export async function search(
-  provider: "exa" | "tavily",
+  provider: SearchProviderId,
   query: string,
   domains: string[],
   callId: string,
@@ -129,17 +133,64 @@ export async function search(
       ) || undefined,
   };
 }
-export async function scrape(url: string): Promise<{
+export interface ExtractionResult {
   requestId?: string;
   text: string;
   truncated?: boolean;
   originalCharacters?: number;
   returnedCharacters?: number;
   httpStatus: number;
+  /** Provider-reported usage, in the catalog's usage unit (credits or tokens). */
   credits?: number;
   pageStatus?: number;
   title?: string;
-}> {
+}
+const captureCharacters = 20000;
+function nonnegativeNumber(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0
+    ? value
+    : undefined;
+}
+/** Reads one page as Markdown. Firecrawl is the default for existing callers. */
+export async function scrape(
+  url: string,
+  provider: ExtractProviderId = "firecrawl",
+): Promise<ExtractionResult> {
+  return provider === "jina" ? jinaRead(url) : firecrawlScrape(url);
+}
+async function jinaRead(url: string): Promise<ExtractionResult> {
+  const { response, json } = await request(
+    "https://r.jina.ai/",
+    "jina",
+    { url },
+    {
+      Accept: "application/json",
+      "X-Return-Format": "markdown",
+      "X-Retain-Images": "none",
+      "X-Timeout": String(Math.max(1, Math.floor(config.timeoutMs / 1000))),
+    },
+  );
+  const content = json.data?.content;
+  if (typeof content !== "string")
+    throw new ProviderError("invalid_response", response.status);
+  return {
+    text: content.slice(0, captureCharacters),
+    requestId:
+      clean(
+        json.requestId ??
+          json.request_id ??
+          response.headers.get("x-request-id"),
+        200,
+      ) || undefined,
+    truncated: content.length > captureCharacters,
+    originalCharacters: content.length,
+    returnedCharacters: Math.min(content.length, captureCharacters),
+    httpStatus: response.status,
+    title: clean(json.data?.title, 500) || undefined,
+    credits: nonnegativeNumber(json.data?.usage?.tokens),
+  };
+}
+async function firecrawlScrape(url: string): Promise<ExtractionResult> {
   const { response, json } = await request(
     "https://api.firecrawl.dev/v2/scrape",
     "firecrawl",
@@ -175,7 +226,12 @@ export async function scrape(url: string): Promise<{
         : undefined,
   };
 }
-async function request(endpoint: string, provider: ProviderId, body: unknown) {
+async function request(
+  endpoint: string,
+  provider: ProviderId,
+  body: unknown,
+  extraHeaders: Record<string, string> = {},
+) {
   let response: Response;
   const signal = AbortSignal.timeout(config.timeoutMs);
   try {
@@ -183,6 +239,7 @@ async function request(endpoint: string, provider: ProviderId, body: unknown) {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        ...extraHeaders,
         ...(provider === "exa"
           ? { "x-api-key": config.keys[provider] }
           : providerAuthMode(provider) === "keyless"

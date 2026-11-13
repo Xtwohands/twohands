@@ -61,7 +61,7 @@ export function ProviderActivityView({
     return (
       <Panel title="Activity from real tool use">
         <div className="lab-empty">
-          <h3>Connect this view to your workspace</h3>
+          <h3>See recorded activity</h3>
           <p>
             Choose Local lab above to inspect recorded requests, reported hosts,
             daily activity, and tools used in the same sessions.

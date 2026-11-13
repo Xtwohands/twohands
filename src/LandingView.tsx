@@ -1,3 +1,4 @@
+import { providerLabel } from "../server/provider-catalog";
 import { useEffect, useMemo, useState } from "react";
 import { ArrowUpRight, SearchLg } from "@untitledui/icons";
 import { Button } from "./components/ui/button";
@@ -12,12 +13,6 @@ type CatalogItem = {
   available: boolean;
   estimatedMicros: number;
 };
-
-function providerLabel(provider: string) {
-  if (provider === "exa") return "Exa";
-  if (provider === "tavily") return "Tavily";
-  return "Firecrawl";
-}
 
 export function LandingView() {
   const [catalog, setCatalog] = useState<CatalogItem[]>([]);
@@ -77,7 +72,7 @@ export function LandingView() {
           </Button>
           <Button size="sm" asChild>
             <a href="#dashboard">
-              Open workspace
+              Open dashboard
               <ArrowUpRight />
             </a>
           </Button>
@@ -198,7 +193,7 @@ export function LandingView() {
               <a href="#dashboard/connections">Connect agent</a>
             </Button>
             <Button variant="outline" asChild>
-              <a href="#dashboard">Open workspace</a>
+              <a href="#dashboard">Open dashboard</a>
             </Button>
           </div>
         </section>

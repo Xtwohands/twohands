@@ -1,3 +1,4 @@
+import type { ProviderId } from "./types.js";
 export type ToolName = import("./provider-identifiers.js").RegisteredToolName;
 export type ReviewVerdict = "pass" | "fail" | "unknown";
 export interface Criterion {
@@ -79,7 +80,7 @@ export interface ObservedCall {
   sessionId: string;
   requestKey: string;
   tool: ToolName;
-  provider: "exa" | "tavily" | "firecrawl";
+  provider: ProviderId;
   arguments: {
     query?: string;
     url?: string;

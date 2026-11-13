@@ -1,3 +1,4 @@
+import { providerForTool } from "./provider-catalog.js";
 import { digest } from "./observation-store.js";
 import type { SessionDetail } from "./observation-types.js";
 
@@ -130,15 +131,7 @@ export function verifyPrivateEvidence(value: unknown) {
       callIds.add(call.id);
       if (call.status === "running") reservedMicros += call.estimateMicros;
       else spentMicros += call.estimateMicros;
-      if (
-        (
-          {
-            exa_search: "exa",
-            tavily_search: "tavily",
-            firecrawl_extract: "firecrawl",
-          } as const
-        )[call.tool] !== call.provider
-      )
+      if (providerForTool(call.tool) !== call.provider)
         fail(`Tool call ${call.id} has an inconsistent provider.`);
       const e = called.find((e) => e.data.callId === call.id);
       if (

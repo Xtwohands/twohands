@@ -16,6 +16,7 @@ beforeEach(() => {
     exa: true,
     tavily: true,
     firecrawl: true,
+    jina: true,
   });
 });
 afterEach(async () => {

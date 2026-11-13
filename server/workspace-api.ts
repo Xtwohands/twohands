@@ -1,3 +1,4 @@
+import { providerIds } from "./provider-catalog.js";
 import { providerManagementRoutes } from "./provider-management-api.js";
 import { ApiKeyError } from "./api-keys.js";
 import type { Express } from "express";
@@ -85,7 +86,7 @@ export function workspaceUsage(
         ),
       };
     }),
-    providers: ["exa", "tavily", "firecrawl"].map((provider) => {
+    providers: providerIds.map((provider) => {
       const calls = items.filter((i) => i.provider === provider);
       const reported = calls.filter((i) => i.reportedCredits !== null);
       return {
@@ -125,7 +126,7 @@ export function workspaceRoutes(app: Express, obs: Observatory) {
           error instanceof ApiKeyError
         )
           res.status(error.status).json({ error: error.message });
-        else res.status(500).json({ error: "Workspace operation failed." });
+        else res.status(500).json({ error: "The account request failed." });
       }
     };
   const since = (days: number) => {
@@ -172,9 +173,7 @@ export function workspaceRoutes(app: Express, obs: Observatory) {
       const input = z
         .object({
           days: period,
-          provider: z
-            .enum(["all", "exa", "tavily", "firecrawl"])
-            .default("all"),
+          provider: z.enum(["all", ...providerIds]).default("all"),
           status: z
             .enum(["all", "succeeded", "failed", "interrupted", "running"])
             .default("all"),

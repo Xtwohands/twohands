@@ -1,3 +1,4 @@
+import type { SearchProviderId } from "./provider-catalog.js";
 import { providerWork } from "./provider-settings-gate.js";
 import { randomUUID } from "node:crypto";
 import { publicEvidenceUrl } from "./url-policy.js";
@@ -285,7 +286,7 @@ export class Engine {
           let passed = false;
           try {
             const result = await search(
-              selected.provider as "exa" | "tavily",
+              selected.provider as SearchProviderId,
               query,
               task.intent.domains,
               callId,

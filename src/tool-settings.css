@@ -24,8 +24,7 @@
   padding: 0 6px;
 }
 .platform-provider-grid label,
-.platform-fields label,
-.admin-mfa-form label {
+.platform-fields label {
   display: grid;
   gap: 8px;
   font-size: 14px;
@@ -58,23 +57,6 @@
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   font-size: 12px;
-}
-.admin-mfa-form {
-  display: grid;
-  gap: 16px;
-  max-width: 500px;
-}
-.admin-mfa-form code {
-  overflow-wrap: anywhere;
-}
-.admin-mfa-form img {
-  background: white;
-  padding: 6px;
-  border-radius: 8px;
-}
-.admin-mfa-notice {
-  white-space: normal !important;
-  color: #c4c4c1 !important;
 }
 @media (max-width: 760px) {
   .platform-provider-grid,

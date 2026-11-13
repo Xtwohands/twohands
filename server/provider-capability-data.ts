@@ -44,4 +44,18 @@ export const capabilityData: Record<ToolName, AdapterCapabilities> = {
       captureCharacters: 20000,
     },
   },
+  jina_extract: {
+    description:
+      "Retrieve one public HTTPS page as Markdown with Jina Reader, rendered in a browser. Images are removed. Captures up to 20,000 characters and reports truncation and output tokens.",
+    useWhen:
+      "Use when a known page needs closer inspection, or as an alternative reader when another extraction returned little or no main content.",
+    limitations:
+      "This is page extraction, not web search. Content may include navigation or boilerplate. API success can contain an error page. A truncated receipt is not the full page.",
+    documentationUrl: "https://jina.ai/reader",
+    adapter: {
+      returnFormat: "markdown",
+      retainImages: "none",
+      captureCharacters: 20000,
+    },
+  },
 };

@@ -37,7 +37,16 @@ This increment supports manual invoice/usage imports. It does not fetch invoices
 
 ## Adding an internal integration
 
-`server/provider-adapters.ts` contains allowlisted definitions for the three existing adapters. Each declares version, capabilities, request validation, credential reference, pricing, execution and normalized response validation. Public tool identifiers remain unchanged. Discovery, MCP registration, execution receipts and lab snapshots use these definitions. Stable production identifiers live in `server/provider-identifiers.ts`.
+`server/provider-catalog.ts` is the single source of provider identity: provider ID, public tool name, label, logo, operation (`search` or `extract`), credential and account-reference environment variables, default price and pricing source. Server enums, workspace filters, the dashboard, billing, lab and company views derive their provider lists from it, and the database accepts any well-formed identifier, so a new provider needs no schema migration.
+
+To add a provider:
+
+1. Add a catalog entry in `server/provider-catalog.ts`.
+2. Add its capability text in `server/provider-capability-data.ts`.
+3. Implement its HTTP transport in `server/providers.ts` and add an adapter definition in `server/provider-adapters.ts`.
+4. Add contract tests (see below) and an optional logo under `public/providers/`.
+
+`server/provider-adapters.ts` contains the allowlisted adapter definitions. Each declares version, capabilities, request validation, credential reference, pricing, execution and normalized response validation. Public tool identifiers remain unchanged. Discovery, MCP registration, execution receipts and lab snapshots use these definitions. Stable production identifiers are derived in `server/provider-identifiers.ts`.
 
 `AdapterRegistry` supports an isolated fixture registry for contract testing; production registration rejects fixture definitions. Executable definitions are code-owned. API callers cannot upload code or arbitrary endpoints. Add contract cases for unsupported inputs, missing/rotated credentials, timeouts, invalid responses, pricing, provenance and receipt replay before enabling another adapter.
 

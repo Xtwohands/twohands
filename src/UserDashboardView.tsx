@@ -1,3 +1,12 @@
+import { ProviderLogo } from "./components/shared";
+import {
+  providerCatalog,
+  providerEntry,
+  providerForTool,
+  providerIds,
+  providerLabel,
+  toolOperation,
+} from "../server/provider-catalog";
 import {
   ProviderBillingView,
   ProviderAdaptersView,
@@ -16,6 +25,7 @@ import {
   Link01,
   RefreshCw01,
   SearchLg,
+  Settings02,
   TerminalSquare,
 } from "@untitledui/icons";
 import { Button } from "./components/ui/button";
@@ -96,8 +106,8 @@ const labels: Record<DashboardSection, [string, string]> = {
     "Understand request volume, estimated cost, and provider-reported usage.",
   ],
   routing: [
-    "Routing",
-    "Control which tools are available to agents in this workspace.",
+    "Configure routing",
+    "Control which tools are available to agents on this account.",
   ],
   keys: [
     "API keys",
@@ -109,21 +119,10 @@ const labels: Record<DashboardSection, [string, string]> = {
     "One MCP connection. Your tools, in the agent you already use.",
   ],
 };
-const toolLabels: Record<ToolName, string> = {
-  exa_search: "Web search with page text",
-  tavily_search: "Web search with excerpts",
-  firecrawl_extract: "Page extraction",
-};
-export function providerLabel(provider: string) {
-  return (
-    (
-      { exa: "Exa", tavily: "Tavily", firecrawl: "Firecrawl" } as Record<
-        string,
-        string
-      >
-    )[provider] ?? provider
-  );
-}
+const toolLabels = Object.fromEntries(
+  providerCatalog.map((p) => [p.tool, p.summary]),
+) as Record<ToolName, string>;
+export { providerLabel };
 function latency(ms: number | null | undefined) {
   return ms == null
     ? "—"
@@ -137,16 +136,7 @@ function ProviderIcon({ provider }: { provider: string }) {
       className={`ws-provider-icon ws-provider-${provider}`}
       aria-hidden="true"
     >
-      <img
-        src={
-          provider === "exa"
-            ? "/providers/exa-icon.svg"
-            : provider === "tavily"
-              ? "/providers/tavily.svg"
-              : "/providers/firecrawl.png"
-        }
-        alt=""
-      />
+      <ProviderLogo provider={provider} />
     </span>
   );
 }
@@ -236,7 +226,7 @@ function Loading() {
   return (
     <div className="ws-loading" role="status">
       <span />
-      Loading workspace data…
+      Loading account data…
     </div>
   );
 }
@@ -432,7 +422,7 @@ export function UserDashboardView({
           <Button
             variant="outline"
             size="sm"
-            aria-label="Refresh workspace"
+            aria-label="Refresh account"
             onClick={() => {
               void load();
               void refreshCatalog();
@@ -441,6 +431,22 @@ export function UserDashboardView({
           >
             <RefreshCw01 size={15} />
           </Button>
+          {section === "tools" && (
+            <Button variant="outline" size="sm" asChild>
+              <a href="#dashboard/routing">
+                <Settings02 />
+                Configure
+              </a>
+            </Button>
+          )}
+          {section === "routing" && (
+            <Button variant="outline" size="sm" asChild>
+              <a href="#dashboard/tools">
+                <ChevronLeft />
+                Back to catalog
+              </a>
+            </Button>
+          )}
           {section === "overview" && (
             <Button size="sm" asChild>
               <a href="#dashboard/connections">
@@ -681,9 +687,9 @@ export function UserDashboardView({
                   }}
                   options={[
                     ["all", "All providers"],
-                    ["exa", "Exa"],
-                    ["tavily", "Tavily"],
-                    ["firecrawl", "Firecrawl"],
+                    ...providerIds.map(
+                      (p) => [p, providerLabel(p)] as [string, string],
+                    ),
                   ]}
                 />
                 <NativeSelect
@@ -759,7 +765,7 @@ export function UserDashboardView({
                 <GitBranch01 />
                 <div>
                   <strong>
-                    Your agent chooses. Your workspace sets the boundaries.
+                    Your agent chooses from the tools enabled on your account.
                   </strong>
                   <p>
                     octolab matches tools to a request and returns compatible
@@ -772,7 +778,7 @@ export function UserDashboardView({
               <Section
                 title="Tool availability"
                 description="Saved on the server and applied across connected clients."
-                action={<Badge variant="outline">Workspace policy</Badge>}
+                action={<Badge variant="outline">Account policy</Badge>}
               >
                 <div className="ws-routing-list">
                   {catalog.map((t) => (
@@ -834,7 +840,7 @@ export function UserDashboardView({
                     <strong>
                       {connection?.requestsPerMinute ?? "—"} / minute
                     </strong>
-                    <small>Per provider across this workspace</small>
+                    <small>Per provider across this account</small>
                   </div>
                 </div>
               </Section>
@@ -1130,8 +1136,7 @@ function CatalogView({
                 .toLowerCase()
                 .includes(query.trim().toLowerCase())) &&
             (category === "all" ||
-              (t.tool === "firecrawl_extract" ? "extract" : "search") ===
-                category) &&
+              (toolOperation(t.tool) ?? "search") === category) &&
             (availability === "all" ||
               (availability === "ready"
                 ? t.available && enabled(t.tool)
@@ -1196,9 +1201,7 @@ function CatalogView({
               {
                 catalog.filter(
                   (t) =>
-                    id === "all" ||
-                    (t.tool === "firecrawl_extract" ? "extract" : "search") ===
-                      id,
+                    id === "all" || (toolOperation(t.tool) ?? "search") === id,
                 ).length
               }
             </span>
@@ -1232,10 +1235,13 @@ function CatalogView({
             <p>{t.description}</p>
             <div className="ws-tool-tags">
               <span>
-                {t.tool === "firecrawl_extract" ? "Extraction" : "Web search"}
+                {toolOperation(t.tool) === "extract"
+                  ? "Extraction"
+                  : "Web search"}
               </span>
               <span>
-                {t.tool === "tavily_search" ? "Excerpts" : "Page text"}
+                {providerEntry(providerForTool(t.tool) ?? "")?.resultDetail ??
+                  "Page text"}
               </span>
             </div>
             <div className="ws-tool-stats">
@@ -1306,7 +1312,7 @@ function ToolDetail({
           <strong>{money(tool.estimatedMicros)} / call</strong>
         </div>
         <div>
-          <span>Workspace calls</span>
+          <span>Account calls</span>
           <strong>{tool.sampleCount}</strong>
         </div>
         <div>
@@ -1330,7 +1336,7 @@ function ToolDetail({
       <pre>{JSON.stringify(tool.adapter, null, 2)}</pre>
       <div className="ws-detail-enable">
         <div>
-          <strong>Allow in this workspace</strong>
+          <strong>Allow on this account</strong>
           <p>Applies to discovery and new provider calls.</p>
         </div>
         <Switch
@@ -1351,7 +1357,7 @@ function ToolDetail({
         </a>
       </Button>
       <p className="field-hint">
-        Observed execution metrics describe this workspace. API success is not
+        Observed execution metrics describe this account. API success is not
         answer quality.
       </p>
     </div>
@@ -1676,7 +1682,7 @@ function ConnectionView({
                 before starting the bridge.
               </>
             ) : (
-              "Ask your workspace owner for a scoped API key before starting the bridge."
+              "Ask your account owner for a scoped API key before starting the bridge."
             )}
           </p>
           <ol className="ws-setup-steps">
@@ -1739,7 +1745,7 @@ function ConnectionView({
         </Section>
         <Section
           title="Connection status"
-          description="Client activity observed by this workspace."
+          description="Client activity recorded for this account."
         >
           <div className="ws-connection-status">
             <span className="ws-banner-icon">
@@ -1797,9 +1803,9 @@ function ConnectionView({
         </div>
         <div className="ws-panel-note">
           {account.enabled && !account.profile?.isAdmin
-            ? "Provider availability is managed by octolab. Your API keys connect agents to this workspace."
+            ? "Octolab manages provider availability. Your API keys connect agents to this account."
             : "Missing a provider? Set its API key in the server environment, then restart the server."}
-          <Go section="routing">Manage routing</Go>
+          <Go section="tools">Open tool catalog</Go>
         </div>
       </Section>
     </>

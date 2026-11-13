@@ -54,6 +54,7 @@ Use the Node path returned by `command -v node`, and your actual checkout path. 
 | `exa_search`        | Explicitly choose Exa search                                                                                      |
 | `tavily_search`     | Explicitly choose Tavily search                                                                                   |
 | `firecrawl_extract` | Explicitly extract one public HTTPS page with Firecrawl                                                           |
+| `jina_extract`      | Explicitly extract one public HTTPS page with Jina Reader                                                         |
 | `get_evidence`      | Reread an existing call result without invoking a provider or spending more                                       |
 | `submit_outcome`    | Record the actual final answer and evidence call IDs; creates a version, not an evaluation                        |
 

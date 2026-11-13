@@ -13,11 +13,10 @@ const token = (
   user: string,
   session: string,
   exp = Math.floor(Date.now() / 1000) + 3600,
-  aal = "aal1",
 ) =>
   encode({ alg: "HS256", typ: "JWT" }) +
   "." +
-  encode({ sub: user, session_id: session, exp, aal }) +
+  encode({ sub: user, session_id: session, exp, aal: "aal1" }) +
   ".fixture-signature";
 const user = (id: string) => ({
   id,
@@ -101,32 +100,4 @@ it("treats a temporary Auth outage as unavailable rather than an invalid login",
   await expect(
     supabaseVerifier(settings)(token(randomUUID(), randomUUID())),
   ).rejects.toMatchObject({ status: 503 });
-});
-it("requires verified Auth factors as well as a verified aal2 token", async () => {
-  const id = randomUUID(),
-    session = randomUUID();
-  for (const [aal, factors, expected] of [
-    ["aal1", [{ status: "verified" }], false],
-    ["aal2", [], false],
-    ["aal2", [{ status: "unverified" }], false],
-    ["aal2", [{ status: "verified" }], true],
-  ] as const) {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(
-        async () =>
-          new Response(JSON.stringify({ ...user(id), factors }), {
-            status: 200,
-            headers: { "Content-Type": "application/json" },
-          }),
-      ),
-    );
-    expect(
-      (
-        await supabaseVerifier(settings)(
-          token(id, session, Math.floor(Date.now() / 1000) + 3600, aal),
-        )
-      ).mfaVerified,
-    ).toBe(expected);
-  }
 });

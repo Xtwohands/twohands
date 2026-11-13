@@ -1,3 +1,4 @@
+import { providerIds, providerLabel } from "../server/provider-catalog";
 import { useEffect, useRef, useState } from "react";
 import type {
   ToolSettingsView as Settings,
@@ -19,7 +20,7 @@ import {
 import { Panel, InlineError, date } from "./observation-ui";
 import "./tool-settings.css";
 import { useActorGeneration } from "./useActorGeneration";
-const providers: ProviderId[] = ["exa", "tavily", "firecrawl"];
+const providers: ProviderId[] = [...providerIds];
 type History = {
   actorId: string;
   actorEmail?: string | null;
@@ -40,12 +41,9 @@ export function ToolSettingsView() {
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
   const [key, setKey] = useState("");
-  const [provider, setProvider] = useState<ProviderId>("exa");
+  const [provider, setProvider] = useState<ProviderId>(providerIds[0]);
   const requestKey = useRef(crypto.randomUUID());
-  const allowed =
-    account.profile?.isAdmin &&
-    !account.previewRole &&
-    account.profile.adminMfaVerified === true;
+  const allowed = account.profile?.isAdmin && !account.previewRole;
   const actor = `${account.profile?.user.id}:${account.sessionEpoch}:${account.previewRole}:${allowed}`;
   const generation = useActorGeneration(actor);
   async function reload() {
@@ -133,12 +131,10 @@ export function ToolSettingsView() {
   }
   if (!allowed)
     return (
-      <Panel title="Verify administrator access">
+      <Panel title="Administrator access required">
         <p>
-          Open Settings and verify your authenticator before managing tools or
-          credentials.
+          Sign in as a platform administrator to manage tools and credentials.
         </p>
-        <a href="#settings">Open Settings</a>
       </Panel>
     );
   return (
@@ -174,80 +170,79 @@ export function ToolSettingsView() {
                 description="These controls apply to every workspace; workspace routing and key restrictions still apply."
               >
                 <div className="platform-provider-grid">
-                  {providers.map((id) => (
-                    <fieldset key={id}>
-                      <legend>
-                        {id === "exa"
-                          ? "Exa"
-                          : id === "tavily"
-                            ? "Tavily"
-                            : "Firecrawl"}
-                      </legend>
-                      <label
-                        className="platform-enabled"
-                        htmlFor={`${id}-enabled`}
-                      >
-                        <Switch
-                          id={`${id}-enabled`}
-                          checked={values.providers[id].enabled}
-                          onCheckedChange={(enabled) =>
-                            changeProvider(id, "enabled", enabled)
-                          }
-                        />{" "}
-                        Enabled
-                      </label>
-                      <label>
-                        Requests per minute
-                        <Input
-                          type="number"
-                          min={1}
-                          max={1000}
-                          step={1}
-                          value={values.providers[id].requestsPerMinute}
-                          onChange={(e) =>
-                            changeProvider(
-                              id,
-                              "requestsPerMinute",
-                              Number(e.target.value),
-                            )
-                          }
-                          required
-                        />
-                      </label>
-                      <label>
-                        Base estimate (USD)
-                        <Input
-                          type="number"
-                          min={0}
-                          max={10}
-                          step={0.000001}
-                          value={values.providers[id].estimateMicros / 1e6}
-                          onChange={(e) =>
-                            changeProvider(
-                              id,
-                              "estimateMicros",
-                              Math.round(Number(e.target.value) * 1e6),
-                            )
-                          }
-                          required
-                        />
-                      </label>
-                      <p>
-                        Credential:{" "}
-                        {view.credentials[id].configured
-                          ? "Configured"
-                          : "Missing"}{" "}
-                        · {view.credentials[id].source}
-                      </p>
-                      {view.credentials[id].needsReplacement && (
+                  {providers
+                    // A server older than this page may not list every provider yet.
+                    .filter(
+                      (id) => values.providers[id] && view.credentials[id],
+                    )
+                    .map((id) => (
+                      <fieldset key={id}>
+                        <legend>{providerLabel(id)}</legend>
+                        <label
+                          className="platform-enabled"
+                          htmlFor={`${id}-enabled`}
+                        >
+                          <Switch
+                            id={`${id}-enabled`}
+                            checked={values.providers[id].enabled}
+                            onCheckedChange={(enabled) =>
+                              changeProvider(id, "enabled", enabled)
+                            }
+                          />{" "}
+                          Enabled
+                        </label>
+                        <label>
+                          Requests per minute
+                          <Input
+                            type="number"
+                            min={1}
+                            max={1000}
+                            step={1}
+                            value={values.providers[id].requestsPerMinute}
+                            onChange={(e) =>
+                              changeProvider(
+                                id,
+                                "requestsPerMinute",
+                                Number(e.target.value),
+                              )
+                            }
+                            required
+                          />
+                        </label>
+                        <label>
+                          Base estimate (USD)
+                          <Input
+                            type="number"
+                            min={0}
+                            max={10}
+                            step={0.000001}
+                            value={values.providers[id].estimateMicros / 1e6}
+                            onChange={(e) =>
+                              changeProvider(
+                                id,
+                                "estimateMicros",
+                                Math.round(Number(e.target.value) * 1e6),
+                              )
+                            }
+                            required
+                          />
+                        </label>
                         <p>
-                          Managed credential unavailable after recovery or
-                          access loss. Replace it to restore this provider;
-                          environment keys will not be used as a fallback.
+                          Credential:{" "}
+                          {view.credentials[id].configured
+                            ? "Configured"
+                            : "Missing"}{" "}
+                          · {view.credentials[id].source}
                         </p>
-                      )}
-                    </fieldset>
-                  ))}
+                        {view.credentials[id].needsReplacement && (
+                          <p>
+                            Managed credential unavailable after recovery or
+                            access loss. Replace it to restore this provider;
+                            environment keys will not be used as a fallback.
+                          </p>
+                        )}
+                      </fieldset>
+                    ))}
                 </div>
               </Panel>
               <Panel
@@ -354,9 +349,11 @@ export function ToolSettingsView() {
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="exa">Exa</SelectItem>
-                        <SelectItem value="tavily">Tavily</SelectItem>
-                        <SelectItem value="firecrawl">Firecrawl</SelectItem>
+                        {providerIds.map((p) => (
+                          <SelectItem key={p} value={p}>
+                            {providerLabel(p)}
+                          </SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
                   </div>

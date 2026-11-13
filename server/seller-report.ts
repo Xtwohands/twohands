@@ -2,6 +2,7 @@ import type { Observatory } from "./observation.js";
 import type { ProviderId } from "./types.js";
 import type { ObservedCall, ObservationEvent } from "./observation-types.js";
 import { providerRegistry } from "./provider-adapters.js";
+import { providerCatalog } from "./provider-catalog.js";
 import {
   taskTypes,
   taskTypeLabels,
@@ -76,11 +77,9 @@ const missedLabels: Record<string, string> = {
   needs_parameters: "Request was incomplete",
 };
 
-const names: Record<string, string> = {
-  exa: "Exa",
-  tavily: "Tavily",
-  firecrawl: "Firecrawl",
-};
+const names: Record<string, string> = Object.fromEntries(
+  providerCatalog.map((p) => [p.id, p.label]),
+);
 
 /**
  * What a tool company sees about agent choices. Aggregates only: never objectives,

@@ -191,8 +191,8 @@ export function DisputeReviewView() {
       <div className="ws-funding-notice">
         <ShieldTick size={18} />
         <p>
-          Review status belongs to this workspace. Marking a case reviewed keeps
-          its credits on hold and does not change Stripe’s dispute outcome.
+          Marking a case reviewed keeps the customer’s credits on hold. Stripe
+          determines the dispute outcome.
         </p>
       </div>
       <InlineError message={error} />
@@ -207,7 +207,7 @@ export function DisputeReviewView() {
               </h2>
               <p>
                 {accountAccess
-                  ? "Loading this workspace’s review queue…"
+                  ? "Loading payment disputes…"
                   : "This account is not authorized for payment review."}
               </p>
             </div>

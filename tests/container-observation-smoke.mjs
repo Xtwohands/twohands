@@ -6,6 +6,9 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 const { verifyPrivateEvidence } = await import(
   `${process.cwd()}/build/evidence-verification.js`
 );
+const { providerToolNames } = await import(
+  `${process.cwd()}/build/provider-catalog.js`
+);
 const base = "http://127.0.0.1:3001/api/observations";
 const headers = {
   Authorization: `Bearer ${process.env.API_TOKEN}`,
@@ -64,7 +67,17 @@ if (process.argv[2] === "persist") {
   try {
     await client.connect(transport);
     const tools = (await client.listTools()).tools.map((t) => t.name);
-    assert.equal(tools.length, 8);
+    const sessionTools = [
+      "discover_tools",
+      "get_evidence",
+      "get_session",
+      "record_intent",
+      "submit_outcome",
+    ];
+    assert.deepEqual(
+      [...tools].sort(),
+      [...sessionTools, ...providerToolNames].sort(),
+    );
     assert.ok(!tools.includes("approve"));
     const s = await tool("record_intent", {
       title: "Synthetic container validation",

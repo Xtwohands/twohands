@@ -171,8 +171,9 @@ test("a controlled run captures receipts, reviews evidence, and leaves organic c
   const id = page.url().split("#lab/")[1];
   const response = await request.get(`/api/provider-lab/runs/${id}`);
   const run = await response.json();
-  expect(run.calls).toHaveLength(15);
-  expect(run.spentMicros).toBe(130000);
+  // 5 cases each for Exa and Tavily search, Firecrawl and Jina extraction.
+  expect(run.calls).toHaveLength(20);
+  expect(run.spentMicros).toBe(132500);
   expect(run.reservedMicros).toBe(0);
   await page
     .getByRole("button", { name: /Find search API documentation Exa/ })
@@ -416,7 +417,7 @@ test("unconfigured providers are unselected and cannot start a paid test", async
 }) => {
   await page.goto("http://127.0.0.1:3101/#lab");
   const options = page.getByRole("checkbox");
-  await expect(options).toHaveCount(3);
+  await expect(options).toHaveCount(4);
   for (const option of await options.all()) {
     await expect(option).not.toBeChecked();
     await expect(option).toBeDisabled();

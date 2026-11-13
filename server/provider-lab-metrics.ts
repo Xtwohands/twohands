@@ -1,3 +1,8 @@
+import {
+  providerIds,
+  providerOperation,
+  toolForProvider,
+} from "./provider-catalog.js";
 import type { ProviderId, Source } from "./types.js";
 import type {
   LabCase,
@@ -82,7 +87,7 @@ export function measure(
   };
 }
 export function labMeasurements(runs: LabRun[]): ProviderMeasurement[] {
-  return (["exa", "tavily", "firecrawl"] as ProviderId[]).map((provider) => {
+  return (providerIds as ProviderId[]).map((provider) => {
     const calls = runs
       .flatMap((r) => r.calls)
       .filter(
@@ -131,7 +136,7 @@ export function compareProviderRuns(
   after: LabRun,
   provider: ProviderId,
 ) {
-  const kind = provider === "firecrawl" ? "extract" : "search";
+  const kind = providerOperation(provider) ?? "search";
   const cases = (run: LabRun) =>
     run.cases
       .filter((c) => c.kind === kind)
@@ -146,8 +151,7 @@ export function compareProviderRuns(
   const sameCases =
     before.suiteVersion === after.suiteVersion &&
     JSON.stringify(previous) === JSON.stringify(next);
-  const adapter =
-    provider === "firecrawl" ? "firecrawl_extract" : `${provider}_search`;
+  const adapter = toolForProvider(provider);
   if (!sameCases)
     warnings.push(
       "The test cases or suite version changed. Treat this as an exploratory comparison.",

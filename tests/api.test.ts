@@ -34,6 +34,7 @@ describe("workspace API", () => {
       exa: false,
       tavily: false,
       firecrawl: false,
+      jina: false,
     });
     const t = await createTask(store);
     const r = await request(app).post(`/api/tasks/${t.id}/run`).send({});

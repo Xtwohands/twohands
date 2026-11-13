@@ -1,3 +1,4 @@
+import { providerToolNames } from "../server/provider-catalog.js";
 import { beforeEach, afterEach, describe, it, expect, vi } from "vitest";
 import { Store } from "../server/store";
 import { Observatory, sessionInput } from "../server/observation";
@@ -213,7 +214,7 @@ describe("accepted intent and explicit provider execution", () => {
   it("records the offered catalog without fabricated selection or quality scores", async () => {
     const s = await create();
     const d = await obs.discover(s.id, "Search for sources");
-    expect(d.tools).toHaveLength(3);
+    expect(d.tools).toHaveLength(providerToolNames.length);
     expect(
       d.tools.every((t) => t.averageLatencyMs === null && t.quality === null),
     ).toBe(true);
@@ -612,7 +613,7 @@ describe("request cost decisions and budget enforcement", () => {
         await obs.discover(s.id, "invalid", [
           { tool: "exa_search", query: "fixture", searchDepth: "advanced" },
         ]))(),
-    ).rejects.toThrow(/Tavily/);
+    ).rejects.toThrow(/searchDepth is not supported/);
     await expect(
       (async () =>
         await obs.discover(s.id, "invalid", [

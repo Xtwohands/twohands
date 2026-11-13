@@ -2356,3 +2356,24 @@ footer > span:first-child {
   margin-top: 5px;
   max-width: 770px;
 }
+/* Initial-letter mark for providers without a logo file. */
+.provider-logo-fallback {
+  display: inline-grid;
+  place-items: center;
+  flex-shrink: 0;
+  border: 1px solid #3b3b3b;
+  background: #212121;
+  color: #cbcbcb;
+  font-weight: 650;
+  font-size: 14px;
+  line-height: 1;
+}
+.company-logo.provider-logo-fallback {
+  font-size: 18px;
+}
+.ws-provider-icon .provider-logo-fallback {
+  border: 0;
+  background: none;
+  color: inherit;
+  font-size: inherit;
+}

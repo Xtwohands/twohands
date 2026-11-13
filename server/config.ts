@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import type { ProviderId } from "./types.js";
+import { providerCatalog } from "./provider-catalog.js";
 function integer(name: string, fallback: number, min: number, max: number) {
   const raw = process.env[name];
   const n = raw === undefined ? fallback : Number(raw);
@@ -13,12 +14,9 @@ function price(name: string, fallback: number) {
     throw new Error(`Invalid ${name}`);
   return Math.ceil(n * 1_000_000);
 }
-const prices: Record<ProviderId, number> = {
-  // Auto search, <=10 results with page text: published $7/1k, checked 2026-11-01.
-  exa: price("EXA_SEARCH_USD", 0.007),
-  tavily: price("TAVILY_SEARCH_USD", 0.008),
-  firecrawl: price("FIRECRAWL_SCRAPE_USD", 0.001),
-};
+const prices = Object.fromEntries(
+  providerCatalog.map((p) => [p.id, price(p.priceEnv, p.defaultUsd)]),
+) as Record<ProviderId, number>;
 const exaAdditionalResultMicros = price("EXA_ADDITIONAL_RESULT_USD", 0.001);
 export const config = {
   disabledProviders: [] as ProviderId[],
@@ -58,11 +56,9 @@ export const config = {
   // Legacy configuration compatibility; no longer gates company/usage reports.
   minCohort: integer("ANALYTICS_MIN_TASKS", 5, 5, 10000),
   prices,
-  keys: {
-    exa: process.env.EXA_API_KEY || "",
-    tavily: process.env.TAVILY_API_KEY || "",
-    firecrawl: process.env.FIRECRAWL_API_KEY || "",
-  } as Record<ProviderId, string>,
+  keys: Object.fromEntries(
+    providerCatalog.map((p) => [p.id, process.env[p.credentialEnv] || ""]),
+  ) as Record<ProviderId, string>,
   rateCardVersion: `request-estimates-v2:${createHash("sha256").update(JSON.stringify({ prices, exaAdditionalResultMicros })).digest("hex").slice(0, 12)}`,
   policyVersion: "deterministic-v1",
 };

@@ -38,8 +38,6 @@ function fixture() {
         email: "fixture@invalid",
         sessionId: "fixture",
         expiresAt: Date.now() + 60000,
-        aal: "aal2",
-        mfaVerified: true,
       };
     },
   });

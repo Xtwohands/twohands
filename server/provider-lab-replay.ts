@@ -1,3 +1,4 @@
+import { providerOperation } from "./provider-catalog.js";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { digest } from "./observation-store.js";
@@ -45,9 +46,7 @@ export async function replayProviderRun(
     );
   const suite = await lab.suites.get(input.suiteId, input.suiteRevision);
   const cases = suite.cases.filter((c) =>
-    source.providers.some((p) =>
-      p === "firecrawl" ? c.kind === "extract" : c.kind === "search",
-    ),
+    source.providers.some((p) => c.kind === (providerOperation(p) ?? "search")),
   );
   if (
     !cases.length ||

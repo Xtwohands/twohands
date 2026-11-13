@@ -1,3 +1,9 @@
+import {
+  isProviderId,
+  providerEntry,
+  providerIds,
+  providerLabel,
+} from "../server/provider-catalog";
 import { ToolSettingsView } from "./ToolSettingsView";
 import {
   CompanyPortal,
@@ -179,9 +185,7 @@ function readRoute() {
       ? page
       : "sessions") as Page,
     id,
-    labProvider: ["exa", "tavily", "firecrawl"].includes(section)
-      ? section
-      : "all",
+    labProvider: isProviderId(section) ? section : "all",
     labFinding: ["missed", "unreviewed", "errors", "truncated"].includes(
       finding,
     )
@@ -253,24 +257,24 @@ function ProviderUsageSummary({ calls }: { calls: SessionDetail["calls"] }) {
   return (
     <div className="provider-usage-summary">
       <strong>Provider-reported usage</strong>
-      {["exa", "tavily", "firecrawl"].map((provider) => {
+      {providerIds.map((provider) => {
+        const usd = providerEntry(provider)!.usageUnit === "usd";
         const completed = calls.filter(
           (c) => c.provider === provider && c.status !== "running",
         );
         if (!completed.length) return null;
         const reported = completed.filter((c) => {
           const r = c.result as Record<string, any> | undefined;
-          const v =
-            provider === "exa"
-              ? r?.usage?.providerReportedUsd
-              : (r?.usage?.credits ?? r?.credits);
+          const v = usd
+            ? r?.usage?.providerReportedUsd
+            : (r?.usage?.credits ?? r?.credits);
           return typeof v === "number" && Number.isFinite(v) && v >= 0;
         });
         const total = reported.reduce((sum, c) => {
           const r = c.result as Record<string, any>;
           return (
             sum +
-            (provider === "exa"
+            (usd
               ? r.usage.providerReportedUsd
               : (r.usage?.credits ?? r.credits))
           );
@@ -279,9 +283,9 @@ function ProviderUsageSummary({ calls }: { calls: SessionDetail["calls"] }) {
           <p className="field-hint" key={provider}>
             {provider}:{" "}
             {reported.length
-              ? provider === "exa"
+              ? usd
                 ? `$${total.toFixed(6).replace(/0+$/, "").replace(/\.$/, ".00")}`
-                : `${total} credits`
+                : `${total} ${providerEntry(provider)!.usageUnit}`
               : "Not reported"}
             {` · ${reported.length} of ${completed.length} completed calls reported usage`}
           </p>
@@ -497,7 +501,7 @@ export function ObservationApp() {
               tools: "Tool catalog",
               activity: "Activity",
               usage: "Usage",
-              routing: "Routing",
+              routing: "Configure routing",
               connections: "Connections",
               credits: "Credits",
               keys: "API keys",
@@ -537,10 +541,10 @@ export function ObservationApp() {
     return (
       <main className="account-page">
         <section className="account-card">
-          <h1>Workspace owner access required</h1>
-          <p>Ask your workspace owner to manage credits and API keys.</p>
+          <h1>Account owner access required</h1>
+          <p>Ask your account owner to manage credits and API keys.</p>
           <Button asChild>
-            <a href="#dashboard">Back to your workspace</a>
+            <a href="#dashboard">Back to your dashboard</a>
           </Button>
         </section>
       </main>
@@ -554,10 +558,7 @@ export function ObservationApp() {
       <main className="account-page">
         <section className="account-card">
           <h1>Administrator access required</h1>
-          <p>
-            This area is reserved for platform administration. Your user
-            workspace and company portal are separate.
-          </p>
+          <p>This area is reserved for platform administration.</p>
           <Button asChild>
             <a href="#dashboard">Open your dashboard</a>
           </Button>
@@ -626,6 +627,7 @@ export function ObservationApp() {
       : route.page === "company"
         ? "business"
         : "operator";
+  const inToolCatalog = route.id === "tools" || route.id === "routing";
   const sidebarContent = (
     <>
       <a href="#home" className="obs-brand">
@@ -655,25 +657,20 @@ export function ObservationApp() {
               <Grid01 />
               My dashboard
             </a>
-            <div className="ws-nav-group">
-              <span>Tool routing</span>
-              <a
-                href="#dashboard/tools"
-                className={route.id === "tools" ? "selected" : ""}
-                aria-current={route.id === "tools" ? "page" : undefined}
-              >
-                <Link01 />
-                Tool catalog
-              </a>
-              <a
-                href="#dashboard/routing"
-                className={route.id === "routing" ? "selected" : ""}
-                aria-current={route.id === "routing" ? "page" : undefined}
-              >
-                <GitBranch01 />
-                Routing
-              </a>
-            </div>
+            <a
+              href="#dashboard/tools"
+              className={inToolCatalog ? "selected" : ""}
+              aria-current={
+                route.id === "tools"
+                  ? "page"
+                  : inToolCatalog
+                    ? "location"
+                    : undefined
+              }
+            >
+              <Link01 />
+              Tool catalog
+            </a>
             <div className="ws-nav-group">
               <span>Account</span>
               <a
@@ -745,7 +742,7 @@ export function ObservationApp() {
             { id: "plans", label: "Test plans", icon: FileCheck02 },
           ].map((p) => (
             <a
-              href={`#company/${route.id || "exa"}/${p.id}`}
+              href={`#company/${route.id || providerIds[0]}/${p.id}`}
               key={p.id}
               className={route.section === p.id ? "selected" : ""}
             >
@@ -840,9 +837,7 @@ export function ObservationApp() {
               }
             >
               <TerminalSquare />
-              {route.page === "company"
-                ? "Workspace settings"
-                : "Connect agent"}
+              {route.page === "company" ? "Account settings" : "Connect agent"}
             </Button>
           </div>
         </header>
@@ -873,11 +868,7 @@ export function ObservationApp() {
           {route.page === "company" && (
             <CompanyView
               key={connectionRevision}
-              provider={
-                route.id === "tavily" || route.id === "firecrawl"
-                  ? route.id
-                  : "exa"
-              }
+              provider={isProviderId(route.id) ? route.id : providerIds[0]}
               section={route.section}
             />
           )}
@@ -890,9 +881,11 @@ export function ObservationApp() {
               evidenceFilter={route.labFinding}
             />
           )}
-          {route.page === "dashboard" && account.enabled && (
-            <OperatorAllowanceNotice />
-          )}
+          {route.page === "dashboard" &&
+            account.enabled &&
+            (!route.id || route.id === "overview" || inToolCatalog) && (
+              <OperatorAllowanceNotice />
+            )}
           {route.page === "dashboard" && (
             <UserDashboardView
               key={connectionRevision}
@@ -1170,13 +1163,7 @@ export function ObservationApp() {
                 {catalog.map((t) => (
                   <Panel
                     key={t.tool}
-                    title={
-                      t.provider === "exa"
-                        ? "Exa"
-                        : t.provider === "tavily"
-                          ? "Tavily"
-                          : "Firecrawl"
-                    }
+                    title={providerLabel(t.provider)}
                     action={
                       <StateBadge
                         label={t.available ? "Available" : "Not configured"}
@@ -1442,13 +1429,7 @@ export function ObservationApp() {
                         <span className={`provider-letter ${t.provider}`}>
                           {t.provider[0]}
                         </span>
-                        <strong>
-                          {t.provider === "exa"
-                            ? "Exa"
-                            : t.provider === "tavily"
-                              ? "Tavily"
-                              : "Firecrawl"}
-                        </strong>
+                        <strong>{providerLabel(t.provider)}</strong>
                         <StateBadge
                           label={t.available ? "Configured" : "Missing key"}
                         />

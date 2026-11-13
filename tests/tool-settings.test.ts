@@ -74,8 +74,6 @@ suite("platform tool settings security and persistence", () => {
         sessionId: randomUUID(),
         email: who + "@fixture.invalid",
         expiresAt: Date.now() + 3600000,
-        aal: "aal2",
-        mfaVerified: true,
       };
       identities.set(who, identity);
       await db.pool.query(
@@ -109,8 +107,6 @@ suite("platform tool settings security and persistence", () => {
     secretValues.clear();
     vi.mocked(secrets.replace).mockClear();
     verifier.mockClear();
-    identities.get("admin")!.aal = "aal2";
-    identities.get("admin")!.mfaVerified = true;
     await db.pool.query(
       "TRUNCATE octolab.platform_tool_settings,octolab.platform_tool_setting_events",
     );
@@ -144,7 +140,7 @@ suite("platform tool settings security and persistence", () => {
     values: (await service.view()).values,
     ...extra,
   });
-  it("denies customer, company, machine-key, unknown, preview and low-assurance access", async () => {
+  it("allows signed-in administrators while denying customer, company, machine-key, unknown and preview access", async () => {
     for (const who of [
       "owner",
       "company",
@@ -168,12 +164,13 @@ suite("platform tool settings security and persistence", () => {
         ).status,
       ).toBeGreaterThanOrEqual(400);
     }
-    identities.get("admin")!.aal = "aal1";
-    identities.get("admin")!.mfaVerified = false;
     const profile = await accounts.profile(identities.get("admin")!);
     expect(profile.isAdmin).toBe(true);
-    expect(profile.workspaces).toEqual([]);
-    expect(profile.adminMfaVerified).toBe(false);
+    expect(profile.workspaces).toContainEqual({
+      id: workspace,
+      name: "Fixture workspace",
+      role: "platform_admin",
+    });
     for (const path of [
       "/api/admin/tool-settings",
       "/api/admin/workspace-allowances",
@@ -181,12 +178,11 @@ suite("platform tool settings security and persistence", () => {
       "/api/observations",
       "/api/auth/preview-targets",
     ]) {
-      const response = await request(app).get(path).set(headers());
-      expect(response.status).toBe(403);
-      expect(response.body.code).toBe("mfa_required");
+      const response = await request(app)
+        .get(path)
+        .set({ ...headers(), "X-Octolab-Workspace": workspace });
+      expect(response.status).toBe(200);
     }
-    identities.get("admin")!.aal = "aal2";
-    identities.get("admin")!.mfaVerified = true;
     expect(
       (
         await request(app)
@@ -203,17 +199,15 @@ suite("platform tool settings security and persistence", () => {
       ).status,
     ).toBe(403);
   });
-  it("requires a still-verified factor and a live session on every admin request", async () => {
+  it("verifies the live session afresh on every admin request", async () => {
     expect(
       (await request(app).get("/api/admin/tool-settings").set(headers()))
         .status,
     ).toBe(200);
-    identities.get("admin")!.mfaVerified = false;
     expect(
       (await request(app).get("/api/admin/tool-settings").set(headers()))
         .status,
-    ).toBe(403);
-    identities.get("admin")!.mfaVerified = true;
+    ).toBe(200);
     const identity = identities.get("admin")!;
     await db.pool.query("DELETE FROM auth.sessions WHERE id=$1", [
       identity.sessionId,
@@ -414,6 +408,21 @@ suite("platform tool settings security and persistence", () => {
     expect((await service.view()).credentials.firecrawl.needsReplacement).toBe(
       false,
     );
+  });
+  it("loads settings saved before a provider existed and keeps that provider's defaults", async () => {
+    await service.change(identities.get("admin")!.userId, await input());
+    // Simulate a row written by a release whose catalog had no Jina entry.
+    await db.pool.query(
+      "UPDATE octolab.platform_tool_settings SET values = values #- '{providers,jina}'",
+    );
+    service = new ToolSettings(db, secrets);
+    await service.ready;
+    const view = await service.view();
+    expect(view.values.providers.jina).toMatchObject({
+      enabled: true,
+      estimateMicros: expect.any(Number),
+    });
+    expect(view.credentials.jina).toBeDefined();
   });
   it("protects private tables from customer roles and the workspace runtime role", async () => {
     await db.pool.query(

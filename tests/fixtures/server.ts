@@ -8,6 +8,7 @@ import { createApp } from "../../server/app.js";
 config.keys.exa = "TEST_ONLY_EXA_KEY";
 config.keys.tavily = "TEST_ONLY_TAVILY_KEY";
 config.keys.firecrawl = "TEST_ONLY_FIRECRAWL_KEY";
+config.keys.jina = "TEST_ONLY_JINA_KEY";
 config.providerTestDailyBudgetMicros = 50000000;
 config.rpm = 1000;
 if (process.env.FIXTURE_API_KEYS === "true")
@@ -18,12 +19,18 @@ process.env.DEPOSITS_TESTNET_ENABLED = "true";
 process.env.BASE_SEPOLIA_DEPOSIT_ADDRESS = `0x${"22".repeat(20)}`;
 process.env.BASE_SEPOLIA_RPC_URL = "https://fixture-base-sepolia.invalid";
 // Stable synthetic prices make legacy fallback tests independent of published rate updates.
-Object.assign(config.prices, { exa: 17000, tavily: 8000, firecrawl: 1000 });
+Object.assign(config.prices, {
+  exa: 17000,
+  tavily: 8000,
+  firecrawl: 1000,
+  jina: 500,
+});
 config.rateCardVersion = "synthetic-browser-fixture-v1";
 if (process.env.FIXTURE_EXTRACTION_ONLY === "true") {
   config.keys.exa = "";
   config.keys.tavily = "";
   config.keys.firecrawl = "";
+  config.keys.jina = "";
   config.allowKeylessFirecrawl = true;
 }
 let extractionVersion = 0;
@@ -73,11 +80,28 @@ globalThis.fetch = async (input, init) => {
       "https://api.exa.ai/search",
       "https://api.tavily.com/search",
       "https://api.firecrawl.dev/v2/scrape",
+      "https://r.jina.ai/",
     ].includes(endpoint)
   )
     return nativeFetch(input, init);
   const body = JSON.parse(init?.body as string);
   await new Promise((resolve) => setTimeout(resolve, 120));
+  if (endpoint === "https://r.jina.ai/")
+    return new Response(
+      JSON.stringify({
+        code: 200,
+        status: 20000,
+        data: {
+          title: "TEST FIXTURE example page",
+          url: body.url,
+          content:
+            `TEST FIXTURE Jina extraction evidence. Version ${++extractionVersion}. `.repeat(
+              40,
+            ),
+          usage: { tokens: 480 },
+        },
+      }),
+    );
   if (endpoint.includes("firecrawl"))
     return new Response(
       JSON.stringify({

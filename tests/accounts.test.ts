@@ -62,8 +62,6 @@ suite("authenticated account and tenant boundaries", () => {
         email: name + "@fixture.invalid",
         sessionId: randomUUID(),
         expiresAt: Date.now() + 3600000,
-        aal: "aal2" as const,
-        mfaVerified: true,
       };
       identities.set("fixture-" + name, identity);
       await db.pool.query(
@@ -184,13 +182,8 @@ suite("authenticated account and tenant boundaries", () => {
       ).status,
     ).toBe(403);
   });
-  it("keeps an administrator's own customer account usable without elevating platform access", async () => {
-    identities.set("fixture-admin-personal", {
-      ...identities.get("fixture-admin")!,
-      aal: "aal1",
-      mfaVerified: false,
-    });
-    const personal = headers("fixture-admin-personal", ids.legacy);
+  it("grants operator access after sign-in and keeps user preview scoped to real memberships", async () => {
+    const personal = headers("fixture-admin", ids.legacy);
     for (const path of ["/api/workspace/usage", "/api/observations/catalog"]) {
       expect((await request(app).get(path).set(personal)).status).toBe(200);
       expect(
@@ -217,19 +210,24 @@ suite("authenticated account and tenant boundaries", () => {
         await request(app)
           .get("/api/workspace/usage")
           .set({
-            ...headers("fixture-admin-personal", bWorkspace),
+            ...headers("fixture-admin", bWorkspace),
             "X-Octolab-Preview": "user",
           })
       ).status,
     ).toBe(403);
     for (const path of [
       "/api/admin/workspace-allowances",
-      "/api/provider-lab/runs",
+      "/api/provider-lab",
       "/api/auth/preview-targets",
     ]) {
       const response = await request(app).get(path).set(personal);
-      expect(response.status).toBe(403);
-      expect(response.body.code).toBe("mfa_required");
+      expect([path, response.status]).toEqual([path, 200]);
+      if (path !== "/api/auth/preview-targets") {
+        const preview = await request(app)
+          .get(path)
+          .set({ ...personal, "X-Octolab-Preview": "user" });
+        expect(preview.status).toBe(403);
+      }
     }
     expect(
       (
@@ -240,8 +238,8 @@ suite("authenticated account and tenant boundaries", () => {
             "X-Octolab-Preview": "company",
             "X-Octolab-Preview-Target": "provider:exa",
           })
-      ).body.code,
-    ).toBe("mfa_required");
+      ).status,
+    ).toBe(200);
   });
   it("sets up a private account once across concurrent tabs without granting spending or claiming historical data", async () => {
     const identity: VerifiedIdentity = {

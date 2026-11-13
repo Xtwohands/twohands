@@ -1,3 +1,4 @@
+import { isExtractProvider, toolForProvider } from "./provider-catalog.js";
 import type { ProviderId } from "./types.js";
 import type { Observatory } from "./observation.js";
 import { toolCapabilities } from "./provider-capabilities.js";
@@ -45,7 +46,10 @@ export interface CompanyReport {
   opportunities: Opportunity[];
   capabilities: (typeof toolCapabilities)[keyof typeof toolCapabilities];
 }
-const demoOrganic: Record<ProviderId, NonNullable<CompanyReport["organic"]>> = {
+/** Illustrative demo figures exist only for the original three providers. */
+const demoOrganic: Partial<
+  Record<ProviderId, NonNullable<CompanyReport["organic"]>>
+> = {
   exa: {
     offeredSessions: 240,
     selectedSessions: 54,
@@ -187,7 +191,7 @@ export async function companyReport(
   );
   const organic =
     source === "demo"
-      ? demoOrganic[provider]
+      ? (demoOrganic[provider] ?? null)
       : {
           offeredSessions: eligible.length,
           selectedSessions: selected.length,
@@ -248,7 +252,9 @@ export async function companyReport(
     source === "demo"
       ? demoBenchmarks
       : labMeasurements(latest ? [latest] : []);
-  const metric = benchmarks.find((m) => m.provider === provider)!;
+  const metric =
+    benchmarks.find((m) => m.provider === provider) ??
+    labMeasurements([]).find((m) => m.provider === provider)!;
   const usage =
     source === "local" && latest
       ? providerUsage(latest.calls.filter((c) => c.provider === provider))
@@ -309,10 +315,9 @@ export async function companyReport(
   if (metric.referenceKnown > metric.referencePassed)
     opportunities.push({
       id: "reference-gaps",
-      title:
-        provider === "firecrawl"
-          ? "Inspect pages that missed the reference check"
-          : "Inspect missed reference pages",
+      title: isExtractProvider(provider)
+        ? "Inspect pages that missed the reference check"
+        : "Inspect missed reference pages",
       category: "Coverage",
       evidence: `${metric.referenceKnown - metric.referencePassed} of ${metric.referenceKnown} known checks missed the predefined reference.${source === "demo" ? " These are simulated results." : ""}`,
       hypothesis:
@@ -373,13 +378,6 @@ export async function companyReport(
           ? `${latest.suiteVersion} · ${latest.createdAt}`
           : "No completed test run",
     opportunities,
-    capabilities:
-      toolCapabilities[
-        provider === "firecrawl"
-          ? "firecrawl_extract"
-          : provider === "exa"
-            ? "exa_search"
-            : "tavily_search"
-      ],
+    capabilities: toolCapabilities[toolForProvider(provider)],
   };
 }

@@ -1,3 +1,4 @@
+import { providerIds, providerLabel } from "./provider-catalog.js";
 import { CompanyTeam } from "./company-team.js";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
@@ -55,11 +56,9 @@ export class Companies {
       kind: "company",
       target: `company:${row.id}`,
     }));
-    const names: Record<ProviderId, string> = {
-      exa: "Exa",
-      tavily: "Tavily",
-      firecrawl: "Firecrawl",
-    };
+    const names = Object.fromEntries(
+      providerIds.map((p) => [p, providerLabel(p)]),
+    ) as Record<ProviderId, string>;
     for (const provider of new Set(Object.values(providerTools))) {
       if (!result.rows.some((row) => row.providerId === provider))
         targets.push({
@@ -300,7 +299,7 @@ export class Companies {
       .object({
         revision: z.number().int().nonnegative(),
         status: z.enum(["approved", "rejected", "suspended"]),
-        providerId: z.enum(["exa", "tavily", "firecrawl"]).nullable(),
+        providerId: z.enum(providerIds).nullable(),
         insightsEnabled: z.boolean(),
         feedback: z.string().trim().min(5).max(1500),
       })

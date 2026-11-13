@@ -23,7 +23,7 @@
    Draw the glow against the full shape, then the gradient stroke above it. */
 :is(
   [data-slot="button"][data-variant="default"],
-  .obs-sidebar nav > a:not(.admin-mfa-notice),
+  .obs-sidebar nav > a,
   .obs-sidebar nav .ws-nav-group > a,
   .mobile-sidebar-content nav > a,
   .mobile-sidebar-content nav .ws-nav-group > a,
@@ -122,7 +122,7 @@
   margin-bottom: 16px;
 }
 /* Offset the new border within the existing navigation row dimensions. */
-.obs-sidebar nav > a:not(.admin-mfa-notice),
+.obs-sidebar nav > a,
 .obs-sidebar nav .ws-nav-group > a,
 .mobile-sidebar-content nav > a,
 .mobile-sidebar-content nav .ws-nav-group > a {

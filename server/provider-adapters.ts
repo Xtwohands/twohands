@@ -11,6 +11,17 @@ import {
 import type { ToolName } from "./observation-types.js";
 import type { ProviderId } from "./types.js";
 import { providerTools } from "./provider-identifiers.js";
+import { providerEntry } from "./provider-catalog.js";
+
+/** Credential lookup driven by the catalog's environment variable names. */
+function catalogCredential(provider: ProviderId) {
+  const entry = providerEntry(provider)!;
+  return {
+    reference: entry.credentialEnv,
+    resolve: () => config.keys[provider],
+    accountReference: () => process.env[entry.accountReferenceEnv],
+  };
+}
 
 const nonnegative = z.number().finite().nonnegative();
 const status = z.number().int().min(100).max(599);
@@ -49,41 +60,81 @@ const extractResult = z.object({
 });
 const basis =
   "Request parameters × configured rates. Account discounts and free credits are unknown; this is not an invoice.";
-function quote(provider: ProviderId, request: AdapterRequest): AdapterQuote {
-  const base = providerEstimate(provider),
-    maxResults = request.maxResults ?? 10,
-    depth = request.searchDepth ?? "basic";
-  const units = provider === "tavily" && depth === "advanced" ? 2 : 1;
-  const extra = provider === "exa" ? Math.max(0, maxResults - 10) : 0;
-  return {
-    estimatedMicros: base * units + extra * config.exaAdditionalResultMicros,
+type PricingDetail = Pick<
+  AdapterQuote,
+  "breakdown" | "units" | "unit" | "uncertainty"
+> & {
+  /** Multiplier applied to the configured base estimate. */
+  multiplier: number;
+  additionalMicros?: number;
+  rates?: Partial<AdapterQuote["rates"]>;
+  pricingCheckedAt: string;
+};
+/** Provider-specific pricing; every catalog provider must define one. */
+const pricing: Record<
+  ProviderId,
+  (request: AdapterRequest, base: number) => PricingDetail
+> = {
+  exa: (request) => {
+    const maxResults = request.maxResults ?? 10;
+    const extra = Math.max(0, maxResults - 10);
+    return {
+      multiplier: 1,
+      additionalMicros: extra * config.exaAdditionalResultMicros,
+      rates: { additionalResultMicros: config.exaAdditionalResultMicros },
+      breakdown: `Auto search, up to ${maxResults} results with page text; base includes 10 results${extra ? ` + ${extra} additional results` : ""}`,
+      units: null,
+      unit: "request plus additional results",
+      uncertainty: "Account-specific billing may differ.",
+      pricingCheckedAt: "2026-11-02",
+    };
+  },
+  tavily: (request) => {
+    const depth = request.searchDepth ?? "basic";
+    const units = depth === "advanced" ? 2 : 1;
+    return {
+      multiplier: units,
+      breakdown: `${depth} search, up to ${request.maxResults ?? 10} results; ${units} credit${units === 1 ? "" : "s"}`,
+      units,
+      unit: "credits",
+      uncertainty: "Account-specific billing may differ.",
+      pricingCheckedAt: "2026-11-02",
+    };
+  },
+  firecrawl: () => ({
+    multiplier: 1,
     breakdown:
-      provider === "exa"
-        ? `Auto search, up to ${maxResults} results with page text; base includes 10 results${extra ? ` + ${extra} additional results` : ""}`
-        : provider === "tavily"
-          ? `${depth} search, up to ${maxResults} results; ${units} credit${units === 1 ? "" : "s"}`
-          : "One page as Markdown; 1 base scrape credit. PDF parsing can add credits; page count is unknown before retrieval.",
-    rates: {
-      baseMicros: base,
-      ...(provider === "exa"
-        ? { additionalResultMicros: config.exaAdditionalResultMicros }
-        : {}),
-    },
-    units: provider === "exa" ? null : units,
-    unit: provider === "exa" ? "request plus additional results" : "credits",
-    rateCardVersion: config.rateCardVersion,
-    pricingSource:
-      provider === "exa"
-        ? "https://exa.ai/pricing"
-        : provider === "tavily"
-          ? "https://docs.tavily.com/documentation/api-credits"
-          : "https://docs.firecrawl.dev/billing",
+      "One page as Markdown; 1 base scrape credit. PDF parsing can add credits; page count is unknown before retrieval.",
+    units: 1,
+    unit: "credits",
+    uncertainty: "Base page estimate; document parsing can increase usage.",
     pricingCheckedAt: "2026-11-02",
-    basis,
+  }),
+  jina: () => ({
+    multiplier: 1,
+    breakdown:
+      "One page as Markdown; billed by output tokens, which are unknown before retrieval. Estimate assumes a page near the 20,000-character capture limit.",
+    units: null,
+    unit: "output tokens",
     uncertainty:
-      provider === "firecrawl"
-        ? "Base page estimate; document parsing can increase usage."
-        : "Account-specific billing may differ.",
+      "Per-token rate not yet confirmed from Jina's pricing page; long pages and PDFs cost more.",
+    pricingCheckedAt: "2026-11-12",
+  }),
+};
+function quote(provider: ProviderId, request: AdapterRequest): AdapterQuote {
+  const base = providerEstimate(provider);
+  const detail = pricing[provider](request, base);
+  return {
+    estimatedMicros: base * detail.multiplier + (detail.additionalMicros ?? 0),
+    breakdown: detail.breakdown,
+    rates: { baseMicros: base, ...detail.rates },
+    units: detail.units,
+    unit: detail.unit,
+    rateCardVersion: config.rateCardVersion,
+    pricingSource: providerEntry(provider)!.pricingSource,
+    pricingCheckedAt: detail.pricingCheckedAt,
+    basis,
+    uncertainty: detail.uncertainty,
   };
 }
 /** Only these reviewed server-side definitions are executable in production. */
@@ -97,11 +148,7 @@ const definitions: AdapterDefinition<ToolName, ProviderId>[] = [
     pageText: true,
     searchDepth: false,
     capabilities: capabilityData.exa_search,
-    credential: {
-      reference: "EXA_API_KEY",
-      resolve: () => config.keys.exa,
-      accountReference: () => process.env.EXA_ACCOUNT_REFERENCE,
-    },
+    credential: catalogCredential("exa"),
     input: adapterInput("search"),
     result: searchResult("exa"),
     estimate: (r) => quote("exa", r),
@@ -131,11 +178,7 @@ const definitions: AdapterDefinition<ToolName, ProviderId>[] = [
     pageText: false,
     searchDepth: true,
     capabilities: capabilityData.tavily_search,
-    credential: {
-      reference: "TAVILY_API_KEY",
-      resolve: () => config.keys.tavily,
-      accountReference: () => process.env.TAVILY_ACCOUNT_REFERENCE,
-    },
+    credential: catalogCredential("tavily"),
     input: adapterInput("search", true),
     result: searchResult("tavily"),
     estimate: (r) => quote("tavily", r),
@@ -162,11 +205,7 @@ const definitions: AdapterDefinition<ToolName, ProviderId>[] = [
     pageText: true,
     searchDepth: false,
     capabilities: capabilityData.firecrawl_extract,
-    credential: {
-      reference: "FIRECRAWL_API_KEY",
-      resolve: () => config.keys.firecrawl,
-      accountReference: () => process.env.FIRECRAWL_ACCOUNT_REFERENCE,
-    },
+    credential: catalogCredential("firecrawl"),
     input: adapterInput("extract"),
     result: extractResult,
     estimate: (r) => quote("firecrawl", r),
@@ -174,6 +213,25 @@ const definitions: AdapterDefinition<ToolName, ProviderId>[] = [
       "Markdown extraction, up to 20,000 captured characters; full-page completeness is not guaranteed.",
     ],
     execute: (r, c) => c.transports.scrape(r.url!),
+  },
+  {
+    tool: "jina_extract",
+    provider: "jina",
+    version: "1.0.0",
+    environment: "production",
+    operation: "extract",
+    pageText: true,
+    searchDepth: false,
+    capabilities: capabilityData.jina_extract,
+    credential: catalogCredential("jina"),
+    input: adapterInput("extract"),
+    result: extractResult,
+    estimate: (r) => quote("jina", r),
+    mappingNotes: () => [
+      "Jina Reader Markdown with images removed, up to 20,000 captured characters; full-page completeness is not guaranteed.",
+      "Reported usage is Jina output tokens, stored as provider-reported units.",
+    ],
+    execute: (r, c) => c.transports.scrape(r.url!, "jina"),
   },
 ];
 export const providerRegistry = new AdapterRegistry(definitions);

@@ -1,4 +1,9 @@
-import { providerLogos } from "./components/ToolOptions";
+import {
+  isProviderId,
+  providerEntry,
+  toolForProvider,
+} from "../server/provider-catalog";
+import { ProviderLogo } from "./components/shared";
 import { useEffect, useRef, useState } from "react";
 import {
   ArrowUpRight,
@@ -53,7 +58,7 @@ function readDemoPlans(): Experiment[] {
             (p) =>
               p &&
               typeof p.id === "string" &&
-              ["exa", "tavily", "firecrawl"].includes(p.provider) &&
+              isProviderId(p.provider) &&
               ["planned", "testing", "reviewed"].includes(p.status) &&
               ["retrieval", "agent_choice", "integration"].includes(
                 p.verification,
@@ -217,12 +222,10 @@ export function CompanyView({
       <div className="page-heading company-heading">
         <div>
           <div className="company-title">
-            <img
+            <ProviderLogo
+              provider={provider}
               className={`company-logo company-logo-${provider}`}
-              src={providerLogos[provider]}
-              alt=""
-              width={32}
-              height={32}
+              size={32}
             />
             <h1>{providerNames[provider]} insights</h1>
           </div>
@@ -286,7 +289,7 @@ export function CompanyView({
           <p>
             {source === "demo"
               ? "All metrics below are simulated to demonstrate the workflow. No customer results or paid-provider outcomes are implied."
-              : "Your workspace activity is visible below, including small samples. Controlled tests are separate. All sessions contribute to commercial aggregates without a minimum workspace/session count. Nothing is published to a tool company."}
+              : "Your account activity is visible below, including small samples. Controlled tests are shown separately. Sessions contribute to commercial aggregates from the first eligible activity. Publishing requires a separate release."}
           </p>
         </div>
         <Badge variant="outline">
@@ -460,11 +463,7 @@ export function CompanyView({
                 description="Describe this integration clearly before judging adoption."
               >
                 <div className="company-capability">
-                  <code>
-                    {provider === "firecrawl"
-                      ? "firecrawl_extract"
-                      : `${provider}_search`}
-                  </code>
+                  <code>{toolForProvider(provider)}</code>
                   <p>{report.capabilities.description}</p>
                   <strong>When to use it</strong>
                   <p>{report.capabilities.useWhen}</p>
@@ -558,7 +557,8 @@ export function CompanyView({
                   )}
                   {report.usage.creditCalls > 0 && (
                     <p>
-                      {report.usage.credits} provider-reported credits across{" "}
+                      {report.usage.credits} provider-reported{" "}
+                      {providerEntry(provider)?.usageUnit ?? "credits"} across{" "}
                       {report.usage.creditCalls} calls. Credits have not been
                       converted to USD.
                     </p>

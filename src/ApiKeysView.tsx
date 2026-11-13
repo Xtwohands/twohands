@@ -34,7 +34,7 @@ const labels: Record<ApiKeyScope, [string, string]> = {
   ],
   "research:read": [
     "Read research",
-    "Read saved sessions, evidence, and activity in this workspace.",
+    "Read your saved sessions, evidence, and activity.",
   ],
   "research:write": [
     "Write research",
@@ -46,7 +46,7 @@ const labels: Record<ApiKeyScope, [string, string]> = {
   ],
   "usage:read": [
     "Read usage",
-    "Read workspace usage totals and provider reporting coverage.",
+    "Read your usage totals and provider reporting coverage.",
   ],
 };
 const statusLabel = {
@@ -264,7 +264,7 @@ export function ApiKeysView() {
       <section className="ws-panel">
         <header>
           <div>
-            <h2>Workspace API keys</h2>
+            <h2>Your API keys</h2>
             <p>
               {
                 keys.filter(
@@ -353,9 +353,9 @@ export function ApiKeysView() {
           </p>
           <AgentEnvironment />
           <p>
-            Each key accesses only its workspace and the permissions and tools
-            you allow. Manage or revoke it here without changing other agents’
-            keys.
+            Each key is tied to your account and limited to the permissions and
+            tools you allow. Manage or revoke it here without changing other
+            agents’ keys.
           </p>
           <a className="ws-text-link" href="#dashboard/connections">
             MCP connection setup
@@ -733,7 +733,7 @@ export function ApiKeysView() {
                             {event.type} · Revision {event.current.revision}
                           </strong>
                           <small className="ws-dispute-subline">
-                            {date(event.at)} · Workspace owner credential
+                            {date(event.at)} · Account owner credential
                           </small>
                         </li>
                       ))}

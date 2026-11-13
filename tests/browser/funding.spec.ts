@@ -11,6 +11,9 @@ test("test funding remains disabled by default with clear setup instructions", a
   ).toBeVisible();
   await expect(page.getByText("Loading deposit history…")).toHaveCount(0);
   await expect(
+    page.getByText("Your test balance", { exact: true }),
+  ).toBeVisible();
+  await expect(
     page.getByRole("button", { name: "Add test credits", exact: true }),
   ).toBeDisabled();
   await expect(page.locator(".ws-funding-method").first()).toContainText(

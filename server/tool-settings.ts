@@ -1,3 +1,4 @@
+import { providerIds } from "./provider-catalog.js";
 import { createHash, randomUUID } from "node:crypto";
 import type { PoolClient } from "pg";
 import { z } from "zod";
@@ -14,7 +15,7 @@ import type {
   ToolSettingsView,
 } from "./tool-settings-types.js";
 
-export const providerIds = ["exa", "tavily", "firecrawl"] as const;
+export { providerIds };
 const micro = z.number().int().min(0).max(10_000_000);
 const provider = z
   .object({
@@ -23,11 +24,12 @@ const provider = z
     estimateMicros: micro,
   })
   .strict();
+const providerShape = Object.fromEntries(
+  providerIds.map((p) => [p, provider]),
+) as Record<ProviderId, typeof provider>;
 export const settingsValues = z
   .object({
-    providers: z
-      .object({ exa: provider, tavily: provider, firecrawl: provider })
-      .strict(),
+    providers: z.object(providerShape).strict(),
     timeoutMs: z.number().int().min(100).max(120000),
     sessionBudgetMicros: z.number().int().min(0).max(5_000_000),
     testBudgetMicros: z.number().int().min(0).max(5_000_000),
@@ -35,6 +37,9 @@ export const settingsValues = z
     exaAdditionalResultMicros: micro,
   })
   .strict();
+const storedSettingsValues = settingsValues.extend({
+  providers: z.object(providerShape).partial().strict(),
+});
 export const settingsInput = z
   .object({
     requestKey: z.uuid(),
@@ -202,15 +207,18 @@ export class ToolSettings {
         )
       ).rows[0];
       if (!row) return;
-      const values = settingsValues.parse(row.values);
+      // Settings saved before a provider was added lack its entry; keep its defaults.
+      const stored = storedSettingsValues.parse(row.values);
+      const values: ToolSettingsValues = {
+        ...stored,
+        providers: { ...this.values.providers, ...stored.providers },
+      };
       const refs = z
-        .object({
-          exa: z.uuid().optional(),
-          tavily: z.uuid().optional(),
-          firecrawl: z.uuid().optional(),
-        })
+        .object(
+          Object.fromEntries(providerIds.map((p) => [p, z.uuid().optional()])),
+        )
         .strict()
-        .parse(row.secret_refs);
+        .parse(row.secret_refs) as SecretRefs;
       const keys: Partial<Record<ProviderId, string>> = {};
       this.unresolved.clear();
       for (const p of providerIds)

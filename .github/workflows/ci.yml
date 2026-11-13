@@ -4,13 +4,21 @@ on:
   pull_request:
 permissions:
   contents: read
+# A newer push to the same branch or pull request supersedes the older run.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+# Artifact policy (enforced by tests/ci-workflow.test.ts): uploads are small
+# diagnostic files only, kept for at most 3 days, and never fail the run.
+# Artifact storage is a small shared quota; a full quota must not turn a
+# passing build red. Never upload container images here.
 jobs:
   verify:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: npm
@@ -20,12 +28,13 @@ jobs:
       - run: npm run format:check
       - run: npx playwright install --with-deps chromium
       - run: npm run test:e2e
-      - uses: actions/upload-artifact@v4
-        if: always()
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        continue-on-error: true
         with:
           name: browser-verification
           path: test-results/
-          retention-days: 7
+          retention-days: 3
   postgres:
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -42,8 +51,8 @@ jobs:
           --health-cmd "pg_isready -U postgres -d octolab_ci"
           --health-interval 5s --health-timeout 5s --health-retries 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: npm
@@ -73,12 +82,13 @@ jobs:
         run: npm run test:restore
         env:
           OCTOLAB_RESTORE_DRILL_URL: postgresql://postgres:isolated_ci_fixture@127.0.0.1:5432/postgres
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
+        continue-on-error: true
         with:
           name: disposable-restore-evidence
           path: test-results/restore-drill/restore-report.json
-          retention-days: 14
+          retention-days: 3
   container:
     runs-on: ubuntu-latest
     timeout-minutes: 25
@@ -100,7 +110,7 @@ jobs:
       SUPABASE_URL: https://fixture.supabase.co
       SUPABASE_PUBLISHABLE_KEY: sb_publishable_isolated_fixture_only
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Build production and recovery artifacts
         run: |
           docker build --build-arg SOURCE_REVISION="$GITHUB_SHA" -t octolab:ci .
@@ -165,19 +175,15 @@ jobs:
             sleep 1
           done
           docker exec -i octolab-restored-ci node --input-type=module - restored < tests/container-postgres-smoke.mjs
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
+        continue-on-error: true
         with:
           name: packaged-restore-evidence
           path: ${{ runner.temp }}/octolab-recovery/*-report.json
-          retention-days: 14
-      - name: Save deployable image artifacts
-        run: docker save octolab:ci octolab-recovery:ci | gzip > "$RUNNER_TEMP/octolab-release-images.tar.gz"
-      - uses: actions/upload-artifact@v4
-        with:
-          name: octolab-release-images
-          path: ${{ runner.temp }}/octolab-release-images.tar.gz
-          retention-days: 7
+          retention-days: 3
+      # The images are rebuilt from source by `docker build`; they are not
+      # stored as artifacts (each copy was ~350 MB and exhausted the quota).
       - name: Container logs
         if: failure()
         run: |

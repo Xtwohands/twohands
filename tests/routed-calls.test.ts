@@ -4,6 +4,7 @@ import { Observatory, sessionInput } from "../server/observation";
 import { config } from "../server/config";
 import { ProviderError } from "../server/providers";
 import { rankRoute, type RouteSignal } from "../server/route-policy";
+import { providerToolNames } from "../server/provider-catalog";
 
 let store: Store;
 let obs: Observatory;
@@ -138,11 +139,10 @@ describe("routed calls", () => {
       tool: string;
       status: string;
     }[];
-    expect(candidates.map((c) => c.tool).sort()).toEqual([
-      "exa_search",
-      "firecrawl_extract",
-      "tavily_search",
-    ]);
+    // Every registered tool is recorded, including the ones that cannot serve a search.
+    expect(candidates.map((c) => c.tool).sort()).toEqual(
+      [...providerToolNames].sort(),
+    );
     expect(candidates.find((c) => c.tool === "firecrawl_extract")!.status).toBe(
       "incompatible",
     );

@@ -1,3 +1,7 @@
+import {
+  providerLabel,
+  searchProviderIds,
+} from "../../server/provider-catalog";
 import { useState } from "react";
 import {
   ArrowRight,
@@ -494,8 +498,11 @@ export function EvidenceList({
           onChange={(e) => setProvider(e.target.value)}
         >
           <option value="all">All providers</option>
-          <option value="exa">Exa</option>
-          <option value="tavily">Tavily</option>
+          {searchProviderIds.map((p) => (
+            <option key={p} value={p}>
+              {providerLabel(p)}
+            </option>
+          ))}
           <option value="user">Supplied links</option>
         </select>
         <select

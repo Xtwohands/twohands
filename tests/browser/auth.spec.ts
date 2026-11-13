@@ -1,6 +1,7 @@
 import { test, expect, type Page } from "@playwright/test";
 import { captureJourney } from "./helpers/launch-screenshots";
 import AxeBuilder from "@axe-core/playwright";
+import { providerIds } from "../../server/provider-catalog";
 const authBrowserUrl =
   process.env.OCTOLAB_AUTH_BROWSER_URL || "http://127.0.0.1:3102";
 test.use({ baseURL: authBrowserUrl });
@@ -37,7 +38,6 @@ async function mockAuth(
 ) {
   const state = {
     companies: [] as any[],
-    adminMfaVerified: role === "admin",
     actorId: userId,
     role,
     reviewed: null as any,
@@ -196,7 +196,6 @@ async function mockAuth(
             workspaces: target ? [] : state.workspaces,
             isAdmin: state.role === "admin" && !headers["x-octolab-preview"],
             canPreview: state.role === "admin",
-            adminMfaVerified: state.adminMfaVerified,
             companyPreview: target,
             companies: target
               ? state.companies
@@ -447,7 +446,7 @@ test("admin account selection discards late responses from the previous account"
     "Private A receipt",
   );
   state.pause = true;
-  await page.getByRole("button", { name: "Refresh workspace" }).click();
+  await page.getByRole("button", { name: "Refresh account" }).click();
   await expect.poll(() => state.waiting).toBeGreaterThan(0);
   await openNav(page);
   await openSettings(page);
@@ -485,7 +484,7 @@ test("new accounts start automatically and expired access removes private conten
   );
   expect(state.setupCalls).toBe(1);
   state.revoked = true;
-  await page.getByRole("button", { name: "Refresh workspace" }).click();
+  await page.getByRole("button", { name: "Refresh account" }).click();
   await expect(
     page.getByRole("heading", { name: "Sign in to octolab" }),
   ).toBeVisible();
@@ -601,7 +600,7 @@ test("a delayed setup response cannot restore the previous account after sign-ou
   );
   release();
   await expect.poll(() => finished).toBe(true);
-  await page.getByRole("button", { name: "Refresh workspace" }).click();
+  await page.getByRole("button", { name: "Refresh account" }).click();
   await expect(page.locator(".ws-activity-table")).toContainText(
     "Private B receipt",
   );
@@ -977,7 +976,7 @@ test("workspace members get usable connection guidance without owner-only key co
   await page.goto("/#dashboard/connections");
   await expect(
     page.getByText(
-      "Ask your workspace owner for a scoped API key before starting the bridge.",
+      "Ask your account owner for a scoped API key before starting the bridge.",
     ),
   ).toBeVisible();
   await expect(
@@ -1356,7 +1355,8 @@ test("ordinary accounts cannot open admin tool access and see honest workspace a
       },
     }),
   );
-  await login(page);
+  // The allowance notice is shown on the dashboard overview and tool catalog.
+  await login(page, "/#dashboard");
   await expect(
     page.getByRole("status").filter({
       hasText: "Tool access has not been enabled",
@@ -1377,7 +1377,7 @@ const platformSettingsFixture = () => ({
   rateCardVersion: "isolated-settings-fixture",
   values: {
     providers: Object.fromEntries(
-      ["exa", "tavily", "firecrawl"].map((id) => [
+      providerIds.map((id) => [
         id,
         { enabled: true, requestsPerMinute: 20, estimateMicros: 7000 },
       ]),
@@ -1389,7 +1389,7 @@ const platformSettingsFixture = () => ({
     exaAdditionalResultMicros: 1000,
   },
   credentials: Object.fromEntries(
-    ["exa", "tavily", "firecrawl"].map((id) => [
+    providerIds.map((id) => [
       id,
       { configured: true, source: "environment", needsReplacement: false },
     ]),
@@ -1398,11 +1398,10 @@ const platformSettingsFixture = () => ({
   effective:
     "New calls immediately after save; current calls must finish first",
 });
-test("verified admin edits platform settings and write-only credentials with a persistent navigation", async ({
+test("admin edits platform settings and write-only credentials immediately after sign-in", async ({
   page,
 }) => {
-  const state = await mockAuth(page, true, "admin");
-  state.adminMfaVerified = true;
+  await mockAuth(page, true, "admin");
   let current = platformSettingsFixture();
   const writes: any[] = [];
   await page.route("**/api/admin/tool-settings/history", (route) =>
@@ -1465,128 +1464,10 @@ test("verified admin edits platform settings and write-only credentials with a p
   );
   expect(storage).not.toContain("fixture-only-provider-secret");
 });
-test("admin enrolls and verifies an authenticator without storing the enrollment secret", async ({
-  page,
-}) => {
-  const state = await mockAuth(page, true, "admin");
-  state.adminMfaVerified = false;
-  const factorId = "00000000-0000-4000-8000-000000000081";
-  await page.route(authOrigin + "/auth/v1/factors", (route) =>
-    route.fulfill({
-      headers: { "access-control-allow-origin": "*" },
-      json: {
-        id: factorId,
-        type: "totp",
-        totp: {
-          qr_code:
-            'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg"/>',
-          secret: "FIXTURETOTPPROVIDERSETUP",
-          uri: "otpauth://fixture",
-        },
-      },
-    }),
-  );
-  await page.route(authOrigin + "/auth/v1/factors/*/challenge", (route) =>
-    route.fulfill({
-      headers: { "access-control-allow-origin": "*" },
-      json: { id: factorId, expires_at: Math.floor(Date.now() / 1000) + 60 },
-    }),
-  );
-  await page.route(authOrigin + "/auth/v1/factors/*/verify", (route) => {
-    state.adminMfaVerified = true;
-    return route.fulfill({
-      headers: { "access-control-allow-origin": "*" },
-      json: {
-        access_token: jwt(),
-        refresh_token: "fixture-mfa-refresh",
-        token_type: "bearer",
-        expires_in: 3600,
-        user: user(),
-      },
-    });
-  });
-  await login(page, "/#tool-settings");
-  await expect(
-    page.getByText(
-      "Open Settings and verify your authenticator before managing tools or credentials.",
-    ),
-  ).toBeVisible();
-  await page.getByRole("link", { name: "Open Settings", exact: true }).click();
-  await page
-    .getByRole("button", { name: "Set up or verify authenticator" })
-    .click();
-  await expect(page.getByText("FIXTURETOTPPROVIDERSETUP")).toBeVisible();
-  expect(
-    await page.evaluate(() => JSON.stringify({ ...localStorage })),
-  ).not.toContain("FIXTURETOTPPROVIDERSETUP");
-  await page.getByLabel("Authenticator code").fill("123456");
-  await page
-    .getByRole("button", { name: "Verify authenticator", exact: true })
-    .click();
-  await expect(
-    page.getByText("Two-factor verification is active for this session."),
-  ).toBeVisible();
-  await expect(page.getByText("FIXTURETOTPPROVIDERSETUP")).toHaveCount(0);
-  await captureJourney(page, "admin-mfa-verified");
-});
-test("late enrollment cannot repopulate an authenticator secret after sign-out", async ({
-  page,
-}) => {
-  const state = await mockAuth(page, true, "admin");
-  state.adminMfaVerified = false;
-  let release!: () => void,
-    waiting = false;
-  const gate = new Promise<void>((r) => (release = r));
-  await page.route(authOrigin + "/auth/v1/factors", async (route) => {
-    waiting = true;
-    await gate;
-    await route.fulfill({
-      headers: { "access-control-allow-origin": "*" },
-      json: {
-        id: "00000000-0000-4000-8000-000000000081",
-        type: "totp",
-        totp: {
-          qr_code:
-            'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg"/>',
-          secret: "LATEFIXTURETOTPSECRET",
-          uri: "otpauth://fixture",
-        },
-      },
-    });
-  });
-  await login(page, "/#settings");
-  await page
-    .getByRole("button", { name: "Set up or verify authenticator" })
-    .click();
-  await expect.poll(() => waiting).toBe(true);
-  await openNav(page);
-  await openAccountMenu(page);
-  await page
-    .getByRole("button", { name: "Sign out", exact: true })
-    .last()
-    .click();
-  await expect(
-    page.getByRole("heading", { name: "Sign in to octolab" }),
-  ).toBeVisible();
-  release();
-  state.actorId = "00000000-0000-4000-8000-000000000099";
-  await page
-    .getByLabel("Email", { exact: true })
-    .fill("second@fixture.invalid");
-  await page
-    .getByLabel("Password", { exact: true })
-    .fill("fixture-password-123");
-  await page.getByRole("button", { name: "Sign in", exact: true }).click();
-  await expect(
-    page.getByRole("button", { name: "Set up or verify authenticator" }),
-  ).toBeVisible();
-  await expect(page.getByText("LATEFIXTURETOTPSECRET")).toHaveCount(0);
-});
 test("a previous settings response cannot overwrite the next signed-in admin's credential form", async ({
   page,
 }) => {
   const state = await mockAuth(page, true, "admin");
-  state.adminMfaVerified = true;
   let release!: () => void,
     waiting = false;
   const gate = new Promise<void>((r) => (release = r));
@@ -1632,186 +1513,4 @@ test("a previous settings response cannot overwrite the next signed-in admin's c
   await expect(
     page.getByText("Settings saved. New calls use this revision."),
   ).toHaveCount(0);
-});
-
-test("late MFA verification cannot restore privileged UI after sign-out", async ({
-  page,
-}) => {
-  const state = await mockAuth(page, true, "admin");
-  state.adminMfaVerified = false;
-  const factorId = "00000000-0000-4000-8000-000000000082";
-  await page.route(authOrigin + "/auth/v1/user", (route) =>
-    route.fulfill({
-      headers: { "access-control-allow-origin": "*" },
-      json: {
-        ...user(),
-        factors: [
-          {
-            id: factorId,
-            factor_type: "totp",
-            status: "verified",
-            friendly_name: "Fixture authenticator",
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-          },
-        ],
-      },
-    }),
-  );
-  await page.route(authOrigin + "/auth/v1/factors/*/challenge", (route) =>
-    route.fulfill({
-      headers: { "access-control-allow-origin": "*" },
-      json: { id: factorId, expires_at: Math.floor(Date.now() / 1000) + 60 },
-    }),
-  );
-  let release!: () => void,
-    waiting = false,
-    finished = false;
-  const gate = new Promise<void>((r) => (release = r));
-  await page.route(authOrigin + "/auth/v1/factors/*/verify", async (route) => {
-    waiting = true;
-    await gate;
-    await route.fulfill({
-      headers: { "access-control-allow-origin": "*" },
-      json: {
-        access_token: jwt(),
-        refresh_token: "fixture-late-mfa-refresh",
-        token_type: "bearer",
-        expires_in: 3600,
-        user: user(),
-      },
-    });
-    finished = true;
-  });
-  await login(page, "/#settings");
-  await page
-    .getByRole("button", { name: "Set up or verify authenticator" })
-    .click();
-  await page.getByLabel("Authenticator code").fill("123456");
-  await page
-    .getByRole("button", { name: "Verify authenticator", exact: true })
-    .click();
-  await expect.poll(() => waiting).toBe(true);
-  await openNav(page);
-  await openAccountMenu(page);
-  await page
-    .getByRole("button", { name: "Sign out", exact: true })
-    .last()
-    .click();
-  await expect(
-    page.getByRole("heading", { name: "Sign in to octolab" }),
-  ).toBeVisible();
-  release();
-  await expect.poll(() => finished).toBe(true);
-  await expect(
-    page.getByRole("heading", { name: "Sign in to octolab" }),
-  ).toBeVisible();
-  await expect(page.getByLabel("Authenticator code")).toHaveCount(0);
-});
-
-test("MFA session adoption cannot persist or broadcast an old session after sign-out during getUser", async ({
-  page,
-}) => {
-  const state = await mockAuth(page, true, "admin");
-  state.adminMfaVerified = false;
-  let signedOut = false,
-    lateProfileReads = 0;
-  page.on("request", (request) => {
-    if (signedOut && new URL(request.url()).pathname === "/api/auth/me")
-      lateProfileReads++;
-  });
-  const factorId = "00000000-0000-4000-8000-000000000083";
-  let release!: () => void,
-    waiting = false,
-    finished = false,
-    reads = 0;
-  const gate = new Promise<void>((r) => (release = r));
-  await page.route(authOrigin + "/auth/v1/user", async (route) => {
-    reads++;
-    if (reads === 3) {
-      waiting = true;
-      await gate;
-    }
-    await route.fulfill({
-      headers: { "access-control-allow-origin": "*" },
-      json: {
-        ...user(),
-        factors: [
-          {
-            id: factorId,
-            factor_type: "totp",
-            status: "verified",
-            friendly_name: "Fixture authenticator",
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-          },
-        ],
-      },
-    });
-    if (reads >= 3) finished = true;
-  });
-  await page.route(authOrigin + "/auth/v1/factors/*/challenge", (route) =>
-    route.fulfill({
-      headers: { "access-control-allow-origin": "*" },
-      json: { id: factorId, expires_at: Math.floor(Date.now() / 1000) + 60 },
-    }),
-  );
-  await page.route(authOrigin + "/auth/v1/factors/*/verify", (route) =>
-    route.fulfill({
-      headers: { "access-control-allow-origin": "*" },
-      json: {
-        access_token: jwt(),
-        refresh_token: "fixture-fenced-adoption-refresh",
-        token_type: "bearer",
-        expires_in: 3600,
-        user: user(),
-      },
-    }),
-  );
-  await login(page, "/#settings");
-  await page.evaluate(() => {
-    const events: string[] = [];
-    (window as unknown as { mfaBroadcasts: string[] }).mfaBroadcasts = events;
-    const channel = new BroadcastChannel("sb-octolab-fixture-auth-token");
-    channel.onmessage = (event) => events.push(event.data.event);
-  });
-  await page
-    .getByRole("button", { name: "Set up or verify authenticator" })
-    .click();
-  await page.getByLabel("Authenticator code").fill("123456");
-  await page
-    .getByRole("button", { name: "Verify authenticator", exact: true })
-    .click();
-  await expect.poll(() => waiting).toBe(true);
-  await openNav(page);
-  await openAccountMenu(page);
-  await page
-    .getByRole("button", { name: "Sign out", exact: true })
-    .last()
-    .click();
-  await expect(
-    page.getByRole("heading", { name: "Sign in to octolab" }),
-  ).toBeVisible();
-  signedOut = true;
-  await page.evaluate(() => {
-    (window as unknown as { mfaBroadcasts: string[] }).mfaBroadcasts.length = 0;
-  });
-  release();
-  await expect.poll(() => finished).toBe(true);
-  await expect(
-    page.getByRole("heading", { name: "Sign in to octolab" }),
-  ).toBeVisible();
-  expect(
-    await page.evaluate(() => JSON.stringify({ ...localStorage })),
-  ).not.toContain("fixture-fenced-adoption-refresh");
-  expect(lateProfileReads).toBe(0);
-  expect(
-    await page.evaluate(
-      () => (window as unknown as { mfaBroadcasts: string[] }).mfaBroadcasts,
-    ),
-  ).not.toContain("SIGNED_IN");
-  await page.reload();
-  await expect(
-    page.getByRole("heading", { name: "Sign in to octolab" }),
-  ).toBeVisible();
 });
