@@ -4,10 +4,10 @@ The **Agent choices** section of the company area shows a tool company where age
 
 ## What agents now report
 
-| Field         | Where                         | Meaning                                                    |
-| ------------- | ----------------------------- | ---------------------------------------------------------- |
-| `taskType`    | `record_intent`               | Closest category for the task. Defaults to `other`         |
-| `reasonTheme` | each named provider tool call | Optional single theme for the stated reason for that call  |
+| Field         | Where                         | Meaning                                                   |
+| ------------- | ----------------------------- | --------------------------------------------------------- |
+| `taskType`    | `record_intent`               | Closest category for the task. Defaults to `other`        |
+| `reasonTheme` | each named provider tool call | Optional single theme for the stated reason for that call |
 
 Both come from fixed lists in `server/seller-taxonomy.ts` and are agent-reported, never observed. They exist so reports can group activity without exposing objectives or stated reasons. Sessions and calls recorded earlier have neither and appear as "Other" and "No theme given".
 
@@ -31,18 +31,61 @@ Both come from fixed lists in `server/seller-taxonomy.ts` and are agent-reported
 - With `named=0`, other companies are grouped as "Other search tools" or "Other page tools". With `named=1` they are named.
 - Reasons and task types are what agents reported.
 
+## Seller tools
+
+Everything a company uses after onboarding is under `/api/seller/:provider` (`server/seller-api.ts`). All responses are aggregate.
+
+| Route                            | What it answers                                                                                |
+| -------------------------------- | ---------------------------------------------------------------------------------------------- |
+| `GET /overview`                  | One call for a home screen: funnel, change on the previous period, alerts, top findings, trend |
+| `GET /report`                    | The full report. Filters: `days`, `taskType`, `host`                                           |
+| `GET /trend?bucket=day\|week`    | Series with empty periods filled in                                                            |
+| `GET /findings`                  | Ranked, rule-based observations, each with its evidence, a suggestion and how to check a fix   |
+| `GET /alerts`                    | What changed against the previous equal period, judged by the seller's thresholds              |
+| `GET /digest[?format=text]`      | A short plain-language summary of the period                                                   |
+| `GET /listing-impact`            | How each listing version performed over 90 days, for tasks shown that version                  |
+| `GET /export?section=…`          | CSV of `tasks`, `reasons`, `missed`, `failures` or `trend`                                     |
+| `GET /listing`, `POST /listing`  | The text agents see now, the pending draft, history; submit a new draft                        |
+| `POST /listing/check`            | Dry-run the wording rules without submitting                                                   |
+| `POST /listing/withdraw`         | Withdraw a pending draft                                                                       |
+| `POST /listing/review`           | A reviewer approves or rejects. Approval makes the version live                                |
+| `GET /settings`, `PUT /settings` | Named comparison and alert thresholds, with a revision check                                   |
+| `GET /history`                   | Audit trail of settings and listing changes                                                    |
+
+`/api/seller-admin/internal-hosts` lists agent names treated as internal traffic. Their sessions are left out of every report and counted under data quality.
+
+### Listings
+
+A listing is the description, "use when" and limitations agents read in discovery. Sellers can change it, with three safeguards:
+
+- **Wording rules** (`lintListing`) refuse text that tells the agent what to choose, addresses it directly, makes ranking claims, includes links, or names another company.
+- **Review**: a draft is not shown to agents until a reviewer approves it. One draft can be pending at a time.
+- **Versions**: each approved listing gets a number. Every offer records the version it showed, so results can be tied to the wording agents saw. Version 0 is the adapter's built-in text.
+
+Listing impact compares versions. They ran at different times on different tasks, so a difference is a signal to test, not proof the wording caused it.
+
+The named tool descriptions an MCP client loads at startup still use the built-in text. Approved listings appear in the catalog and in `discover_tools` results.
+
+### Named comparison
+
+Each company chooses whether to share and see names. Another company is named in a report only when both have agreed. Otherwise it appears as "Other search tools" or "Other page tools".
+
+### Direct calls
+
+An agent that calls a tool without asking for options first still made a choice. That task counts as eligible and chosen, with listing version 0.
+
 ## Not built yet
 
-- The named-comparison choice is a request parameter and a switch in the view. It is not stored per company, and there is no rule yet that a company must agree to be seen before it sees others.
-- The endpoint is the operator-restricted preview path. The company-member API (`/api/companies/:id/insights`) still returns the original four counts.
-- No billing for companies.
+- **Hosted mode.** Seller state is in local storage. With the PostgreSQL backend the routes return 501. Hosted mode needs seller tables, a cross-workspace data loader, and company membership checks in front of these routes, with listing review limited to platform administrators.
+- **Delivery.** Alerts and the digest are computed on request. Nothing is emailed or scheduled.
+- **Billing** for companies, and tools beyond the three integrated providers.
 
 ## Simulated data
 
 ```bash
-npm run simulate:sellers -- 400 ./data/simulation.sqlite --reset
+npm run simulate:sellers -- 800 ./data/simulation.sqlite --reset
 ```
 
-`scripts/simulate-seller-data.ts` seeds a separate database with invented agent sessions. It uses the real session, discovery, call, routing and outcome code with fake providers and scripted choices, makes no network calls, and refuses to write to the working database. The database is marked as simulated and every report built from it carries that notice. Timings are not realistic. Start the server with `DB_PATH=./data/simulation.sqlite` to view it.
+`scripts/simulate-seller-data.ts` seeds a separate database with invented agent sessions. It uses the real session, discovery, call, routing, listing and outcome code with fake providers and scripted choices, makes no network calls, and refuses to write to the working database. Sessions are spread over 60 days and include a listing change, a failure incident and some internal traffic, so period comparison, alerts and listing impact have something to show. The database is marked as simulated and every report built from it carries that notice. Timings are not realistic. Start the server with `DB_PATH=./data/simulation.sqlite` to view it.
 
 Simulated results show that the report works. They say nothing about any real provider or agent.

@@ -197,6 +197,7 @@ function readRoute() {
       "insights",
       "activity",
       "choices",
+      "listing",
       "team",
       "details",
       "integration",
@@ -735,6 +736,7 @@ export function ObservationApp() {
             { id: "overview", label: "Overview", icon: Grid01 },
             { id: "activity", label: "Live usage", icon: Activity },
             { id: "choices", label: "Agent choices", icon: GitBranch01 },
+            { id: "listing", label: "Listing", icon: FileCheck02 },
             {
               id: "benchmarks",
               label: "Controlled tests",

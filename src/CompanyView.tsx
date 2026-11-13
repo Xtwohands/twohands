@@ -12,6 +12,7 @@ import { api, money } from "./api";
 import { ProviderComparison } from "./ProviderComparison";
 import { ProviderActivityView } from "./ProviderActivityView";
 import { SellerChoicesView } from "./SellerChoicesView";
+import { SellerListingView } from "./SellerListingView";
 import { Panel, InlineError, StateBadge, date } from "./observation-ui";
 import {
   BenchmarkTable,
@@ -106,7 +107,13 @@ export function CompanyView({
   const [notice, setNotice] = useState("");
   const [revision, setRevision] = useState(0);
   const current = useRef(0);
-  const tab = ["benchmarks", "plans", "activity", "choices"].includes(section)
+  const tab = [
+    "benchmarks",
+    "plans",
+    "activity",
+    "choices",
+    "listing",
+  ].includes(section)
     ? section
     : "overview";
   useEffect(() => {
@@ -305,6 +312,7 @@ export function CompanyView({
             <TabsTrigger value="overview">Overview</TabsTrigger>
             <TabsTrigger value="activity">Live usage</TabsTrigger>
             <TabsTrigger value="choices">Agent choices</TabsTrigger>
+            <TabsTrigger value="listing">Listing</TabsTrigger>
             <TabsTrigger value="benchmarks">Controlled tests</TabsTrigger>
             <TabsTrigger value="plans">
               Test plans
@@ -322,6 +330,13 @@ export function CompanyView({
           </TabsContent>
           <TabsContent value="choices">
             <SellerChoicesView
+              key={`${provider}/${source}`}
+              provider={provider}
+              demo={source === "demo"}
+            />
+          </TabsContent>
+          <TabsContent value="listing">
+            <SellerListingView
               key={`${provider}/${source}`}
               provider={provider}
               demo={source === "demo"}

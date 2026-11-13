@@ -16,11 +16,12 @@ import { config } from "../server/config.js";
 import { ProviderError } from "../server/providers.js";
 import type { TaskType, ReasonTheme } from "../server/seller-taxonomy.js";
 import type { ToolName } from "../server/observation-types.js";
+import { SellerStore } from "../server/seller-store.js";
 
 const args = process.argv.slice(2);
 const reset = args.includes("--reset");
 const [countArg, pathArg] = args.filter((a) => !a.startsWith("--"));
-const total = Number(countArg ?? 400);
+const total = Number(countArg ?? 800);
 const path = resolve(pathArg ?? "./data/simulation.sqlite");
 if (!Number.isInteger(total) || total < 1 || total > 5000)
   throw new Error("Choose between 1 and 5000 sessions.");
@@ -49,6 +50,29 @@ function pick<T>(options: [T, number][]): T {
 }
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+// Sessions are spread over the last 60 days by shifting the clock the server code reads.
+const RealDate = Date;
+let clockOffset = 0;
+globalThis.Date = class extends RealDate {
+  constructor(...args: unknown[]) {
+    if (args.length) super(...(args as [number]));
+    else super(RealDate.now() + clockOffset);
+  }
+  static now() {
+    return RealDate.now() + clockOffset;
+  }
+} as DateConstructor;
+const DAY = 86_400_000;
+const SPAN = 60;
+// The earlier 30 days carry fewer tasks than the latest 30, so period comparison has something to show.
+const earlier = Math.round(total * 0.375);
+const dayOf = (n: number) =>
+  n < earlier
+    ? Math.floor((n / earlier) * 30)
+    : 30 + Math.floor(((n - earlier) / (total - earlier)) * 30);
+const LISTING_DAY = 46;
+const INCIDENT_DAY = 52;
+
 Object.assign(config.keys, {
   exa: "simulation",
   tavily: "simulation",
@@ -56,7 +80,7 @@ Object.assign(config.keys, {
 });
 Object.assign(config.prices, { exa: 7000, tavily: 8000, firecrawl: 1000 });
 config.rpm = 1_000_000;
-const failRate = { exa: 0.04, tavily: 0.03, firecrawl: 0.08 };
+const failRate = { exa: 0.03, tavily: 0.03, firecrawl: 0.08 };
 const fail = (provider: keyof typeof failRate) => {
   if (!chance(failRate[provider])) return;
   throw chance(0.6)
@@ -101,9 +125,19 @@ const adapters = {
   },
 };
 
+clockOffset = -SPAN * DAY;
 const store = new Store(path);
 const obs = new Observatory(store, adapters as never);
 await obs.ready;
+const sellers = new SellerStore(store);
+obs.listings = async () => await sellers.liveAll();
+await sellers.setInternalHosts(["octolab QA"]);
+for (const provider of ["exa", "tavily"] as const)
+  await sellers.updateSettings(provider, {
+    revision: 0,
+    namedComparison: true,
+  });
+let listingLive = false;
 const tools = { exa: "exa_search", tavily: "tavily_search" } as const;
 const exaPreference: Record<TaskType, number> = {
   current_events: 0.12,
@@ -117,6 +151,27 @@ const exaPreference: Record<TaskType, number> = {
 const tally = { sessions: 0, calls: 0, failed: 0, routed: 0, noSearch: 0 };
 
 for (let n = 0; n < total; n++) {
+  const day = dayOf(n);
+  clockOffset = -(SPAN - day) * DAY + ((n % 40) / 40) * DAY * 0.9;
+  failRate.exa = day >= INCIDENT_DAY ? 0.11 : 0.03;
+  if (!listingLive && day >= LISTING_DAY) {
+    // The seller rewrites its listing to say what a result contains; a reviewer approves it.
+    const draft = await sellers.submitListing("exa", {
+      description:
+        "Search the web and get up to 2,500 characters of page text with each result, so many questions need no second request. Up to 20 results, 10 by default.",
+      useWhen:
+        "Use when the answer is likely to be in the page text itself, or when a query describes a concept instead of exact keywords.",
+      limitations:
+        "Page text is partial and can be missing. Results above 10 cost more. Coverage of very recent pages is not guaranteed.",
+      note: "Say plainly that results include page text.",
+    });
+    await sellers.reviewListing("exa", {
+      version: draft.version,
+      decision: "approve",
+      note: "Describes the tool without instructing the agent.",
+    });
+    listingLive = true;
+  }
   const taskType = pick<TaskType>([
     ["current_events", 25],
     ["company_or_market", 23],
@@ -125,6 +180,7 @@ for (let n = 0; n < total; n++) {
     ["academic_or_longform", 14],
   ]);
   const host = pick([
+    ["octolab QA", 3],
     ["Claude Code", 48],
     ["Codex", 35],
     ["Claude desktop", 12],
@@ -209,7 +265,11 @@ for (let n = 0; n < total; n++) {
     let provider: "exa" | "tavily" =
       eligible.length === 1
         ? eligible[0]
-        : chance(exaPreference[taskType] * (exaPricier ? 0.6 : 1))
+        : chance(
+              exaPreference[taskType] *
+                (exaPricier ? 0.6 : 1) *
+                (listingLive ? 1.3 : 1),
+            )
           ? "exa"
           : "tavily";
     let call = await run(tools[provider], "search-1", reasonFor(provider));
@@ -267,5 +327,6 @@ await store.db
       ...tally,
     }),
   );
+clockOffset = 0;
 await store.close();
 console.log(JSON.stringify({ path, seed, ...tally }, null, 2));

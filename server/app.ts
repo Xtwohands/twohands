@@ -38,6 +38,8 @@ import { ProviderLab } from "./provider-lab.js";
 import { providerLabRoutes } from "./provider-lab-api.js";
 import { companyReport } from "./company-insights.js";
 import { sellerReport } from "./seller-report.js";
+import { sellerRoutes } from "./seller-api.js";
+import { SellerStore } from "./seller-store.js";
 const domain = z
   .string()
   .trim()
@@ -232,6 +234,20 @@ export function createApp(
   app.use(express.json({ limit: "24kb" }));
   apiKeyRoutes(app, observatory.db.apiKeys, !!accounts);
   observationRoutes(app, observatory);
+  // Seller state lives in local storage for now. Hosted mode needs its own tables and
+  // company membership checks before these routes are offered there.
+  if (store.db instanceof PostgresDatabase)
+    app.use("/api/seller", (_req, res) =>
+      res.status(501).json({
+        error: "Seller tools are not available in hosted mode yet.",
+      }),
+    );
+  else {
+    const sellers = new SellerStore(store);
+    app.locals.sellers = sellers;
+    observatory.listings = async () => await sellers.liveAll();
+    sellerRoutes(app, observatory, sellers);
+  }
   workspaceRoutes(app, observatory);
   fundingRoutes(app, funding, stripeFunding);
   providerLabRoutes(app, providerLab);

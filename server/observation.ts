@@ -197,6 +197,20 @@ export class Observatory {
       Record<ProviderId, import("./provider-lab-types.js").ControlledSample>
     >
   >;
+  /** Seller-approved listing text, shown to agents in place of the adapter default. */
+  listings?: () => Promise<
+    Partial<
+      Record<
+        ProviderId,
+        {
+          version: number;
+          description: string;
+          useWhen: string;
+          limitations: string;
+        }
+      >
+    >
+  >;
   constructor(
     store: Store,
     private adapters = { search, scrape },
@@ -440,6 +454,7 @@ export class Observatory {
       )
     ).flat();
     const controlled = (await this.controlledSamples?.()) ?? {};
+    const listings = (await this.listings?.()) ?? {};
     return await Promise.all(
       (Object.keys(names) as ToolName[]).map(async (tool) => {
         const provider = names[tool];
@@ -527,6 +542,15 @@ export class Observatory {
             controlled: controlled[provider] ?? null,
           },
           ...toolCapabilities[tool],
+          ...(listings[provider]
+            ? {
+                description: listings[provider].description,
+                useWhen: listings[provider].useWhen,
+                limitations: listings[provider].limitations,
+              }
+            : {}),
+          // 0 is the adapter's built-in text; higher numbers are seller-approved versions.
+          listingVersion: listings[provider]?.version ?? 0,
           available:
             providerRegistry.credentialStatus(tool).configured &&
             providerRegistry.credentialStatus(tool).enabled,

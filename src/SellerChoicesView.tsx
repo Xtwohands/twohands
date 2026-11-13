@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
-import type { SellerReport } from "../server/seller-report";
+import type { SellerAnalysis } from "../server/seller-report";
+import type { Alert, Finding } from "../server/seller-insights";
+import type { SellerSettings } from "../server/seller-store";
 import type { ProviderId } from "../server/types";
 import { api, money } from "./api";
 import { Panel, InlineError } from "./observation-ui";
@@ -13,6 +15,25 @@ import {
   SelectValue,
 } from "./components/ui/select";
 
+type SellerReport = SellerAnalysis & { simulated: { note: string } | null };
+type Overview = {
+  change: {
+    eligiblePercent: number | null;
+    chosenSharePoints: number | null;
+    citedSharePoints: number | null;
+    failureRatePoints: number | null;
+  };
+  alerts: Alert[];
+  findings: Finding[];
+  findingCount: number;
+  namedComparison: boolean;
+  listing: { liveVersion: number; pendingVersion: number | null };
+  filters: { taskTypes: { key: string; label: string }[]; hosts: string[] };
+};
+const signed = (v: number | null, unit: string) =>
+  v === null
+    ? "No earlier period to compare"
+    : `${v > 0 ? "+" : ""}${v}${unit} on the previous period`;
 type Row = { key: string; label: string; count: number };
 const percent = (v: number | null) =>
   v === null ? "—" : `${Math.round(v * 100)}%`;
@@ -45,23 +66,46 @@ export function SellerChoicesView({
   demo: boolean;
 }) {
   const [days, setDays] = useState("30");
-  const [named, setNamed] = useState(true);
+  const [taskType, setTaskType] = useState("all");
+  const [host, setHost] = useState("all");
+  const [revision, setRevision] = useState(0);
   const [data, setData] = useState<SellerReport>();
+  const [overview, setOverview] = useState<Overview>();
   const [error, setError] = useState("");
+  const filter = `days=${days}${taskType === "all" ? "" : `&taskType=${taskType}`}${host === "all" ? "" : `&host=${encodeURIComponent(host)}`}`;
   useEffect(() => {
     let stale = false;
     setData(undefined);
     setError("");
     if (demo) return;
-    api<SellerReport>(
-      `/company-insights/${provider}/choices?days=${days}&named=${named ? 1 : 0}`,
-    )
-      .then((value) => !stale && setData(value))
+    Promise.all([
+      api<SellerReport>(`/seller/${provider}/report?${filter}`),
+      api<Overview>(`/seller/${provider}/overview?days=${days}`),
+    ])
+      .then(([report, summary]) => {
+        if (stale) return;
+        setData(report);
+        setOverview(summary);
+      })
       .catch((e) => !stale && setError((e as Error).message));
     return () => {
       stale = true;
     };
-  }, [provider, days, named, demo]);
+  }, [provider, days, filter, demo, revision]);
+  const named = overview?.namedComparison ?? false;
+  async function setNamed(value: boolean) {
+    try {
+      const current = await api<SellerSettings>(`/seller/${provider}/settings`);
+      await api(`/seller/${provider}/settings`, {
+        revision: current.revision,
+        namedComparison: value,
+        alerts: current.alerts,
+      });
+      setRevision((v) => v + 1);
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
   if (demo)
     return (
       <Panel title="Agent choices from real tool use">
@@ -92,12 +136,44 @@ export function SellerChoicesView({
         </div>
         <div className="activity-controls">
           <div className="choices-switch">
-            <Label htmlFor="choices-named">Name other companies</Label>
+            <Label htmlFor="choices-named">Share and see company names</Label>
             <Switch
               id="choices-named"
               checked={named}
               onCheckedChange={setNamed}
             />
+          </div>
+          <div>
+            <Label htmlFor="choices-task">Task type</Label>
+            <Select value={taskType} onValueChange={setTaskType}>
+              <SelectTrigger id="choices-task">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All task types</SelectItem>
+                {overview?.filters.taskTypes.map((t) => (
+                  <SelectItem key={t.key} value={t.key}>
+                    {t.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <Label htmlFor="choices-host">Agent</Label>
+            <Select value={host} onValueChange={setHost}>
+              <SelectTrigger id="choices-host">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All agents</SelectItem>
+                {overview?.filters.hosts.map((h) => (
+                  <SelectItem key={h} value={h}>
+                    {h}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
           <div>
             <Label htmlFor="choices-window">Time window</Label>
@@ -125,6 +201,80 @@ export function SellerChoicesView({
               {data.simulated.note}
             </p>
           )}
+          {overview && (
+            <div className="choices-grid">
+              <Panel
+                title="What changed"
+                description={`Against the ${data.days} days before. Names appear only when the other company has also agreed.`}
+              >
+                <dl className="choices-facts">
+                  <div>
+                    <dt>Eligible tasks</dt>
+                    <dd>{signed(overview.change.eligiblePercent, "%")}</dd>
+                  </div>
+                  <div>
+                    <dt>Chosen share</dt>
+                    <dd>{signed(overview.change.chosenSharePoints, " pts")}</dd>
+                  </div>
+                  <div>
+                    <dt>Failed calls</dt>
+                    <dd>{signed(overview.change.failureRatePoints, " pts")}</dd>
+                  </div>
+                </dl>
+                {overview.alerts.length ? (
+                  <ul className="choices-callouts">
+                    {overview.alerts.map((a) => (
+                      <li key={a.id}>{a.message}</li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="choices-note">
+                    Nothing crossed your alert thresholds.
+                  </p>
+                )}
+              </Panel>
+              <Panel
+                title="Where to look next"
+                description={`${overview.findingCount} finding${overview.findingCount === 1 ? "" : "s"} from this period's evidence`}
+              >
+                {overview.findings.length ? (
+                  <ul className="choices-findings">
+                    {overview.findings.map((f) => (
+                      <li key={f.id}>
+                        <strong>{f.title}</strong>
+                        <span>{f.evidence}</span>
+                        <span>{f.suggestion}</span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="choices-empty">
+                    Nothing stands out in this period.
+                  </p>
+                )}
+              </Panel>
+            </div>
+          )}
+          <p className="choices-note">
+            {data.dataQuality.tasks} tasks
+            {data.dataQuality.excludedInternal
+              ? ` · ${data.dataQuality.excludedInternal} internal tasks left out`
+              : ""}
+            {data.dataQuality.reasonThemeReported !== null
+              ? ` · ${percent(data.dataQuality.reasonThemeReported)} of choices carry a reason`
+              : ""}
+            {" · Download: "}
+            {["tasks", "reasons", "missed", "failures", "trend"].map((s, i) => (
+              <span key={s}>
+                {i ? ", " : ""}
+                <a
+                  href={`/api/seller/${provider}/export?section=${s}&${filter}`}
+                >
+                  {s}
+                </a>
+              </span>
+            ))}
+          </p>
           <Panel
             title="From eligible to cited"
             description={`A task is one recorded session. Shares need at least ${data.minSample} tasks.`}

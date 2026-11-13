@@ -20,11 +20,49 @@ type Offer = {
   tools?: {
     tool: string;
     provider: string;
+    listingVersion?: number;
     discoveryMatches?: {
       operationIndex: number;
       status: string;
     }[];
   }[];
+};
+
+/** Everything one session contributed. Reports are computed from this, never from the store directly. */
+export type SellerSessionData = {
+  session: import("./observation-types.js").ObservationSession;
+  events: ObservationEvent[];
+  calls: ObservedCall[];
+};
+export async function loadSellerData(
+  obs: Observatory,
+): Promise<SellerSessionData[]> {
+  const sessions = (await obs.db.list()).filter((s) => s.commercialConsent);
+  return await Promise.all(
+    sessions.map(async (session) => ({
+      session,
+      events: await obs.db.events(session.id),
+      calls: await obs.db.calls(session.id),
+    })),
+  );
+}
+export type SellerReportOptions = {
+  days: number;
+  /** Whether this seller asked for named comparison. */
+  named: boolean;
+  /** Whether a given other company has agreed to be named. Defaults to yes. */
+  canName?: (provider: string) => boolean;
+  minSample?: number;
+  now?: Date;
+  /** Explicit window; overrides days. End is exclusive. */
+  from?: Date;
+  to?: Date;
+  taskType?: TaskType;
+  host?: string;
+  /** Only tasks whose eligible offer showed this listing version. */
+  listingVersion?: number;
+  /** Agent hosts treated as internal traffic and left out. */
+  internalHosts?: string[];
 };
 
 const missedLabels: Record<string, string> = {
@@ -54,18 +92,39 @@ const names: Record<string, string> = {
 export async function sellerReport(
   obs: Observatory,
   provider: ProviderId,
-  options: {
-    days: number;
-    named: boolean;
-    minSample?: number;
-    now?: Date;
-  },
+  options: SellerReportOptions,
 ) {
-  const minSample = options.minSample ?? SELLER_MIN_SAMPLE;
+  const simulation = await obs.db.store.db
+    .prepare("SELECT body FROM workspace_settings WHERE key='simulation'")
+    .get();
+  return {
+    ...analyzeSeller(await loadSellerData(obs), provider, options),
+    simulated: simulation
+      ? (JSON.parse(simulation.body as string) as { note: string })
+      : null,
+  };
+}
+export function sellerWindow(options: SellerReportOptions) {
   const now = options.now ?? new Date();
   const start = new Date(now);
   start.setUTCDate(start.getUTCDate() - options.days + 1);
   start.setUTCHours(0, 0, 0, 0);
+  // The end is exclusive, so step past "now" to keep a task recorded this instant.
+  return {
+    from: options.from ?? start,
+    to: options.to ?? new Date(now.getTime() + 1),
+  };
+}
+/** Pure analysis over loaded sessions. No I/O. */
+export function analyzeSeller(
+  data: SellerSessionData[],
+  provider: ProviderId,
+  options: SellerReportOptions,
+) {
+  const minSample = options.minSample ?? SELLER_MIN_SAMPLE;
+  const window = sellerWindow(options);
+  const from = window.from.toISOString(),
+    to = window.to.toISOString();
   const adapters = providerRegistry.list();
   const operationOf = Object.fromEntries(
     adapters.map((a) => [a.tool, a.operation]),
@@ -74,7 +133,7 @@ export async function sellerReport(
   const rate = (n: number, d: number) => (d >= minSample ? n / d : null);
   // Without the opt-in, other companies are grouped and unnamed.
   const other = (p: string, op: Operation) =>
-    options.named
+    options.named && (options.canName?.(p) ?? true)
       ? { key: p, label: names[p] ?? p }
       : {
           key: `other_${op}`,
@@ -120,12 +179,40 @@ export async function sellerReport(
     estimateMicrosForUsdCalls = 0;
   const latencies: number[] = [];
 
-  const sessions = (await obs.db.list()).filter(
-    (s) => s.commercialConsent && s.createdAt >= start.toISOString(),
-  );
-  for (const session of sessions) {
-    const events = await obs.db.events(session.id);
-    const sessionCalls = await obs.db.calls(session.id);
+  const internal = new Set(options.internalHosts ?? []);
+  const quality = {
+    tasks: 0,
+    excludedInternal: 0,
+    withTaskType: 0,
+    choices: 0,
+    choicesWithTheme: 0,
+    workspaces: new Set<string>(),
+  };
+  const daily = new Map<
+    string,
+    {
+      eligible: number;
+      chosen: number;
+      succeeded: number;
+      cited: number;
+      failed: number;
+    }
+  >();
+  const versions = new Map<number, { eligible: number; chosen: number }>();
+  for (const { session, events, calls: sessionCalls } of data) {
+    if (
+      !session.commercialConsent ||
+      session.createdAt < from ||
+      session.createdAt >= to
+    )
+      continue;
+    if (internal.has(session.host)) {
+      quality.excludedInternal++;
+      continue;
+    }
+    if (options.taskType && (session.taskType ?? "other") !== options.taskType)
+      continue;
+    if (options.host && session.host !== options.host) continue;
     const byId = new Map(sessionCalls.map((c) => [c.id, c]));
     const statuses = (e: ObservationEvent) => {
       const offer = e.data as Offer;
@@ -156,7 +243,11 @@ export async function sellerReport(
     const eligibleOffer = offers.find((e) =>
       statuses(e).some((m) => m.status === "eligible"),
     );
-    if (!eligibleOffer) {
+    // An agent can call a tool it already knows without asking for options first.
+    // That is still a choice, so it counts as eligible and chosen.
+    const direct =
+      !eligibleOffer && chosenCalls.some((c) => c.call.provider === provider);
+    if (!eligibleOffer && !direct) {
       const first = offers.flatMap(statuses)[0];
       if (first) {
         const key =
@@ -168,7 +259,34 @@ export async function sellerReport(
       }
       continue;
     }
-    const after = chosenCalls.filter((c) => c.at > eligibleOffer.id);
+    const shown = Number(
+      (eligibleOffer?.data as Offer | undefined)?.tools?.find(
+        (t) => t.provider === provider,
+      )?.listingVersion ?? 0,
+    );
+    if (
+      options.listingVersion !== undefined &&
+      shown !== options.listingVersion
+    )
+      continue;
+    const day = session.createdAt.slice(0, 10);
+    const bucket = daily.get(day) ?? {
+      eligible: 0,
+      chosen: 0,
+      succeeded: 0,
+      cited: 0,
+      failed: 0,
+    };
+    daily.set(day, bucket);
+    const version = versions.get(shown) ?? { eligible: 0, chosen: 0 };
+    versions.set(shown, version);
+    bucket.eligible++;
+    version.eligible++;
+    quality.tasks++;
+    quality.workspaces.add(session.apiKeyId ?? "local");
+    if (session.taskType && session.taskType !== "other")
+      quality.withTaskType++;
+    const after = chosenCalls.filter((c) => c.at > (eligibleOffer?.id ?? -1));
     const mine = after.filter((c) => c.call.provider === provider);
     const rivals = after.filter(
       (c) =>
@@ -191,11 +309,17 @@ export async function sellerReport(
         bump(lostTo, rival.key, rival.label);
         const t = theme(rivals[0].call);
         bump(reasonsAgainst, t, reasonThemeLabels[t]);
+        quality.choices++;
+        if (t !== "unclassified") quality.choicesWithTheme++;
       } else task.none++;
       continue;
     }
     funnel.chosen++;
     task.you++;
+    bucket.chosen++;
+    version.chosen++;
+    quality.choices++;
+    if (mine[0].call.reasonTheme) quality.choicesWithTheme++;
     const first = theme(mine[0].call);
     bump(reasonsFor, first, reasonThemeLabels[first]);
     bump(hosts, session.host, session.host);
@@ -209,8 +333,15 @@ export async function sellerReport(
       bump(coUsage, row.key, row.label);
     }
     const cited = new Set(session.outcomes.flatMap((o) => o.evidenceCallIds));
-    if (mine.some((c) => c.call.status === "succeeded")) funnel.succeeded++;
-    if (mine.some((c) => cited.has(c.call.id))) funnel.cited++;
+    if (mine.some((c) => c.call.status === "succeeded")) {
+      funnel.succeeded++;
+      bucket.succeeded++;
+    }
+    if (mine.some((c) => cited.has(c.call.id))) {
+      funnel.cited++;
+      bucket.cited++;
+    }
+    bucket.failed += mine.filter((c) => c.call.status === "failed").length;
     for (const { at, call } of mine) {
       if (!["succeeded", "failed"].includes(call.status)) continue;
       calls++;
@@ -256,9 +387,6 @@ export async function sellerReport(
     }
   }
   latencies.sort((a, b) => a - b);
-  const simulation = await obs.db.store.db
-    .prepare("SELECT body FROM workspace_settings WHERE key='simulation'")
-    .get();
   return {
     provider,
     providerName: names[provider] ?? provider,
@@ -266,9 +394,30 @@ export async function sellerReport(
     days: options.days,
     named: options.named,
     minSample,
-    simulated: simulation
-      ? (JSON.parse(simulation.body as string) as { note: string })
-      : null,
+    window: { from, to },
+    filters: {
+      taskType: options.taskType ?? null,
+      host: options.host ?? null,
+      listingVersion: options.listingVersion ?? null,
+    },
+    dataQuality: {
+      tasks: quality.tasks,
+      sufficient: quality.tasks >= minSample,
+      excludedInternal: quality.excludedInternal,
+      distinctKeys: quality.workspaces.size,
+      taskTypeReported: rate(quality.withTaskType, quality.tasks),
+      reasonThemeReported: rate(quality.choicesWithTheme, quality.choices),
+    },
+    daily: [...daily.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([date, v]) => ({ date, ...v })),
+    listingVersions: [...versions.entries()]
+      .sort(([a], [b]) => a - b)
+      .map(([version, v]) => ({
+        version,
+        ...v,
+        share: rate(v.chosen, v.eligible),
+      })),
     funnel: {
       ...funnel,
       chosenShare: rate(funnel.chosen, funnel.eligible),
@@ -333,4 +482,5 @@ export async function sellerReport(
     ],
   };
 }
+export type SellerAnalysis = ReturnType<typeof analyzeSeller>;
 export type SellerReport = Awaited<ReturnType<typeof sellerReport>>;
