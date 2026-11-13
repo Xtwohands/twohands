@@ -165,3 +165,11 @@
   border-color: var(--border-strong);
   background: var(--muted);
 }
+
+.customer-mobile-brand {
+  display: block;
+}
+
+.customer-mobile-brand img {
+  display: block;
+}

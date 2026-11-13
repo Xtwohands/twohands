@@ -858,6 +858,16 @@ export function ObservationApp() {
       </Dialog>
       <div className="obs-body">
         <header className="obs-topbar">
+          {customerSidebar && (
+            <a href="#home" className="customer-mobile-brand">
+              <img
+                src="/two-hands.svg"
+                width="109"
+                height="24"
+                alt="Two Hands"
+              />
+            </a>
+          )}
           <div>
             <Button
               className="mobile-nav-button"
@@ -868,7 +878,7 @@ export function ObservationApp() {
             >
               {menuOpen ? <XClose /> : <Menu01 />}
             </Button>
-            <span>{currentTitle}</span>
+            {!customerSidebar && <span>{currentTitle}</span>}
             {route.id && route.page === "sessions" && (
               <>
                 <span className="breadcrumb-slash">/</span>
@@ -878,20 +888,20 @@ export function ObservationApp() {
               </>
             )}
           </div>
-          <div className="topbar-right">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() =>
-                surface === "user"
-                  ? navigate("dashboard", "connections")
-                  : navigate("settings")
-              }
-            >
-              <TerminalSquare />
-              {route.page === "company" ? "Account settings" : "Connect agent"}
-            </Button>
-          </div>
+          {!customerSidebar && (
+            <div className="topbar-right">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => navigate("settings")}
+              >
+                <TerminalSquare />
+                {route.page === "company"
+                  ? "Account settings"
+                  : "Connect agent"}
+              </Button>
+            </div>
+          )}
         </header>
         <main id="main-content" tabIndex={-1} className="obs-main">
           <InlineError message={error} />
