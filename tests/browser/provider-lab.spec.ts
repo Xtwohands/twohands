@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
+import { providerIds } from "../../server/provider-catalog";
 test.use({ baseURL: "http://127.0.0.1:3102" });
 
 test("company demo switches providers and turns a finding into a persistent demo plan", async ({
@@ -417,7 +418,7 @@ test("unconfigured providers are unselected and cannot start a paid test", async
 }) => {
   await page.goto("http://127.0.0.1:3101/#lab");
   const options = page.getByRole("checkbox");
-  await expect(options).toHaveCount(4);
+  await expect(options).toHaveCount(providerIds.length);
   for (const option of await options.all()) {
     await expect(option).not.toBeChecked();
     await expect(option).toBeDisabled();

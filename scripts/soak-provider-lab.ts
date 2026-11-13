@@ -1,4 +1,5 @@
 /** Synthetic durability workload: no network requests, credentials, or production database. */
+import type { SearchProviderId } from "../server/provider-catalog";
 import assert from "node:assert/strict";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
@@ -33,7 +34,7 @@ let calls = 0,
   peakReadMs = 0;
 const adapters = {
   search: async (
-    provider: "exa" | "tavily",
+    provider: SearchProviderId,
     query: string,
     _domains: string[],
     id: string,

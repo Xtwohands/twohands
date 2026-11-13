@@ -1,3 +1,4 @@
+import { availability } from "./helpers";
 import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
 import request from "supertest";
 import { randomUUID } from "node:crypto";
@@ -30,12 +31,7 @@ describe("workspace API", () => {
     expect((await store.events(good.body.id))[0].type).toBe("intent_created");
   });
   it("blocks live execution when credentials are missing", async () => {
-    vi.spyOn(engine, "available").mockReturnValue({
-      exa: false,
-      tavily: false,
-      firecrawl: false,
-      jina: false,
-    });
+    vi.spyOn(engine, "available").mockReturnValue(availability(false));
     const t = await createTask(store);
     const r = await request(app).post(`/api/tasks/${t.id}/run`).send({});
     expect(r.status).toBe(409);

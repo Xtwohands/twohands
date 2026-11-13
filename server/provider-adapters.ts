@@ -11,7 +11,11 @@ import {
 import type { ToolName } from "./observation-types.js";
 import type { ProviderId } from "./types.js";
 import { providerTools } from "./provider-identifiers.js";
-import { providerEntry } from "./provider-catalog.js";
+import {
+  providerEntry,
+  type ExtractProviderId,
+  type SearchProviderId,
+} from "./provider-catalog.js";
 
 /** Credential lookup driven by the catalog's environment variable names. */
 function catalogCredential(provider: ProviderId) {
@@ -120,7 +124,51 @@ const pricing: Record<
       "Per-token rate not yet confirmed from Jina's pricing page; long pages and PDFs cost more.",
     pricingCheckedAt: "2026-11-12",
   }),
+  brave: perRequest(
+    (r) =>
+      `Web search, up to ${r.maxResults ?? 10} results with extra snippets`,
+    "Published rate from third-party trackers, about $5 per 1,000 requests; confirm on Brave's pricing page.",
+  ),
+  parallel: perRequest(
+    (r) =>
+      `Basic-mode search, up to ${r.maxResults ?? 10} results with excerpts`,
+    "Published as $5 per 1,000 requests for basic mode; confirm on Parallel's pricing page.",
+  ),
+  perplexity: perRequest(
+    (r) => `Web search, up to ${r.maxResults ?? 10} results with page excerpts`,
+    "Perplexity lists $5 per 1,000 Search API requests; successful requests with no results are still billed.",
+  ),
+  serper: perRequest(
+    (r) => `Google search, up to ${r.maxResults ?? 10} organic results`,
+    "Prepaid credits cost about $0.30 to $1 per 1,000 depending on pack size; larger result counts may use more credits.",
+  ),
+  linkup: perRequest(
+    (r) => `Standard-depth search, up to ${r.maxResults ?? 10} results`,
+    "Linkup lists standard search at about €5 per 1,000 requests; currency conversion is approximate.",
+  ),
+  parallel_extract: perRequest(
+    () => "One page, full content as Markdown",
+    "Published as $1 per 1,000 URLs; confirm on Parallel's pricing page.",
+  ),
+  browserbase: perRequest(
+    () => "One page fetched as Markdown",
+    "Browserbase lists $4 per 1,000 Markdown fetches on top of plan fees; free plan quotas may apply first.",
+  ),
 };
+/** A flat per-request price with no request-dependent units. */
+function perRequest(
+  breakdown: (request: AdapterRequest) => string,
+  uncertainty: string,
+): (request: AdapterRequest) => PricingDetail {
+  return (request) => ({
+    multiplier: 1,
+    breakdown: breakdown(request),
+    units: 1,
+    unit: "request",
+    uncertainty,
+    pricingCheckedAt: "2026-11-12",
+  });
+}
 function quote(provider: ProviderId, request: AdapterRequest): AdapterQuote {
   const base = providerEstimate(provider);
   const detail = pricing[provider](request, base);
@@ -233,7 +281,80 @@ const definitions: AdapterDefinition<ToolName, ProviderId>[] = [
     ],
     execute: (r, c) => c.transports.scrape(r.url!, "jina"),
   },
+  searchAdapter("brave_search", "brave", false, [
+    "Brave descriptions and extra snippets with highlight markup removed; domain restriction is sent as site: operators and re-checked.",
+  ]),
+  searchAdapter("parallel_search", "parallel", true, [
+    "Parallel basic mode with query-selected excerpts, up to 2,500 characters per result; the query is sent as both objective and search query.",
+  ]),
+  searchAdapter("perplexity_search", "perplexity", false, [
+    "Perplexity web search results with excerpts capped at 1,024 tokens per page; no generated answer.",
+  ]),
+  searchAdapter("serper_search", "serper", false, [
+    "Google organic results through Serper; knowledge panels, ads and related questions are dropped; domain restriction is sent as site: operators and re-checked.",
+  ]),
+  searchAdapter("linkup_search", "linkup", true, [
+    "Linkup standard depth, search results only (no sourced answer); image results are dropped.",
+  ]),
+  extractAdapter("parallel_extract", "parallel_extract", [
+    "Parallel full content as Markdown, up to 20,000 captured characters; content may come from Parallel's cache.",
+  ]),
+  extractAdapter("browserbase_extract", "browserbase", [
+    "Browserbase Fetch Markdown with redirects followed, up to 20,000 captured characters; no full browser session.",
+  ]),
 ];
+function searchAdapter(
+  tool: ToolName,
+  provider: SearchProviderId,
+  pageText: boolean,
+  notes: string[],
+): AdapterDefinition<ToolName, ProviderId> {
+  return {
+    tool,
+    provider,
+    version: "1.0.0",
+    environment: "production",
+    operation: "search",
+    pageText,
+    searchDepth: false,
+    capabilities: capabilityData[tool],
+    credential: catalogCredential(provider),
+    input: adapterInput("search"),
+    result: searchResult(provider),
+    estimate: (r) => quote(provider, r),
+    mappingNotes: () => notes,
+    execute: (r, c) =>
+      c.transports.search(
+        provider,
+        r.query!,
+        r.domains,
+        c.callId,
+        ...(r.maxResults !== undefined ? [{ maxResults: r.maxResults }] : []),
+      ),
+  };
+}
+function extractAdapter(
+  tool: ToolName,
+  provider: ExtractProviderId,
+  notes: string[],
+): AdapterDefinition<ToolName, ProviderId> {
+  return {
+    tool,
+    provider,
+    version: "1.0.0",
+    environment: "production",
+    operation: "extract",
+    pageText: true,
+    searchDepth: false,
+    capabilities: capabilityData[tool],
+    credential: catalogCredential(provider),
+    input: adapterInput("extract"),
+    result: extractResult,
+    estimate: (r) => quote(provider, r),
+    mappingNotes: () => notes,
+    execute: (r, c) => c.transports.scrape(r.url!, provider),
+  };
+}
 export const providerRegistry = new AdapterRegistry(definitions);
 if (
   Object.entries(providerTools).some(

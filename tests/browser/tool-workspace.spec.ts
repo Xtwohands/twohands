@@ -1,6 +1,7 @@
 import { test, expect } from "@playwright/test";
 import { captureJourney } from "./helpers/launch-screenshots";
 import AxeBuilder from "@axe-core/playwright";
+import { extractProviderIds } from "../../server/provider-catalog";
 
 const fixture = "http://127.0.0.1:3102";
 test("sidebar pages have independent routes, browser history, and accessible layouts", async ({
@@ -62,7 +63,9 @@ test("catalog search, capability filters, and tool details", async ({
 }) => {
   await page.goto("/#dashboard/tools");
   await page.getByRole("button", { name: /Extraction/ }).click();
-  await expect(page.locator(".ws-tool-card")).toHaveCount(2);
+  await expect(page.locator(".ws-tool-card")).toHaveCount(
+    extractProviderIds.length,
+  );
   const firecrawl = page.locator(".ws-tool-card", { hasText: "Firecrawl" });
   await expect(firecrawl).toHaveCount(1);
   await expect(
