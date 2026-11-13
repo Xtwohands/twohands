@@ -207,7 +207,7 @@ export function StripeFundingPanel({
           if (!busy) setOpen(value);
         }}
       >
-        <DialogContent className="ws-detail-dialog translate-x-0 translate-y-0">
+        <DialogContent className="ws-detail-dialog customer-funding-dialog translate-x-0 translate-y-0">
           <DialogHeader>
             <DialogTitle>
               {selected ? "Card deposit details" : "Deposit with Stripe"}

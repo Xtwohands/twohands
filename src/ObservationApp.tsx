@@ -14,6 +14,7 @@ import {
 import { AdminNavigation } from "./AdminNavigation";
 import { ToolAccessView, OperatorAllowanceNotice } from "./ToolAccessView";
 import { AccountControls, useAccount } from "./AccountGate";
+import { CustomerFunding, useCustomerFunding } from "./customer-funding";
 import { DisputeReviewView } from "./DisputeReviewView";
 import { ToolOptions } from "./components/ToolOptions";
 import { ProviderLogo } from "./components/shared";
@@ -27,6 +28,7 @@ import {
   type DashboardSection,
 } from "./UserDashboardView";
 import "./provider.css";
+import "./customer-navigation.css";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Grid01,
@@ -166,6 +168,7 @@ function readRoute() {
       labProvider: "all",
       labFinding: "all",
       section: "overview",
+      focusPaymentMethods: false,
     };
   return {
     page: ([
@@ -209,6 +212,8 @@ function readRoute() {
     ].includes(section)
       ? section
       : "overview",
+    focusPaymentMethods:
+      page === "dashboard" && id === "credits" && section === "add-funds",
   };
 }
 function navigate(page: Page, id?: string) {
@@ -351,10 +356,24 @@ export function ObservationApp() {
   const [newOpen, setNewOpen] = useState(false);
   const [connectOpen, setConnectOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const navigatingFromMenu = useRef(false);
   const [filter, setFilter] = useState("all");
   const [query, setQuery] = useState("");
   const [token, setTokenInput] = useState("");
   const [connectionRevision, setConnectionRevision] = useState(0);
+  const ownerAccess = !account.enabled || !!account.profile;
+  const funding = useCustomerFunding(
+    route.page === "dashboard" &&
+      Boolean(ownerAccess && (!account.enabled || account.profile?.user.id)),
+    [
+      account.profile?.user.id,
+      account.profile?.user.id,
+      account.sessionEpoch,
+      account.previewRole,
+      connectionRevision,
+    ].join("|"),
+    route.id === "credits",
+  );
   const generation = useRef(0);
   const detailGeneration = useRef(0);
   const selectedId = useRef<string | undefined>(route.id);
@@ -579,12 +598,15 @@ export function ObservationApp() {
         ? "business"
         : "operator";
   const inToolCatalog = route.id === "tools" || route.id === "routing";
+  const customerSidebar = surface === "user";
+  const onOverview = !route.id || route.id === "overview";
   const sidebarContent = (
     <>
       <a href="#home" className="obs-brand">
         <img src="/two-hands.svg" width="147" height="32" alt="Two Hands" />
       </a>
       <nav
+        className={customerSidebar ? "customer-navigation" : undefined}
         aria-label={
           surface === "user"
             ? "User navigation"
@@ -599,10 +621,15 @@ export function ObservationApp() {
           <>
             <a
               href="#dashboard"
-              className={!route.id || route.id === "overview" ? "selected" : ""}
+              className={onOverview || route.id === "usage" ? "selected" : ""}
               aria-current={
-                !route.id || route.id === "overview" ? "page" : undefined
+                onOverview
+                  ? "page"
+                  : route.id === "usage"
+                    ? "location"
+                    : undefined
               }
+              onClick={() => setMenuOpen(false)}
             >
               <Grid01 />
               My dashboard
@@ -617,6 +644,7 @@ export function ObservationApp() {
                     ? "location"
                     : undefined
               }
+              onClick={() => setMenuOpen(false)}
             >
               <Link01 />
               Tool catalog
@@ -723,7 +751,7 @@ export function ObservationApp() {
     </>
   );
   return (
-    <div className="observation-shell">
+    <div className="observation-shell" data-surface={surface}>
       <a
         className="skip-link"
         href="#main-content"
@@ -734,12 +762,25 @@ export function ObservationApp() {
       >
         Skip to content
       </a>
-      <aside className="obs-sidebar">{sidebarContent}</aside>
+      <aside
+        className={`obs-sidebar${customerSidebar ? " customer-sidebar" : ""}`}
+      >
+        {sidebarContent}
+      </aside>
       <Dialog open={menuOpen} onOpenChange={setMenuOpen}>
         <DialogContent
-          className="mobile-navigation translate-x-0 translate-y-0"
+          className={`mobile-navigation translate-x-0 translate-y-0${customerSidebar ? " customer-mobile-navigation" : ""}`}
           onCloseAutoFocus={(e) => {
             e.preventDefault();
+            if (navigatingFromMenu.current) {
+              navigatingFromMenu.current = false;
+              const fundingOptions = document.getElementById(
+                "test-funding-options",
+              );
+              if (fundingOptions) fundingOptions.focus();
+              else document.getElementById("main-content")?.focus();
+              return;
+            }
             document
               .querySelector<HTMLButtonElement>(".mobile-nav-button")
               ?.focus();
@@ -747,11 +788,25 @@ export function ObservationApp() {
           aria-describedby={undefined}
         >
           <DialogTitle className="sr-only">Navigation</DialogTitle>
-          <div className="mobile-sidebar-content">{sidebarContent}</div>
+          <div
+            className={`mobile-sidebar-content${customerSidebar ? " customer-sidebar" : ""}`}
+          >
+            {sidebarContent}
+          </div>
         </DialogContent>
       </Dialog>
       <div className="obs-body">
         <header className="obs-topbar">
+          {customerSidebar && (
+            <a href="#home" className="customer-mobile-brand">
+              <img
+                src="/two-hands.svg"
+                width="109"
+                height="24"
+                alt="Two Hands"
+              />
+            </a>
+          )}
           <div>
             <Button
               className="mobile-nav-button"
@@ -762,7 +817,7 @@ export function ObservationApp() {
             >
               {menuOpen ? <XClose /> : <Menu01 />}
             </Button>
-            <span>{currentTitle}</span>
+            {!customerSidebar && <span>{currentTitle}</span>}
             {route.id && route.page === "sessions" && (
               <>
                 <span className="breadcrumb-slash">/</span>
@@ -772,20 +827,20 @@ export function ObservationApp() {
               </>
             )}
           </div>
-          <div className="topbar-right">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() =>
-                surface === "user"
-                  ? navigate("dashboard", "connections")
-                  : navigate("settings")
-              }
-            >
-              <TerminalSquare />
-              {route.page === "company" ? "Account settings" : "Connect agent"}
-            </Button>
-          </div>
+          {!customerSidebar && (
+            <div className="topbar-right">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => navigate("settings")}
+              >
+                <TerminalSquare />
+                {route.page === "company"
+                  ? "Account settings"
+                  : "Connect agent"}
+              </Button>
+            </div>
+          )}
         </header>
         <main id="main-content" tabIndex={-1} className="obs-main">
           <InlineError message={error} />
@@ -833,17 +888,24 @@ export function ObservationApp() {
               ["overview", "activity"].includes(route.id) ||
               inToolCatalog) && <OperatorAllowanceNotice />}
           {route.page === "dashboard" && (
-            <UserDashboardView
-              key={connectionRevision}
-              section={
-                dashboardSections.includes(route.id as DashboardSection)
-                  ? (route.id as DashboardSection)
-                  : "overview"
-              }
-              catalog={catalog}
-              refreshCatalog={refresh}
-              connectionRevision={connectionRevision}
-            />
+            <CustomerFunding.Provider
+              value={{
+                ...funding,
+                focusPaymentMethods: route.focusPaymentMethods,
+              }}
+            >
+              <UserDashboardView
+                key={connectionRevision}
+                section={
+                  dashboardSections.includes(route.id as DashboardSection)
+                    ? (route.id as DashboardSection)
+                    : "overview"
+                }
+                catalog={catalog}
+                refreshCatalog={refresh}
+                connectionRevision={connectionRevision}
+              />
+            </CustomerFunding.Provider>
           )}
           {route.page === "sessions" && !route.id && (
             <>
@@ -1445,10 +1507,12 @@ export function ObservationApp() {
             </div>
           )}
         </main>
-        <footer className="obs-footer">
-          <span>Intent → tool use → outcome</span>
-          <span>Observed calls. Explicit evaluations.</span>
-        </footer>
+        {!customerSidebar && (
+          <footer className="obs-footer">
+            <span>Intent → tool use → outcome</span>
+            <span>Observed calls. Explicit evaluations.</span>
+          </footer>
+        )}
       </div>
       <NewSession
         open={newOpen}

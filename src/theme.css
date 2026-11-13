@@ -33,4 +33,14 @@
   --surface-radius: 11px;
   --panel-padding: 20px;
   --grid-gap: 16px;
+  --panel-surface: var(--card);
+  --panel-subtle: var(--muted);
+  --panel-line: var(--border);
+  --control-surface: var(--card);
+  --control-border: var(--input);
+  --placeholder-color: var(--muted-foreground);
+  --dialog-surface: var(--popover);
+  --dialog-border: var(--border);
+  --dialog-muted: var(--muted-foreground);
+  --dialog-text: var(--foreground);
 }

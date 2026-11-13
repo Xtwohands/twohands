@@ -6,6 +6,7 @@ import "@fontsource-variable/geist";
 import "@fontsource-variable/geist-mono";
 import "./theme.css";
 import "./observation.css";
+import "./customer-theme.css";
 import "./design-system.css";
 import "./settings.css";
 const Legacy = lazy(() => import("./Legacy"));

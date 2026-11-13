@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useContext, useEffect, useRef, useState } from "react";
 import {
   ArrowRight,
   ArrowUpRight,
@@ -19,8 +19,10 @@ import {
   DialogTitle,
 } from "./components/ui/dialog";
 import { api } from "./api";
+import { CustomerFunding } from "./customer-funding";
 import { CopyButton, Empty, InlineError, date } from "./observation-ui";
-import type { DepositIntent, FundingSummary } from "../server/funding-types";
+import type { DepositIntent } from "../server/funding-types";
+import "./funding.css";
 
 export function testUsdc(units: number) {
   const whole = Math.floor(units / 1000000);
@@ -39,9 +41,8 @@ const statuses: Record<DepositIntent["status"], string> = {
 };
 
 export function FundingView() {
-  const [summary, setSummary] = useState<FundingSummary>();
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(true);
+  const { summary, error, loading, refresh, focusPaymentMethods } =
+    useContext(CustomerFunding);
   const [open, setOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<string>();
   const [amount, setAmount] = useState("10");
@@ -50,30 +51,11 @@ export function FundingView() {
   const [busy, setBusy] = useState(false);
   const [formError, setFormError] = useState("");
   const key = useRef(crypto.randomUUID());
-  const generation = useRef(0);
+  const paymentMethods = useRef<HTMLDivElement>(null);
   const selected = summary?.intents.find((i) => i.id === selectedId);
-  const refresh = useCallback(async () => {
-    const id = ++generation.current;
-    try {
-      const data = await api<FundingSummary>("/account/funding");
-      if (generation.current === id) {
-        setSummary(data);
-        setError("");
-      }
-    } catch (e) {
-      if (generation.current === id) setError((e as Error).message);
-    } finally {
-      if (generation.current === id) setLoading(false);
-    }
-  }, []);
   useEffect(() => {
-    void refresh();
-    const timer = setInterval(() => void refresh(), 10000);
-    return () => {
-      generation.current++;
-      clearInterval(timer);
-    };
-  }, [refresh]);
+    if (focusPaymentMethods && !loading) paymentMethods.current?.focus();
+  }, [focusPaymentMethods, loading]);
   function show(intent: DepositIntent) {
     setSelectedId(intent.id);
     setHash(intent.transactionHash ?? "");
@@ -102,7 +84,14 @@ export function FundingView() {
         </div>
       ) : (
         <>
-          <div className="ws-funding-grid">
+          <div
+            id="test-funding-options"
+            ref={paymentMethods}
+            className="ws-funding-grid"
+            role="group"
+            aria-label="Test funding options"
+            tabIndex={-1}
+          >
             <section className="ws-panel ws-balance-card">
               <span>Your test balance</span>
               <strong>
@@ -373,7 +362,7 @@ export function FundingView() {
           if (!busy) setOpen(value);
         }}
       >
-        <DialogContent className="ws-detail-dialog translate-x-0 translate-y-0">
+        <DialogContent className="ws-detail-dialog customer-funding-dialog translate-x-0 translate-y-0">
           <DialogHeader>
             <DialogTitle>
               {selectedId ? "Test deposit details" : "Add test credits"}

@@ -353,7 +353,8 @@ export function AccountGate({ children }: { children: ReactNode }) {
     };
   }, [config?.enabled]);
   const publicPage =
-    !location.pathname.startsWith("/research") && (!route || route === "#home");
+    !location.pathname.startsWith("/research") &&
+    (!route || route === "#home" || route.startsWith("#home/"));
   const context: AccountContext = {
     sessionEpoch: sessionEpoch.current,
     enabled: !!config?.enabled,

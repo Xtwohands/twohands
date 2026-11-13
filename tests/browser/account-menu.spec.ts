@@ -27,6 +27,9 @@ test("account menu opens upward, restores focus, and keeps settings reachable lo
   await expect(
     menu.getByRole("link", { name: "Settings", exact: true }),
   ).toBeVisible();
+  await expect(
+    menu.getByRole("link", { name: "Usage", exact: true }),
+  ).toHaveAttribute("href", "#dashboard/usage");
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
   await page.keyboard.press("Escape");
   await expect(menu).toBeHidden();
@@ -37,6 +40,35 @@ test("account menu opens upward, restores focus, and keeps settings reachable lo
   await expect(
     page.getByRole("heading", { name: "Connections & settings", exact: true }),
   ).toBeVisible();
+});
+
+test("customer navigation groups keys and test funding without hiding existing pages", async ({
+  page,
+}) => {
+  await page.goto("/#dashboard/keys");
+  await expect(
+    page.getByRole("heading", { name: "API keys", exact: true }),
+  ).toBeVisible();
+  if (test.info().project.name === "mobile")
+    await page.getByRole("button", { name: "Open navigation" }).click();
+  const nav = page.getByRole("navigation", { name: "User navigation" });
+  await expect(nav.getByRole("link", { name: "API keys" })).toHaveAttribute(
+    "aria-current",
+    "page",
+  );
+  await expect(nav.getByRole("link")).toHaveText([
+    "My dashboard",
+    "Tool catalog",
+    "Activity",
+    "API keys",
+    /Credits.*0\.00 test credits/,
+    "Add test funds",
+  ]);
+  await nav.getByRole("link", { name: "Add test funds" }).click();
+  await expect(page).toHaveURL(/#dashboard\/credits\/add-funds$/);
+  await expect(
+    page.getByRole("group", { name: "Test funding options" }),
+  ).toBeFocused();
 });
 
 test("help opens inside the app and returns keyboard focus to the account control", async ({

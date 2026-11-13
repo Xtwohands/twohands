@@ -26,7 +26,7 @@ npm start
 
 Open [the user dashboard](http://127.0.0.1:3001/#dashboard), or [the operator console](http://127.0.0.1:3001/#sessions). Exa and Tavily provide search; Firecrawl extracts a known public HTTPS page. Missing providers stay unavailable. Intent recording, review, and history work without provider keys.
 
-For development, `npm run dev` runs the API on `PORT` (default 3001) and Vite on port 5173. Vite's API proxy follows the same configured `PORT`.
+For development, run `npm run dev` from this project's main checkout and open **http://127.0.0.1:5175**. The API uses `PORT` (default 3001); Vite's API proxy follows the same configured `PORT`. Port 5175 is fixed: startup fails if another preview owns it, rather than silently opening a different port. `npm run demo:dashboard` is a separate, optional prototype on port 5174.
 
 SQLite remains the default local backend. PostgreSQL mode uses [Supabase Auth accounts](docs/AUTH.md), with signup, email confirmation, sign-in, password recovery, automatic private account setup, and sign-out. Personal data follows the verified account. Follow the [PostgreSQL migration guide](docs/POSTGRES_MIGRATION.md) for schema setup, account bootstrap, explicit legacy-owner assignment, verified import, and rollback. `DATABASE_URL` alone does not switch storage. The PostgreSQL runtime can start for signup before importing history; signup never claims existing records. `API_TOKEN` and `ADMIN_API_TOKEN` apply only to SQLite/local mode.
 

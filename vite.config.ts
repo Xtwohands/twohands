@@ -13,7 +13,11 @@ export default defineConfig(({ mode }) => {
     resolve: {
       alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) },
     },
-    server: { proxy: { "/api": `http://127.0.0.1:${port}` } },
+    server: {
+      port: 5175,
+      strictPort: true,
+      proxy: { "/api": `http://127.0.0.1:${port}` },
+    },
     test: { include: ["tests/**/*.test.ts"] },
   };
 });
