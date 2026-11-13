@@ -1,7 +1,7 @@
 import { Accounts } from "./accounts.js";
 import { config } from "./config.js";
 import { PostgresDatabase } from "./database.js";
-import { claimRuntime } from "./migration.js";
+import { claimRuntime, verifyMigrations } from "./migration.js";
 import { openConfiguredStore } from "./runtime-storage.js";
 import { Engine } from "./engine.js";
 import { createApp } from "./app.js";
@@ -19,6 +19,14 @@ if (!["sqlite", "postgres"].includes(config.storageBackend))
 if (config.storageBackend === "postgres" && !config.databaseUrl)
   throw new Error("Set DATABASE_URL before choosing Postgres.");
 const store = openConfiguredStore();
+if (store.db instanceof PostgresDatabase) {
+  try {
+    await verifyMigrations(store.db);
+  } catch (error) {
+    await store.close();
+    throw error;
+  }
+}
 const releaseRuntime =
   store.db instanceof PostgresDatabase
     ? await claimRuntime(store.db)

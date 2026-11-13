@@ -12,6 +12,47 @@ export const STORAGE_TABLES = [
   // own tables, so it is never part of a workspace import.
   .filter((t) => t !== "api_key_workspace" && !t.startsWith("seller_"));
 export const RUNTIME_LOCK = "octolab-runtime-v1";
+/** Refuse to serve a release whose database migrations have not been installed. */
+export async function verifyMigrations(database: PostgresDatabase) {
+  const dir = new URL("../supabase/migrations/", import.meta.url);
+  const files = (await readdir(dir))
+    .filter((file) => /^\d+_[a-z_]+\.sql$/.test(file))
+    .sort();
+  let rows: { name: string; digest: string }[];
+  try {
+    rows = (
+      await database.pool.query<{ name: string; digest: string }>(
+        "SELECT name,digest FROM octolab_migrations.versions",
+      )
+    ).rows;
+  } catch (error) {
+    if ((error as { code?: string }).code !== "42P01") throw error;
+    throw new Error(
+      "Postgres schema migrations are not installed. Stop the server and run npm run db:migrate before restarting.",
+      { cause: error },
+    );
+  }
+  const applied = new Map(rows.map((row) => [row.name, row.digest]));
+  const pending: string[] = [];
+  for (const file of files) {
+    const previous = applied.get(file);
+    if (!previous) {
+      pending.push(file);
+      continue;
+    }
+    const digest = createHash("sha256")
+      .update(await readFile(new URL(file, dir), "utf8"))
+      .digest("hex");
+    if (previous !== digest)
+      throw new Error(
+        "An applied migration was changed. Restore it and add a new migration.",
+      );
+  }
+  if (pending.length)
+    throw new Error(
+      `Postgres schema is behind this release (${pending.join(", ")}). Stop the server and run npm run db:migrate before restarting.`,
+    );
+}
 export async function applyMigrations(database: PostgresDatabase) {
   const client = await database.pool.connect();
   try {
