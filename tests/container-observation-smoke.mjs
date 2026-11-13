@@ -72,6 +72,7 @@ if (process.argv[2] === "persist") {
       "get_evidence",
       "get_session",
       "record_intent",
+      "route_call",
       "submit_outcome",
     ];
     assert.deepEqual(
