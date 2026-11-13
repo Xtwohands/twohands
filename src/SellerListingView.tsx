@@ -70,7 +70,17 @@ export function SellerListingView({
         if (stale) return;
         setState(listing);
         setImpact(measured);
-        setDraft((d) => (d.description ? d : { ...listing.current, note: "" }));
+        // Only the editable fields: the server rejects anything else.
+        setDraft((d) =>
+          d.description
+            ? d
+            : {
+                description: listing.current.description,
+                useWhen: listing.current.useWhen,
+                limitations: listing.current.limitations,
+                note: "",
+              },
+        );
       })
       .catch((e) => !stale && setError((e as Error).message));
     return () => {

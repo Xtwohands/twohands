@@ -74,11 +74,26 @@ Each company chooses whether to share and see names. Another company is named in
 
 An agent that calls a tool without asking for options first still made a choice. That task counts as eligible and chosen, with listing version 0.
 
+## Hosted mode
+
+With the PostgreSQL backend, company members use the same tools at `/api/companies/:id/seller/...` (`server/seller-hosted.ts`). The path after `/seller` matches the table above.
+
+- **Binding.** The company's approved provider decides what is shown. Nothing in the request can change it. The company must be approved with insights released; otherwise every route returns 403. A non-member gets 404.
+- **Roles.** Analysts and owners can read. Only the owner (or a platform administrator) can submit or withdraw a listing and change settings. Only a platform administrator can review a listing.
+- **Audit.** Opening the overview, the report or an export is recorded in the company's access history. Listing and settings changes record who made them.
+- **Data.** `loadSellerDataHosted` reads consented sessions across every customer workspace from the last 200 days. It keeps only what the analysis needs and drops objectives, queries, URLs, stated reasons, answers and page content before analysis. Workspace and session IDs are never returned.
+- **Storage.** Seller settings, listings and their history live in `seller_settings`, `seller_listings` and `seller_events` (migration `20261112210000_seller_tools.sql`). They are keyed by provider, shared across workspaces, closed to workspace roles, and not part of a workspace import.
+- **Operator view.** `/api/seller/:provider/...` remains for platform administrators.
+
+The migration has been applied only to disposable test databases. Applying it to the hosted project is a separate, deliberate step.
+
+Hosted reports load the whole window on each request. That is fine at current volumes and will need a summary table as usage grows.
+
 ## Not built yet
 
-- **Hosted mode.** Seller state is in local storage. With the PostgreSQL backend the routes return 501. Hosted mode needs seller tables, a cross-workspace data loader, and company membership checks in front of these routes, with listing review limited to platform administrators.
+- **Screens for company members.** The Agent choices and Listing tabs call the operator routes. The signed-in company dashboard still needs to call the company routes.
 - **Delivery.** Alerts and the digest are computed on request. Nothing is emailed or scheduled.
-- **Billing** for companies, and tools beyond the three integrated providers.
+- **Billing** for companies.
 
 ## Simulated data
 

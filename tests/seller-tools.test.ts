@@ -6,7 +6,7 @@ import { Observatory } from "../server/observation";
 import { config } from "../server/config";
 import { ProviderError } from "../server/providers";
 import { SellerStore, lintListing } from "../server/seller-store";
-import { sellerRoutes } from "../server/seller-api";
+import { sellerRoutes, localSellerDeps } from "../server/seller-api";
 import { analyzeSeller, loadSellerData } from "../server/seller-report";
 import {
   alerts,
@@ -319,7 +319,7 @@ describe("seller API", () => {
   async function serve() {
     const app = express();
     app.use(express.json());
-    sellerRoutes(app, obs, sellers);
+    sellerRoutes(app, localSellerDeps(obs, sellers), { admin: true });
     const server = app.listen(0, "127.0.0.1");
     await new Promise((r) => server.once("listening", r));
     const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}/api/seller`;

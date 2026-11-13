@@ -43,8 +43,13 @@ import { ProviderLab } from "./provider-lab.js";
 import { providerLabRoutes } from "./provider-lab-api.js";
 import { companyReport } from "./company-insights.js";
 import { sellerReport } from "./seller-report.js";
-import { sellerRoutes } from "./seller-api.js";
-import { SellerStore } from "./seller-store.js";
+import {
+  sellerRoutes,
+  localSellerDeps,
+  type SellerDeps,
+} from "./seller-api.js";
+import { SellerStore, PostgresSellerDb } from "./seller-store.js";
+import { hostedSellerRoutes, loadSellerDataHosted } from "./seller-hosted.js";
 const domain = z
   .string()
   .trim()
@@ -137,6 +142,26 @@ export function createApp(
   );
   if (accounts) app.use("/api", accountPreviewAccess(accounts));
   accountRoutes(app, accounts);
+  const sellers = new SellerStore(
+    store.db instanceof PostgresDatabase
+      ? new PostgresSellerDb(store.db.pool)
+      : store,
+  );
+  app.locals.sellers = sellers;
+  const sellerDeps: SellerDeps =
+    store.db instanceof PostgresDatabase
+      ? {
+          loadData: (
+            (pool) => () =>
+              loadSellerDataHosted(pool)
+          )(store.db.pool),
+          sellers,
+          simulated: async () => null,
+        }
+      : localSellerDeps(observatory, sellers);
+  // Agents are shown seller-approved listing text wherever a tool is described.
+  observatory.listings = async () => await sellers.liveAll();
+  if (accounts) hostedSellerRoutes(app, accounts, sellerDeps);
   companyAccountRoutes(app, accounts);
   workspaceAllowanceAdminRoutes(app, store, accounts);
   toolSettingsRoutes(app, toolSettings, accounts);
@@ -239,20 +264,9 @@ export function createApp(
   app.use(express.json({ limit: "24kb" }));
   apiKeyRoutes(app, observatory.db.apiKeys, !!accounts);
   observationRoutes(app, observatory);
-  // Seller state lives in local storage for now. Hosted mode needs its own tables and
-  // company membership checks before these routes are offered there.
-  if (store.db instanceof PostgresDatabase)
-    app.use("/api/seller", (_req, res) =>
-      res.status(501).json({
-        error: "Seller tools are not available in hosted mode yet.",
-      }),
-    );
-  else {
-    const sellers = new SellerStore(store);
-    app.locals.sellers = sellers;
-    observatory.listings = async () => await sellers.liveAll();
-    sellerRoutes(app, observatory, sellers);
-  }
+  // The operator's provider-keyed view. In hosted mode the account gate limits it to
+  // platform administrators; companies use /api/companies/:id/seller instead.
+  sellerRoutes(app, sellerDeps, { admin: true });
   workspaceRoutes(app, observatory);
   fundingRoutes(app, funding, stripeFunding);
   providerLabRoutes(app, providerLab);

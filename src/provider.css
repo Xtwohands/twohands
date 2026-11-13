@@ -124,10 +124,17 @@
 }
 .company-tabs {
   gap: 24px;
+  min-width: 0;
+  max-width: 100%;
 }
 .company-tabs > [data-slot="tabs-list"] {
   height: 42px;
   width: 100%;
+  /* More tabs than a phone is wide: scroll the strip, never the page. */
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
   justify-content: flex-start;
   border-bottom: 1px solid #303030;
   border-radius: 0;

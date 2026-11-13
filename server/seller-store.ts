@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { AsyncLocalStorage } from "node:async_hooks";
+import type { Pool, PoolClient } from "pg";
 import type { Store } from "./store.js";
 import type { ProviderId } from "./types.js";
 import { providerRegistry } from "./provider-adapters.js";
@@ -113,42 +115,182 @@ export function lintListing(
   return [...new Set(problems)];
 }
 
-export class SellerStore {
+/** The few storage operations seller state needs, so local and hosted mode share one service. */
+export interface SellerDb {
+  getSetting(key: string): Promise<string | undefined>;
+  putSetting(key: string, body: string): Promise<void>;
+  /** Listing bodies for one provider, newest version first. */
+  listingBodies(provider: string): Promise<string[]>;
+  saveListing(provider: string, version: number, body: string): Promise<void>;
+  addEvent(provider: string, body: string): Promise<void>;
+  eventRows(
+    provider: string,
+    limit: number,
+  ): Promise<{ id: number; body: string }[]>;
+  transaction<T>(fn: () => Promise<T>): Promise<T>;
+}
+export class SqliteSellerDb implements SellerDb {
   constructor(private store: Store) {}
   private get db() {
     return this.store.db;
   }
-  private async log(provider: string, type: string, data: unknown) {
+  async getSetting(key: string) {
+    const row = await this.db
+      .prepare("SELECT body FROM seller_settings WHERE key=?")
+      .get(key);
+    return row ? (row.body as string) : undefined;
+  }
+  async putSetting(key: string, body: string) {
+    await this.db
+      .prepare(
+        "INSERT INTO seller_settings VALUES (?,?) ON CONFLICT(key) DO UPDATE SET body=excluded.body",
+      )
+      .run(key, body);
+  }
+  async listingBodies(provider: string) {
+    return (
+      await this.db
+        .prepare(
+          "SELECT body FROM seller_listings WHERE provider=? ORDER BY version DESC",
+        )
+        .all(provider)
+    ).map((r) => r.body as string);
+  }
+  async saveListing(provider: string, version: number, body: string) {
+    await this.db
+      .prepare(
+        "INSERT INTO seller_listings VALUES (?,?,?) ON CONFLICT(provider,version) DO UPDATE SET body=excluded.body",
+      )
+      .run(provider, version, body);
+  }
+  async addEvent(provider: string, body: string) {
     await this.db
       .prepare("INSERT INTO seller_events(provider,body) VALUES (?,?)")
-      .run(
-        provider,
-        JSON.stringify({ type, at: new Date().toISOString(), data }),
-      );
+      .run(provider, body);
   }
-  async events(provider: ProviderId, limit = 100) {
+  async eventRows(provider: string, limit: number) {
     return (
       await this.db
         .prepare(
           "SELECT id,body FROM seller_events WHERE provider=? ORDER BY id DESC LIMIT ?",
         )
         .all(provider, limit)
-    ).map((r) => ({ id: Number(r.id), ...JSON.parse(r.body as string) })) as {
+    ).map((r) => ({ id: Number(r.id), body: r.body as string }));
+  }
+  async transaction<T>(fn: () => Promise<T>) {
+    return await this.store.transaction(fn);
+  }
+}
+/**
+ * Hosted storage. Seller state is global, keyed by provider, and never scoped to a
+ * customer workspace, so it uses the service connection directly.
+ */
+export class PostgresSellerDb implements SellerDb {
+  private active = new AsyncLocalStorage<PoolClient>();
+  constructor(private pool: Pool) {}
+  private query(text: string, values: unknown[]) {
+    return (this.active.getStore() ?? this.pool).query(text, values);
+  }
+  async getSetting(key: string) {
+    const { rows } = await this.query(
+      "SELECT body::text AS body FROM octolab.seller_settings WHERE key=$1",
+      [key],
+    );
+    return rows[0]?.body as string | undefined;
+  }
+  async putSetting(key: string, body: string) {
+    await this.query(
+      "INSERT INTO octolab.seller_settings(key,body) VALUES($1,$2::jsonb) ON CONFLICT(key) DO UPDATE SET body=excluded.body,updated_at=now()",
+      [key, body],
+    );
+  }
+  async listingBodies(provider: string) {
+    const { rows } = await this.query(
+      "SELECT body::text AS body FROM octolab.seller_listings WHERE provider=$1 ORDER BY version DESC",
+      [provider],
+    );
+    return rows.map((r) => r.body as string);
+  }
+  async saveListing(provider: string, version: number, body: string) {
+    await this.query(
+      "INSERT INTO octolab.seller_listings(provider,version,body) VALUES($1,$2,$3::jsonb) ON CONFLICT(provider,version) DO UPDATE SET body=excluded.body",
+      [provider, version, body],
+    );
+  }
+  async addEvent(provider: string, body: string) {
+    await this.query(
+      "INSERT INTO octolab.seller_events(provider,body) VALUES($1,$2::jsonb)",
+      [provider, body],
+    );
+  }
+  async eventRows(provider: string, limit: number) {
+    const { rows } = await this.query(
+      "SELECT id,body::text AS body FROM octolab.seller_events WHERE provider=$1 ORDER BY id DESC LIMIT $2",
+      [provider, limit],
+    );
+    return rows.map((r) => ({ id: Number(r.id), body: r.body as string }));
+  }
+  async transaction<T>(fn: () => Promise<T>) {
+    if (this.active.getStore()) return await fn();
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      // One writer at a time keeps version numbers and revisions consistent.
+      await client.query(
+        "SELECT pg_advisory_xact_lock(hashtextextended('octolab-seller-state',0))",
+      );
+      const result = await this.active.run(client, fn);
+      await client.query("COMMIT");
+      return result;
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => {});
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+}
+
+export class SellerStore {
+  private db: SellerDb;
+  constructor(source: Store | SellerDb) {
+    this.db = "getSetting" in source ? source : new SqliteSellerDb(source);
+  }
+  private async log(
+    provider: string,
+    type: string,
+    data: unknown,
+    actor?: string,
+  ) {
+    await this.db.addEvent(
+      provider,
+      JSON.stringify({
+        type,
+        at: new Date().toISOString(),
+        ...(actor ? { actor } : {}),
+        data,
+      }),
+    );
+  }
+  async events(provider: ProviderId, limit = 100) {
+    return (await this.db.eventRows(provider, limit)).map((r) => ({
+      id: r.id,
+      ...JSON.parse(r.body),
+    })) as {
       id: number;
       type: string;
       at: string;
+      actor?: string;
       data: Record<string, unknown>;
     }[];
   }
   async settings(provider: ProviderId): Promise<SellerSettings> {
-    const row = await this.db
-      .prepare("SELECT body FROM seller_settings WHERE key=?")
-      .get(`provider:${provider}`);
-    return row ? JSON.parse(row.body as string) : defaultSettings();
+    const body = await this.db.getSetting(`provider:${provider}`);
+    return body ? JSON.parse(body) : defaultSettings();
   }
-  async updateSettings(provider: ProviderId, raw: unknown) {
+  async updateSettings(provider: ProviderId, raw: unknown, actor?: string) {
     const input = settingsInput.parse(raw);
-    return await this.store.transaction(async () => {
+    return await this.db.transaction(async () => {
       const previous = await this.settings(provider);
       if (previous.revision !== input.revision)
         throw new SellerError(
@@ -160,46 +302,30 @@ export class SellerStore {
         revision: previous.revision + 1,
         updatedAt: new Date().toISOString(),
       };
-      await this.db
-        .prepare(
-          "INSERT INTO seller_settings VALUES (?,?) ON CONFLICT(key) DO UPDATE SET body=excluded.body",
-        )
-        .run(`provider:${provider}`, JSON.stringify(next));
-      await this.log(provider, "settings_updated", { previous, next });
+      await this.db.putSetting(`provider:${provider}`, JSON.stringify(next));
+      await this.log(provider, "settings_updated", { previous, next }, actor);
       return next;
     });
   }
   /** Agent hosts whose sessions are internal traffic and never reach a seller report. */
   async internalHosts(): Promise<string[]> {
-    const row = await this.db
-      .prepare("SELECT body FROM seller_settings WHERE key='internal_hosts'")
-      .get();
-    return row ? JSON.parse(row.body as string) : [];
+    const body = await this.db.getSetting("internal_hosts");
+    return body ? JSON.parse(body) : [];
   }
   async setInternalHosts(raw: unknown) {
     const hosts = [...new Set(z.array(text(1, 100)).max(50).parse(raw))].sort();
-    await this.db
-      .prepare(
-        "INSERT INTO seller_settings VALUES ('internal_hosts',?) ON CONFLICT(key) DO UPDATE SET body=excluded.body",
-      )
-      .run(JSON.stringify(hosts));
+    await this.db.putSetting("internal_hosts", JSON.stringify(hosts));
     return hosts;
   }
   async listings(provider: ProviderId): Promise<Listing[]> {
-    return (
-      await this.db
-        .prepare(
-          "SELECT body FROM seller_listings WHERE provider=? ORDER BY version DESC",
-        )
-        .all(provider)
-    ).map((r) => JSON.parse(r.body as string));
+    return (await this.db.listingBodies(provider)).map((b) => JSON.parse(b));
   }
   private async save(listing: Listing) {
-    await this.db
-      .prepare(
-        "INSERT INTO seller_listings VALUES (?,?,?) ON CONFLICT(provider,version) DO UPDATE SET body=excluded.body",
-      )
-      .run(listing.provider, listing.version, JSON.stringify(listing));
+    await this.db.saveListing(
+      listing.provider,
+      listing.version,
+      JSON.stringify(listing),
+    );
   }
   async live(provider: ProviderId) {
     return (await this.listings(provider)).find((l) => l.status === "live");
@@ -215,7 +341,7 @@ export class SellerStore {
     }
     return out;
   }
-  async submitListing(provider: ProviderId, raw: unknown) {
+  async submitListing(provider: ProviderId, raw: unknown, actor?: string) {
     const input = listingInput.parse(raw);
     const problems = lintListing(provider, input);
     if (problems.length)
@@ -223,7 +349,7 @@ export class SellerStore {
         400,
         `This listing cannot be submitted. ${problems.join(" ")}`,
       );
-    return await this.store.transaction(async () => {
+    return await this.db.transaction(async () => {
       const all = await this.listings(provider);
       if (all.some((l) => l.status === "pending"))
         throw new SellerError(
@@ -238,14 +364,17 @@ export class SellerStore {
         submittedAt: new Date().toISOString(),
       };
       await this.save(listing);
-      await this.log(provider, "listing_submitted", {
-        version: listing.version,
-      });
+      await this.log(
+        provider,
+        "listing_submitted",
+        { version: listing.version },
+        actor,
+      );
       return listing;
     });
   }
-  async withdrawListing(provider: ProviderId, version: number) {
-    return await this.store.transaction(async () => {
+  async withdrawListing(provider: ProviderId, version: number, actor?: string) {
+    return await this.db.transaction(async () => {
       const listing = (await this.listings(provider)).find(
         (l) => l.version === version,
       );
@@ -253,14 +382,14 @@ export class SellerStore {
         throw new SellerError(409, "Only a pending listing can be withdrawn.");
       listing.status = "withdrawn";
       await this.save(listing);
-      await this.log(provider, "listing_withdrawn", { version });
+      await this.log(provider, "listing_withdrawn", { version }, actor);
       return listing;
     });
   }
   /** A reviewer's decision. Approval makes the version live and retires the previous one. */
-  async reviewListing(provider: ProviderId, raw: unknown) {
+  async reviewListing(provider: ProviderId, raw: unknown, actor?: string) {
     const input = reviewInput.parse(raw);
-    return await this.store.transaction(async () => {
+    return await this.db.transaction(async () => {
       const all = await this.listings(provider);
       const listing = all.find((l) => l.version === input.version);
       if (!listing || listing.status !== "pending")
@@ -282,10 +411,8 @@ export class SellerStore {
       await this.log(
         provider,
         input.decision === "approve" ? "listing_approved" : "listing_rejected",
-        {
-          version: listing.version,
-          note: input.note,
-        },
+        { version: listing.version, note: input.note },
+        actor,
       );
       return listing;
     });

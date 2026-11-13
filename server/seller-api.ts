@@ -1,4 +1,4 @@
-import type { Express, Request, Response } from "express";
+import type { Request, Response, Router } from "express";
 import { z } from "zod";
 import type { Observatory } from "./observation.js";
 import type { ProviderId } from "./types.js";
@@ -9,6 +9,7 @@ import {
   analyzeSeller,
   loadSellerData,
   type SellerReportOptions,
+  type SellerSessionData,
 } from "./seller-report.js";
 import {
   alerts,
@@ -36,31 +37,83 @@ const query = z.object({
   host: z.string().trim().min(1).max(100).optional(),
 });
 
+export type SellerDeps = {
+  loadData: () => Promise<SellerSessionData[]>;
+  sellers: SellerStore;
+  simulated: () => Promise<{ note: string } | null>;
+};
+export type SellerAction = "read" | "write" | "review";
+/** Who is asking, which provider they may see, and what they may do. */
+export type SellerAccess = {
+  provider: ProviderId;
+  actor?: string;
+  /** Throws when the action is not permitted. */
+  allow(action: SellerAction): void;
+  audit?(what: string): Promise<void>;
+};
+export function localSellerDeps(
+  obs: Observatory,
+  sellers: SellerStore,
+): SellerDeps {
+  return {
+    loadData: () => loadSellerData(obs),
+    sellers,
+    simulated: async () => {
+      const row = await obs.db.store.db
+        .prepare("SELECT body FROM workspace_settings WHERE key='simulation'")
+        .get();
+      return row ? JSON.parse(row.body as string) : null;
+    },
+  };
+}
+
 /**
  * Everything a tool company uses after it is onboarded. Every response is aggregate:
  * no objective, query, URL, stated reason, answer or session ID leaves through here.
  *
- * Local mode trusts the single operator. Hosted mode must put company membership
- * checks in front of these routes before exposing them to company accounts.
+ * The default access trusts the single local operator and addresses a provider
+ * directly. Hosted mode supplies `resolve` to bind the request to a company's
+ * approved provider and enforce its roles.
  */
 export function sellerRoutes(
-  app: Express,
-  obs: Observatory,
-  sellers: SellerStore,
+  app: Pick<Router, "get" | "post" | "put">,
+  deps: SellerDeps,
+  options: {
+    base?: string;
+    resolve?: (req: Request, res: Response) => Promise<SellerAccess>;
+    fail?: (error: unknown, res: Response) => void;
+    /** Operator-only maintenance routes. */
+    admin?: boolean;
+  } = {},
 ) {
+  const { sellers } = deps;
+  const resolve =
+    options.resolve ??
+    (async (req: Request): Promise<SellerAccess> => {
+      const provider = z.enum(providers).safeParse(req.params.provider);
+      if (!provider.success)
+        throw new SellerError(404, "Unknown tool company.");
+      return { provider: provider.data, allow() {} };
+    });
   const route =
     (
-      fn: (req: Request, res: Response, provider: ProviderId) => Promise<void>,
+      action: SellerAction,
+      fn: (
+        req: Request,
+        res: Response,
+        provider: ProviderId,
+        access: SellerAccess,
+      ) => Promise<void>,
+      audit?: string,
     ) =>
     async (req: Request, res: Response) => {
-      const provider = z.enum(providers).safeParse(req.params.provider);
-      if (!provider.success) {
-        res.status(404).json({ error: "Unknown tool company." });
-        return;
-      }
       try {
-        await fn(req, res, provider.data);
+        const access = await resolve(req, res);
+        access.allow(action);
+        await fn(req, res, access.provider, access);
+        if (audit) await access.audit?.(audit);
       } catch (e) {
+        if (res.headersSent) return;
         if (e instanceof z.ZodError)
           res.status(400).json({
             error: e.issues[0]?.message ?? "Invalid request.",
@@ -68,6 +121,7 @@ export function sellerRoutes(
           });
         else if (e instanceof SellerError)
           res.status(e.status).json({ error: e.message });
+        else if (options.fail) options.fail(e, res);
         else res.status(500).json({ error: "Seller request failed." });
       }
     };
@@ -88,69 +142,73 @@ export function sellerRoutes(
       host: q.host,
       internalHosts: await sellers.internalHosts(),
     };
-    const simulation = await obs.db.store.db
-      .prepare("SELECT body FROM workspace_settings WHERE key='simulation'")
-      .get();
     return {
-      data: await loadSellerData(obs),
+      data: await deps.loadData(),
       settings,
       options,
-      simulated: simulation
-        ? (JSON.parse(simulation.body as string) as { note: string })
-        : null,
+      simulated: await deps.simulated(),
     };
   }
-  const base = "/api/seller/:provider";
+  const base = options.base ?? "/api/seller/:provider";
 
   app.get(
     `${base}/overview`,
-    route(async (req, res, provider) => {
-      const c = await context(req, provider);
-      const compared = comparePeriods(c.data, provider, c.options);
-      const found = findings(compared.current);
-      const listings = await sellers.listings(provider);
-      const { current } = compared;
-      res.json({
-        provider,
-        providerName: current.providerName,
-        simulated: c.simulated,
-        window: current.window,
-        funnel: current.funnel,
-        change: compared.change,
-        dataQuality: current.dataQuality,
-        alerts: alerts(current, compared.previous, c.settings.alerts),
-        findings: found.slice(0, 3),
-        findingCount: found.length,
-        trend: trend(current, current.days > 30 ? "week" : "day"),
-        listing: {
-          liveVersion: listings.find((l) => l.status === "live")?.version ?? 0,
-          pendingVersion:
-            listings.find((l) => l.status === "pending")?.version ?? null,
-        },
-        namedComparison: c.settings.namedComparison,
-        filters: {
-          taskTypes: taskTypes.map((t) => ({
-            key: t,
-            label: taskTypeLabels[t],
-          })),
-          hosts: current.hosts.map((h) => h.key),
-        },
-      });
-    }),
+    route(
+      "read",
+      async (req, res, provider) => {
+        const c = await context(req, provider);
+        const compared = comparePeriods(c.data, provider, c.options);
+        const found = findings(compared.current);
+        const listings = await sellers.listings(provider);
+        const { current } = compared;
+        res.json({
+          provider,
+          providerName: current.providerName,
+          simulated: c.simulated,
+          window: current.window,
+          funnel: current.funnel,
+          change: compared.change,
+          dataQuality: current.dataQuality,
+          alerts: alerts(current, compared.previous, c.settings.alerts),
+          findings: found.slice(0, 3),
+          findingCount: found.length,
+          trend: trend(current, current.days > 30 ? "week" : "day"),
+          listing: {
+            liveVersion:
+              listings.find((l) => l.status === "live")?.version ?? 0,
+            pendingVersion:
+              listings.find((l) => l.status === "pending")?.version ?? null,
+          },
+          namedComparison: c.settings.namedComparison,
+          filters: {
+            taskTypes: taskTypes.map((t) => ({
+              key: t,
+              label: taskTypeLabels[t],
+            })),
+            hosts: current.hosts.map((h) => h.key),
+          },
+        });
+      },
+      "overview",
+    ),
   );
   app.get(
     `${base}/report`,
-    route(async (req, res, provider) => {
-      const c = await context(req, provider);
-      res.json({
-        ...analyzeSeller(c.data, provider, c.options),
-        simulated: c.simulated,
-      });
-    }),
+    route(
+      "read",
+      async (req, res, provider) => {
+        const c = await context(req, provider);
+        res.json({
+          ...analyzeSeller(c.data, provider, c.options),
+          simulated: c.simulated,
+        });
+      },
+      "report",
+    ),
   );
   app.get(
     `${base}/trend`,
-    route(async (req, res, provider) => {
+    route("read", async (req, res, provider) => {
       const c = await context(req, provider);
       const bucket = z.enum(["day", "week"]).parse(req.query.bucket ?? "day");
       const a = analyzeSeller(c.data, provider, c.options);
@@ -164,7 +222,7 @@ export function sellerRoutes(
   );
   app.get(
     `${base}/findings`,
-    route(async (req, res, provider) => {
+    route("read", async (req, res, provider) => {
       const c = await context(req, provider);
       res.json({
         findings: findings(analyzeSeller(c.data, provider, c.options)),
@@ -173,7 +231,7 @@ export function sellerRoutes(
   );
   app.get(
     `${base}/alerts`,
-    route(async (req, res, provider) => {
+    route("read", async (req, res, provider) => {
       const c = await context(req, provider);
       const compared = comparePeriods(c.data, provider, c.options);
       res.json({
@@ -186,7 +244,7 @@ export function sellerRoutes(
   );
   app.get(
     `${base}/digest`,
-    route(async (req, res, provider) => {
+    route("read", async (req, res, provider) => {
       const c = await context(req, provider);
       const compared = comparePeriods(c.data, provider, c.options);
       const summary = digest(
@@ -201,7 +259,7 @@ export function sellerRoutes(
   );
   app.get(
     `${base}/listing-impact`,
-    route(async (req, res, provider) => {
+    route("read", async (req, res, provider) => {
       const c = await context(req, provider);
       res.json(
         listingImpact(c.data, provider, await sellers.listings(provider), {
@@ -213,18 +271,22 @@ export function sellerRoutes(
   );
   app.get(
     `${base}/export`,
-    route(async (req, res, provider) => {
-      const c = await context(req, provider);
-      const section = z.enum(exportSections).parse(req.query.section);
-      res
-        .type("text/csv")
-        .attachment(`${provider}-${section}-${c.options.days}d.csv`)
-        .send(exportCsv(analyzeSeller(c.data, provider, c.options), section));
-    }),
+    route(
+      "read",
+      async (req, res, provider) => {
+        const c = await context(req, provider);
+        const section = z.enum(exportSections).parse(req.query.section);
+        res
+          .type("text/csv")
+          .attachment(`${provider}-${section}-${c.options.days}d.csv`)
+          .send(exportCsv(analyzeSeller(c.data, provider, c.options), section));
+      },
+      "export",
+    ),
   );
   app.get(
     `${base}/listing`,
-    route(async (_req, res, provider) => {
+    route("read", async (_req, res, provider) => {
       const listings = await sellers.listings(provider);
       const tool = providerRegistry.list().find((a) => a.provider === provider)!
         .tool as keyof typeof toolCapabilities;
@@ -247,7 +309,7 @@ export function sellerRoutes(
   );
   app.post(
     `${base}/listing/check`,
-    route(async (req, res, provider) => {
+    route("read", async (req, res, provider) => {
       const input = listingInput.parse(req.body);
       const problems = lintListing(provider, input);
       res.json({ ok: !problems.length, problems });
@@ -255,46 +317,51 @@ export function sellerRoutes(
   );
   app.post(
     `${base}/listing`,
-    route(async (req, res, provider) => {
-      res.status(201).json(await sellers.submitListing(provider, req.body));
+    route("write", async (req, res, provider, access) => {
+      res
+        .status(201)
+        .json(await sellers.submitListing(provider, req.body, access.actor));
     }),
   );
   app.post(
     `${base}/listing/withdraw`,
-    route(async (req, res, provider) => {
+    route("write", async (req, res, provider, access) => {
       const { version } = z
         .object({ version: z.number().int().min(1) })
         .strict()
         .parse(req.body);
-      res.json(await sellers.withdrawListing(provider, version));
+      res.json(await sellers.withdrawListing(provider, version, access.actor));
     }),
   );
   // A reviewer's action. In hosted mode this belongs to platform administrators only.
   app.post(
     `${base}/listing/review`,
-    route(async (req, res, provider) => {
-      res.json(await sellers.reviewListing(provider, req.body));
+    route("review", async (req, res, provider, access) => {
+      res.json(await sellers.reviewListing(provider, req.body, access.actor));
     }),
   );
   app.get(
     `${base}/settings`,
-    route(async (_req, res, provider) => {
+    route("read", async (_req, res, provider) => {
       res.json(await sellers.settings(provider));
     }),
   );
   for (const method of ["put", "post"] as const)
     app[method](
       `${base}/settings`,
-      route(async (req, res, provider) => {
-        res.json(await sellers.updateSettings(provider, req.body));
+      route("write", async (req, res, provider, access) => {
+        res.json(
+          await sellers.updateSettings(provider, req.body, access.actor),
+        );
       }),
     );
   app.get(
     `${base}/history`,
-    route(async (_req, res, provider) => {
+    route("read", async (_req, res, provider) => {
       res.json({ events: await sellers.events(provider) });
     }),
   );
+  if (!options.admin) return;
   app.get("/api/seller-admin/internal-hosts", async (_req, res) => {
     res.json({ hosts: await sellers.internalHosts() });
   });
