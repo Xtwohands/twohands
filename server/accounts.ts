@@ -25,8 +25,6 @@ export interface VerifiedIdentity {
   email: string;
   sessionId: string;
   expiresAt: number;
-  aal?: "aal1" | "aal2";
-  mfaVerified?: boolean;
 }
 export type IdentityVerifier = (token: string) => Promise<VerifiedIdentity>;
 export interface AccountSettings {
@@ -94,7 +92,6 @@ export function supabaseVerifier(settings: AccountSettings): IdentityVerifier {
         sub: z.uuid(),
         session_id: z.uuid(),
         exp: z.number().int().positive(),
-        aal: z.enum(["aal1", "aal2"]).default("aal1"),
       })
       .safeParse(claims);
     if (
@@ -108,10 +105,6 @@ export function supabaseVerifier(settings: AccountSettings): IdentityVerifier {
       email: data.user.email,
       sessionId: value.data.session_id,
       expiresAt: value.data.exp * 1000,
-      aal: value.data.aal,
-      mfaVerified:
-        value.data.aal === "aal2" &&
-        !!data.user.factors?.some((f) => f.status === "verified"),
     };
   };
 }
@@ -185,12 +178,6 @@ export class Accounts {
         : this.isAdmin(identity.userId))
     )
       throw new AccountError(403, "Platform administrator access is required.");
-    if (identity.aal !== "aal2" || !identity.mfaVerified)
-      throw new AccountError(
-        403,
-        "Verify your authenticator in Settings before using administrator controls.",
-        "mfa_required",
-      );
   }
   assertCompanyTarget(id: string) {
     const target = this.previewScope.getStore()?.target;
@@ -209,7 +196,7 @@ export class Accounts {
   async identity(req: Request): Promise<VerifiedIdentity> {
     const token = req.header("authorization")?.match(/^Bearer ([^\s]+)$/)?.[1];
     if (!token || token.length > 8192 || token.startsWith("oct_key_"))
-      throw new AccountError(401, "Sign in to access this workspace.");
+      throw new AccountError(401, "Sign in to access your account.");
     const key = createHash("sha256").update(token).digest("hex");
     const cached = this.cache.get(key);
     let identity: VerifiedIdentity;
@@ -263,9 +250,7 @@ export class Accounts {
   async profile(identity: VerifiedIdentity): Promise<AccountProfile> {
     const result = this.previewScope.getStore()?.target
       ? { rows: [] }
-      : this.isAdmin(identity.userId) &&
-          identity.aal === "aal2" &&
-          identity.mfaVerified
+      : this.isAdmin(identity.userId)
         ? await this.database.pool.query(
             "SELECT id,name,'platform_admin' AS role FROM octolab.workspaces ORDER BY created_at,id LIMIT 1000",
           )
@@ -278,7 +263,6 @@ export class Accounts {
       workspaces: result.rows,
       isAdmin: this.isAdmin(identity.userId),
       canPreview: this.settings.adminUserIds.includes(identity.userId),
-      adminMfaVerified: identity.aal === "aal2" && !!identity.mfaVerified,
       companyPreview: this.previewScope.getStore()?.target,
       companies: await this.companies.list(identity),
     };
@@ -295,8 +279,8 @@ export class Accounts {
       throw new AccountError(
         403,
         requested
-          ? "You do not have access to this workspace."
-          : "Create a workspace to continue.",
+          ? "You do not have access to this account."
+          : "Open your dashboard to finish setting up your account.",
       );
     return value;
   }

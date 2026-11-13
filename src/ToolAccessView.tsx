@@ -60,10 +60,10 @@ export function OperatorAllowanceNotice() {
       {value.state === "available"
         ? `Estimated tool allowance remaining: ${money(value.remainingMicros!)}.`
         : value.state === "unconfigured"
-          ? "Tool access has not been enabled for this workspace."
+          ? "Tool access has not been enabled for your account."
           : value.state === "paused"
-            ? "Tool access is paused for this workspace."
-            : "The workspace tool allowance is exhausted."}{" "}
+            ? "Tool access is paused for your account."
+            : "Your account has reached its tool spending limit."}{" "}
       Estimates are separate from payment balances.
     </p>
   );
@@ -189,7 +189,7 @@ export function ToolAccessView() {
           setSelected(undefined);
           setError(
             (e as Error).message +
-              " Reload workspaces and select the workspace again before saving.",
+              " Reload accounts and select the account again before saving.",
           );
         }
       }
@@ -202,14 +202,14 @@ export function ToolAccessView() {
       <div className="page-heading">
         <div>
           <h1>Tool access</h1>
-          <p>Control platform-funded provider execution for each workspace.</p>
+          <p>Manage platform-funded tool access for each account.</p>
         </div>
         <Button
           variant="outline"
           disabled={loading || saving}
           onClick={() => void load()}
         >
-          Reload workspaces
+          Reload accounts
         </Button>
       </div>
       <InlineError message={error} />
@@ -224,11 +224,11 @@ export function ToolAccessView() {
         reservations.
       </p>
       <div className="tool-access-grid">
-        <Panel title="Workspaces">
+        <Panel title="Accounts">
           {loading && !items.length ? (
-            <p role="status">Loading workspaces…</p>
+            <p role="status">Loading accounts…</p>
           ) : !items.length ? (
-            <p>No workspaces are available yet.</p>
+            <p>No accounts are available yet.</p>
           ) : (
             <div className="tool-access-list">
               {items.map((item) => (
@@ -251,15 +251,15 @@ export function ToolAccessView() {
               disabled={loading || saving}
               onClick={() => void load(cursor)}
             >
-              Load more workspaces
+              Load more accounts
             </Button>
           )}
         </Panel>
-        <Panel title={selected ? selected.name : "Select a workspace"}>
+        <Panel title={selected ? selected.name : "Select an account"}>
           {!selected ? (
             <p>
-              Select a workspace to review its allowance and enable or pause
-              provider access.
+              Select an account to review its allowance and enable or pause tool
+              access.
             </p>
           ) : (
             <>

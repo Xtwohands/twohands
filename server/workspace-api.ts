@@ -126,7 +126,7 @@ export function workspaceRoutes(app: Express, obs: Observatory) {
           error instanceof ApiKeyError
         )
           res.status(error.status).json({ error: error.message });
-        else res.status(500).json({ error: "Workspace operation failed." });
+        else res.status(500).json({ error: "The account request failed." });
       }
     };
   const since = (days: number) => {

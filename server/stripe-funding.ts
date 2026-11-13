@@ -281,7 +281,7 @@ export class StripeFundingService {
           )
             throw new FundingError(
               409,
-              "Workspace card deposit limit reached.",
+              "Your account has reached its card deposit limit.",
             );
           await this.funding.store.db
             .prepare(

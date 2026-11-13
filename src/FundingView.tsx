@@ -104,7 +104,7 @@ export function FundingView() {
         <>
           <div className="ws-funding-grid">
             <section className="ws-panel ws-balance-card">
-              <span>Workspace test balance</span>
+              <span>Your test balance</span>
               <strong>
                 {summary ? testUsdc(summary.balanceUnits) : "—"}
                 <small>test credits</small>
@@ -173,9 +173,7 @@ export function FundingView() {
               <header>
                 <div>
                   <h2>On-chain deposit history</h2>
-                  <p>
-                    Saved requests and verified test credits in this workspace.
-                  </p>
+                  <p>Saved requests and verified test credits.</p>
                 </div>
                 <Button
                   variant="ghost"
@@ -529,8 +527,8 @@ export function FundingView() {
                 <>
                   <div className="ws-funding-success">
                     <CheckCircle />
-                    {testUsdc(selected.amountUnits)} test USDC added to the
-                    workspace.
+                    {testUsdc(selected.amountUnits)} test USDC added to your
+                    balance.
                   </div>
                   <a
                     className="ws-text-link"

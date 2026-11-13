@@ -65,8 +65,6 @@ suite("operator-owned hosted workspace allowances", () => {
       sessionId: randomUUID(),
       email: name + "@fixture.invalid",
       expiresAt: Date.now() + 3600000,
-      aal: "aal2" as const,
-      mfaVerified: true,
     });
     admin = identity("admin");
     owner = identity("owner");

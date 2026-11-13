@@ -439,8 +439,8 @@ export function ProviderBillingView({ days }: { days: string }) {
             </DialogDescription>
           </DialogHeader>
           <p>
-            These records were supplied by the workspace owner. Approval records
-            your review; it does not independently verify a provider invoice.
+            The account owner supplied these records. Approval records your
+            review of the import. Provider invoice verification is separate.
           </p>
           {error && <p role="alert">{error}</p>}
           {selected && (

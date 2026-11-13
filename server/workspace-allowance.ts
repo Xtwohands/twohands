@@ -80,7 +80,7 @@ export class WorkspaceAllowance {
     if (!operatorAllows(current, amount))
       throw new AllowanceError(
         403,
-        "Provider execution is unavailable: the workspace operator allowance is paused, missing, or insufficient.",
+        "This account cannot run the tool because tool access is inactive or the remaining allowance is too low.",
         current,
       );
     return current;
@@ -153,7 +153,7 @@ export class WorkspaceAllowance {
     if (!(this.store.db instanceof PostgresDatabase))
       throw new AllowanceError(
         503,
-        "Hosted workspace allowances require PostgreSQL.",
+        "Hosted account tool allowances require PostgreSQL.",
       );
     return this.store.db;
   }
@@ -191,7 +191,7 @@ export class WorkspaceAllowance {
           ])
         ).rowCount
       )
-        throw new AllowanceError(404, "Workspace not found.");
+        throw new AllowanceError(404, "Account not found.");
       const replay = await client.query(
         "SELECT input_hash FROM octolab.workspace_allowance_events WHERE workspace_id=$1 AND actor_user_id=$2 AND request_key=$3",
         [workspaceId, actorId, input.requestKey],
@@ -288,7 +288,7 @@ export function applyOperatorAllowance<
       ) {
         match.status = "disabled";
         match.reason =
-          "Workspace operator allowance is paused, missing, or insufficient. This quote does not authorize provider execution.";
+          "This account cannot run the tool because tool access is inactive or the remaining allowance is too low.";
       }
     }
   }

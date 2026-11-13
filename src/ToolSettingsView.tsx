@@ -43,10 +43,7 @@ export function ToolSettingsView() {
   const [key, setKey] = useState("");
   const [provider, setProvider] = useState<ProviderId>(providerIds[0]);
   const requestKey = useRef(crypto.randomUUID());
-  const allowed =
-    account.profile?.isAdmin &&
-    !account.previewRole &&
-    account.profile.adminMfaVerified === true;
+  const allowed = account.profile?.isAdmin && !account.previewRole;
   const actor = `${account.profile?.user.id}:${account.sessionEpoch}:${account.previewRole}:${allowed}`;
   const generation = useActorGeneration(actor);
   async function reload() {
@@ -134,12 +131,10 @@ export function ToolSettingsView() {
   }
   if (!allowed)
     return (
-      <Panel title="Verify administrator access">
+      <Panel title="Administrator access required">
         <p>
-          Open Settings and verify your authenticator before managing tools or
-          credentials.
+          Sign in as a platform administrator to manage tools and credentials.
         </p>
-        <a href="#settings">Open Settings</a>
       </Panel>
     );
   return (

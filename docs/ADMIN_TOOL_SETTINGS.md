@@ -2,9 +2,9 @@
 
 In PostgreSQL account mode, **Administration → Tool settings** edits the global Exa, Tavily and Firecrawl controls. Each operator uses an individual confirmed Supabase Auth account explicitly listed in `SUPABASE_ADMIN_USER_IDS`. Allowlisting and account recovery remain deployment/Auth responsibilities; this page cannot grant administrators or edit arbitrary environment variables.
 
-Open **Settings → Administrator security** to enroll or verify an authenticator. Every privileged backend request requires an Auth-verified `aal2` token, a currently verified MFA factor, a live session and an allowlisted UUID. Admin verification is checked afresh rather than using the customer identity cache. Signing out or revoking the session, factor or allowlist entry denies subsequent administrator requests. An unverified administrator can reach own-account Settings and sees only actual workspace memberships, not the customer workspace directory. Role preview removes privileged access.
+Sign in with a confirmed Supabase account whose UUID is listed in `SUPABASE_ADMIN_USER_IDS`. Every privileged backend request verifies the account afresh and checks that its session is live. Signing out, revoking the session or removing the UUID from the allowlist denies subsequent administrator requests. Role preview removes privileged access.
 
-TOTP enrollment keys and provider keys are held only in the current form, never application local/session storage. Account/session changes and unmount invalidate pending form responses. Supabase still persists browser login tokens through its existing SDK storage. Recover a lost authenticator through the Auth provider with another trusted operator; octolab has no recovery bypass.
+Provider keys are held only in the current form. Account or session changes and unmount invalidate pending form responses. Supabase persists browser login tokens through its SDK storage.
 
 ## What changes
 
@@ -25,7 +25,7 @@ Apply migration `20261109054711_platform_tool_settings.sql` through the normal i
 
 The implementation uses Supabase Vault's existing encryption, not an application encryption key or plaintext credential table. Vault SQL receives key values as parameters. Keep database statement/parameter logging and hosting request-body capture disabled or redacted for credential writes. TLS protects browser-to-server submission and server-to-database connections. The server resolves keys into memory for provider calls and never sends them in read API responses or audit records.
 
-If the extension, required operations or appropriate privileges are absent, the page reports that the managed store is unavailable and disables credential entry. Other settings can still be saved. Providers without a managed reference can continue using existing private deployment environment credentials. There is no plaintext storage fallback. Confirm target-project privileges and actual TOTP enrollment before public launch; fixture checks do not verify a hosted deployment.
+If the extension, required operations or appropriate privileges are absent, the page reports that the managed store is unavailable and disables credential entry. Other settings can still be saved. Providers without a managed reference can continue using existing private deployment environment credentials. There is no plaintext storage fallback. Confirm target-project privileges before public launch.
 
 ## Backup and recovery
 
@@ -35,7 +35,7 @@ After restoring into a fresh database, provision the supported managed Vault and
 
 ## API
 
-All routes require a confirmed, live, MFA-verified platform administrator and reject customer accounts, scoped machine keys and role previews. Writes require same-origin JSON. No customer workspace selection is required.
+All routes require an allowlisted platform administrator with a confirmed account and live session and reject customer accounts, scoped machine keys and role previews. Writes require same-origin JSON. No customer workspace selection is required.
 
 | Method | Route                              | Result                                                                                                                  |
 | ------ | ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
@@ -43,4 +43,4 @@ All routes require a confirmed, live, MFA-verified platform administrator and re
 | GET    | `/api/admin/tool-settings/history` | Latest 100 setting changes with actor and differences.                                                                  |
 | POST   | `/api/admin/tool-settings`         | `{requestKey, revision, values, credential?: {provider, value}}`; atomic save and safe current settings.                |
 
-SQLite/local mode does not expose persistent hosted administrator settings or a shared-token MFA bypass. Existing technical MCP tool names and registration identifiers remain unchanged.
+SQLite/local mode does not expose persistent hosted administrator settings. Existing technical MCP tool names and registration identifiers remain unchanged.

@@ -9,7 +9,6 @@ import {
   ShieldTick,
   Settings01,
 } from "@untitledui/icons";
-import { useAccount } from "./AccountGate";
 const links = [
   { page: "admin", label: "Company reviews", icon: Building07 },
   { page: "sessions", label: "Workspace operations", icon: Grid01 },
@@ -29,26 +28,16 @@ export function AdminNavigation({
   page: string;
   onNavigate?: () => void;
 }) {
-  const account = useAccount();
-  return (
-    <>
-      {account.profile?.adminMfaVerified === false && (
-        <a href="#settings" className="admin-mfa-notice">
-          Verify two-factor access in Settings
-        </a>
-      )}
-      {links.map((link) => (
-        <a
-          key={link.page}
-          href={`#${link.page}`}
-          className={page === link.page ? "selected" : ""}
-          aria-current={page === link.page ? "page" : undefined}
-          onClick={onNavigate}
-        >
-          <link.icon />
-          {link.label}
-        </a>
-      ))}
-    </>
-  );
+  return links.map((link) => (
+    <a
+      key={link.page}
+      href={`#${link.page}`}
+      className={page === link.page ? "selected" : ""}
+      aria-current={page === link.page ? "page" : undefined}
+      onClick={onNavigate}
+    >
+      <link.icon />
+      {link.label}
+    </a>
+  ));
 }

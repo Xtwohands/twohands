@@ -242,7 +242,10 @@ export class FundingService {
         .prepare("SELECT COUNT(*) AS n FROM funding_intents")
         .get())!;
       if (Number(count.n) >= 1000)
-        throw new FundingError(409, "Workspace deposit request limit reached.");
+        throw new FundingError(
+          409,
+          "Your account has reached its deposit request limit.",
+        );
       const at = new Date(this.now()).toISOString();
       const intent: DepositIntent = {
         id: randomUUID(),
@@ -446,7 +449,7 @@ export class FundingService {
         original.status = "credited";
         original.creditedAt = new Date(this.now()).toISOString();
         original.message =
-          "Verified on Base Sepolia and added to the workspace's test balance.";
+          "Verified on Base Sepolia and added to your test balance.";
         await this.store.db
           .prepare("INSERT INTO funding_credits VALUES (?,?,?,?,?,?,?)")
           .run(

@@ -72,7 +72,7 @@ export function LandingView() {
           </Button>
           <Button size="sm" asChild>
             <a href="#dashboard">
-              Open workspace
+              Open dashboard
               <ArrowUpRight />
             </a>
           </Button>
@@ -193,7 +193,7 @@ export function LandingView() {
               <a href="#dashboard/connections">Connect agent</a>
             </Button>
             <Button variant="outline" asChild>
-              <a href="#dashboard">Open workspace</a>
+              <a href="#dashboard">Open dashboard</a>
             </Button>
           </div>
         </section>

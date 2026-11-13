@@ -196,7 +196,7 @@ export class ApiKeyService {
       )
         throw new ApiKeyError(
           409,
-          "Workspace API key limit reached. Revoke unused keys before creating another.",
+          "Your account has reached its API key limit. Revoke an unused key before creating another.",
         );
       const secret = `oct_key_${randomBytes(32).toString("base64url")}`;
       const at = new Date(this.now()).toISOString();

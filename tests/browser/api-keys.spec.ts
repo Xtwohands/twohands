@@ -19,6 +19,9 @@ async function login(page: Page) {
   await expect(
     page.getByRole("button", { name: "Create API key", exact: true }),
   ).toBeEnabled();
+  await expect(
+    page.getByRole("heading", { name: "Your API keys", exact: true }),
+  ).toBeVisible();
 }
 async function create(page: Page, name: string, limit = "0.008") {
   await page
