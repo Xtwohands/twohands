@@ -190,7 +190,7 @@ suite("authenticated account and tenant boundaries", () => {
       "/api/auth/preview-targets",
     ]) {
       const response = await request(app).get(path).set(personal);
-      expect(response.status).toBe(200);
+      expect([path, response.status]).toEqual([path, 200]);
       if (path !== "/api/auth/preview-targets") {
         const preview = await request(app)
           .get(path)

@@ -400,6 +400,21 @@ suite("platform tool settings security and persistence", () => {
       false,
     );
   });
+  it("loads settings saved before a provider existed and keeps that provider's defaults", async () => {
+    await service.change(identities.get("admin")!.userId, await input());
+    // Simulate a row written by a release whose catalog had no Jina entry.
+    await db.pool.query(
+      "UPDATE octolab.platform_tool_settings SET values = values #- '{providers,jina}'",
+    );
+    service = new ToolSettings(db, secrets);
+    await service.ready;
+    const view = await service.view();
+    expect(view.values.providers.jina).toMatchObject({
+      enabled: true,
+      estimateMicros: expect.any(Number),
+    });
+    expect(view.credentials.jina).toBeDefined();
+  });
   it("protects private tables from customer roles and the workspace runtime role", async () => {
     await db.pool.query(
       "DO $$ BEGIN IF NOT EXISTS(SELECT 1 FROM pg_roles WHERE rolname='anon') THEN CREATE ROLE anon NOLOGIN; END IF; IF NOT EXISTS(SELECT 1 FROM pg_roles WHERE rolname='authenticated') THEN CREATE ROLE authenticated NOLOGIN; END IF; END $$",

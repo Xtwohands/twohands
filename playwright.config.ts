@@ -26,7 +26,7 @@ export default defineConfig({
     },
     {
       command:
-        "STORAGE_BACKEND=sqlite DATABASE_URL= PORT=3101 DB_PATH=:memory: EXA_API_KEY= TAVILY_API_KEY= FIRECRAWL_API_KEY= API_TOKEN= npm start",
+        "STORAGE_BACKEND=sqlite DATABASE_URL= PORT=3101 DB_PATH=:memory: EXA_API_KEY= TAVILY_API_KEY= FIRECRAWL_API_KEY= JINA_API_KEY= STRIPE_TEST_ENABLED= DEPOSITS_TESTNET_ENABLED= API_TOKEN= npm start",
       url: "http://127.0.0.1:3101",
       reuseExistingServer: false,
     },
@@ -39,6 +39,12 @@ export default defineConfig({
       command:
         "API_TOKEN= FIXTURE_EXTRACTION_ONLY=true FIXTURE_PORT=3106 node --import tsx tests/fixtures/server.ts",
       url: "http://127.0.0.1:3106",
+      reuseExistingServer: false,
+    },
+    {
+      command:
+        "API_TOKEN= FIXTURE_ALL_PROVIDERS=true FIXTURE_PORT=3108 node --import tsx tests/fixtures/server.ts",
+      url: "http://127.0.0.1:3108",
       reuseExistingServer: false,
     },
   ],

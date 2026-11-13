@@ -1,3 +1,4 @@
+import type { SearchProviderId } from "../server/provider-catalog";
 import { beforeEach, afterEach, it, expect, vi } from "vitest";
 import request from "supertest";
 import { Store } from "../server/store";
@@ -24,7 +25,7 @@ const previous = {
 };
 const search = vi.fn(
   async (
-    provider: "exa" | "tavily",
+    provider: SearchProviderId,
     query: string,
     _domains: string[],
     id: string,
@@ -136,11 +137,9 @@ it("forces matched queries through both search providers and keeps organic data 
       .limitations,
   ).toContain("no general quality ranking");
   expect(
-    labMeasurements([run]).map((m) => [
-      m.attempted,
-      m.referencePassed,
-      m.reviewed,
-    ]),
+    labMeasurements([run])
+      .filter((m) => ["exa", "tavily", "firecrawl"].includes(m.provider))
+      .map((m) => [m.attempted, m.referencePassed, m.reviewed]),
   ).toEqual([
     [5, 5, 0],
     [5, 5, 0],

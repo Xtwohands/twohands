@@ -1,3 +1,4 @@
+import type { SearchProviderId } from "../server/provider-catalog";
 import { grantFixtureAllowance } from "./fixtures/allowance";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import request from "supertest";
@@ -22,7 +23,7 @@ const previous = {
 };
 const search = vi.fn(
   async (
-    _provider: "exa" | "tavily",
+    _provider: SearchProviderId,
     _query: string,
     _domains: string[],
     id: string,

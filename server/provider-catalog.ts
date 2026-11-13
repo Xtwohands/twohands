@@ -28,8 +28,11 @@ export interface ProviderCatalogEntry {
   /** Where an operator creates the provider API key. */
   keySetupUrl: string;
   accountReferenceEnv: string;
-  /** Unit the provider reports usage in on responses. */
-  usageUnit: "usd" | "credits";
+  /**
+   * Unit the provider reports usage in on responses. Credit and token counts
+   * are stored in the receipt's `credits` field and labelled with this unit.
+   */
+  usageUnit: "usd" | "credits" | "tokens";
   /** Environment variable overriding the per-request USD estimate. */
   priceEnv: string;
   defaultUsd: number;
@@ -87,6 +90,136 @@ export const providerCatalog = [
     priceEnv: "FIRECRAWL_SCRAPE_USD",
     defaultUsd: 0.001,
     pricingSource: "https://docs.firecrawl.dev/billing",
+  },
+  {
+    id: "jina",
+    tool: "jina_extract",
+    label: "Jina Reader",
+    initial: "j",
+    operation: "extract",
+    summary: "Page extraction",
+    credentialEnv: "JINA_API_KEY",
+    keySetupUrl: "https://jina.ai/api-dashboard",
+    accountReferenceEnv: "JINA_ACCOUNT_REFERENCE",
+    usageUnit: "tokens",
+    priceEnv: "JINA_READ_USD",
+    // Billed per output token. ~5k tokens for a 20k-character page; unconfirmed
+    // published rate, so this is a conservative per-page estimate.
+    defaultUsd: 0.0005,
+    pricingSource: "https://jina.ai/reader",
+  },
+  {
+    id: "brave",
+    tool: "brave_search",
+    label: "Brave Search",
+    initial: "b",
+    operation: "search",
+    summary: "Web search from an independent index",
+    resultDetail: "Excerpts",
+    credentialEnv: "BRAVE_API_KEY",
+    keySetupUrl: "https://api-dashboard.search.brave.com",
+    accountReferenceEnv: "BRAVE_ACCOUNT_REFERENCE",
+    // Brave does not report usage on search responses.
+    usageUnit: "credits",
+    priceEnv: "BRAVE_SEARCH_USD",
+    defaultUsd: 0.005,
+    pricingSource: "https://brave.com/search/api/",
+  },
+  {
+    id: "parallel",
+    tool: "parallel_search",
+    label: "Parallel Search",
+    initial: "p",
+    operation: "search",
+    summary: "Web search with ranked excerpts for agents",
+    resultDetail: "Excerpts",
+    credentialEnv: "PARALLEL_API_KEY",
+    keySetupUrl: "https://platform.parallel.ai",
+    accountReferenceEnv: "PARALLEL_ACCOUNT_REFERENCE",
+    usageUnit: "credits",
+    priceEnv: "PARALLEL_SEARCH_USD",
+    defaultUsd: 0.005,
+    pricingSource: "https://parallel.ai/pricing",
+  },
+  {
+    id: "perplexity",
+    tool: "perplexity_search",
+    label: "Perplexity Search",
+    initial: "p",
+    operation: "search",
+    summary: "Ranked web results with page excerpts",
+    resultDetail: "Excerpts",
+    credentialEnv: "PERPLEXITY_API_KEY",
+    keySetupUrl: "https://www.perplexity.ai/account/api",
+    accountReferenceEnv: "PERPLEXITY_ACCOUNT_REFERENCE",
+    usageUnit: "credits",
+    priceEnv: "PERPLEXITY_SEARCH_USD",
+    defaultUsd: 0.005,
+    pricingSource: "https://docs.perplexity.ai/getting-started/pricing",
+  },
+  {
+    id: "serper",
+    tool: "serper_search",
+    label: "Serper",
+    initial: "s",
+    operation: "search",
+    summary: "Google web results with short snippets",
+    resultDetail: "Excerpts",
+    credentialEnv: "SERPER_API_KEY",
+    keySetupUrl: "https://serper.dev/api-key",
+    accountReferenceEnv: "SERPER_ACCOUNT_REFERENCE",
+    usageUnit: "credits",
+    priceEnv: "SERPER_SEARCH_USD",
+    defaultUsd: 0.001,
+    pricingSource: "https://serper.dev",
+  },
+  {
+    id: "linkup",
+    tool: "linkup_search",
+    label: "Linkup",
+    initial: "l",
+    operation: "search",
+    summary: "Web search with source-grounded content",
+    resultDetail: "Page text",
+    credentialEnv: "LINKUP_API_KEY",
+    keySetupUrl: "https://app.linkup.so",
+    accountReferenceEnv: "LINKUP_ACCOUNT_REFERENCE",
+    usageUnit: "credits",
+    priceEnv: "LINKUP_SEARCH_USD",
+    defaultUsd: 0.006,
+    pricingSource: "https://www.linkup.so/pricing",
+  },
+  {
+    id: "parallel_extract",
+    tool: "parallel_extract",
+    label: "Parallel Extract",
+    initial: "p",
+    operation: "extract",
+    summary: "Page extraction",
+    // Shares the Parallel account and key with Parallel Search.
+    credentialEnv: "PARALLEL_API_KEY",
+    keySetupUrl: "https://platform.parallel.ai",
+    accountReferenceEnv: "PARALLEL_ACCOUNT_REFERENCE",
+    usageUnit: "credits",
+    priceEnv: "PARALLEL_EXTRACT_USD",
+    defaultUsd: 0.001,
+    pricingSource: "https://parallel.ai/pricing",
+  },
+  {
+    id: "browserbase",
+    tool: "browserbase_extract",
+    label: "Browserbase Fetch",
+    initial: "b",
+    operation: "extract",
+    summary: "Page extraction for hard-to-read pages",
+    credentialEnv: "BROWSERBASE_API_KEY",
+    keySetupUrl: "https://www.browserbase.com/settings",
+    accountReferenceEnv: "BROWSERBASE_ACCOUNT_REFERENCE",
+    usageUnit: "credits",
+    priceEnv: "BROWSERBASE_FETCH_USD",
+    // Markdown format: $4 per 1,000 pages.
+    defaultUsd: 0.004,
+    pricingSource: "https://www.browserbase.com/pricing",
   },
 ] as const satisfies readonly ProviderCatalogEntry[];
 

@@ -46,7 +46,10 @@ export interface CompanyReport {
   opportunities: Opportunity[];
   capabilities: (typeof toolCapabilities)[keyof typeof toolCapabilities];
 }
-const demoOrganic: Record<ProviderId, NonNullable<CompanyReport["organic"]>> = {
+/** Illustrative demo figures exist only for the original three providers. */
+const demoOrganic: Partial<
+  Record<ProviderId, NonNullable<CompanyReport["organic"]>>
+> = {
   exa: {
     offeredSessions: 240,
     selectedSessions: 54,
@@ -155,7 +158,13 @@ export async function companyReport(
       if (!offered) return false;
       const callIds = new Set(
         events
-          .filter((e) => e.id > offered.id && e.type === "tool_called")
+          // Selection means the agent chose. Calls octolab routed are not agent choices.
+          .filter(
+            (e) =>
+              e.id > offered.id &&
+              e.type === "tool_called" &&
+              e.data.selectedBy !== "server_route",
+          )
           .map((e) => e.data.callId),
       );
       callsAfterOffer.set(
@@ -182,7 +191,7 @@ export async function companyReport(
   );
   const organic =
     source === "demo"
-      ? demoOrganic[provider]
+      ? (demoOrganic[provider] ?? null)
       : {
           offeredSessions: eligible.length,
           selectedSessions: selected.length,
@@ -243,7 +252,9 @@ export async function companyReport(
     source === "demo"
       ? demoBenchmarks
       : labMeasurements(latest ? [latest] : []);
-  const metric = benchmarks.find((m) => m.provider === provider)!;
+  const metric =
+    benchmarks.find((m) => m.provider === provider) ??
+    labMeasurements([]).find((m) => m.provider === provider)!;
   const usage =
     source === "local" && latest
       ? providerUsage(latest.calls.filter((c) => c.provider === provider))

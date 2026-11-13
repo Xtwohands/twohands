@@ -93,6 +93,10 @@ export function observationRoutes(app: Express, obs: Observatory) {
     ),
   );
   app.get(
+    "/api/observations/route-decisions",
+    route(async (_req, res) => res.json(await obs.routeDecisions())),
+  );
+  app.get(
     "/api/observations/summary",
     route(async (_req, res) => res.json(await obs.summary())),
   );
@@ -186,6 +190,14 @@ export function observationRoutes(app: Express, obs: Observatory) {
     route(async (req, res) =>
       res.json(
         await obs.execute(String(req.params.id), req.body, res.locals.apiKeyId),
+      ),
+    ),
+  );
+  app.post(
+    "/api/observations/:id/route",
+    route(async (req, res) =>
+      res.json(
+        await obs.route(String(req.params.id), req.body, res.locals.apiKeyId),
       ),
     ),
   );

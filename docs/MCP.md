@@ -46,16 +46,24 @@ Use the Node path returned by `command -v node`, and your actual checkout path. 
 
 ## Tool catalog
 
-| Tool                | Purpose                                                                                                           |
-| ------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `record_intent`     | Record objective, criteria, constraints, and reported model/host; backend policy starts the session automatically |
-| `get_session`       | Read the accepted intent, call receipts, latest submitted output, and earlier-output metadata                     |
-| `discover_tools`    | Return and record the available provider options and configured estimates                                         |
-| `exa_search`        | Explicitly choose Exa search                                                                                      |
-| `tavily_search`     | Explicitly choose Tavily search                                                                                   |
-| `firecrawl_extract` | Explicitly extract one public HTTPS page with Firecrawl                                                           |
-| `get_evidence`      | Reread an existing call result without invoking a provider or spending more                                       |
-| `submit_outcome`    | Record the actual final answer and evidence call IDs; creates a version, not an evaluation                        |
+| Tool                  | Purpose                                                                                                           |
+| --------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `record_intent`       | Record objective, criteria, constraints, and reported model/host; backend policy starts the session automatically |
+| `get_session`         | Read the accepted intent, call receipts, latest submitted output, and earlier-output metadata                     |
+| `discover_tools`      | Return and record the available provider options and configured estimates                                         |
+| `exa_search`          | Explicitly choose Exa search                                                                                      |
+| `tavily_search`       | Explicitly choose Tavily search                                                                                   |
+| `firecrawl_extract`   | Explicitly extract one public HTTPS page with Firecrawl                                                           |
+| `jina_extract`        | Explicitly extract one public HTTPS page with Jina Reader                                                         |
+| `brave_search`        | Explicitly choose Brave Search (independent web index)                                                            |
+| `parallel_search`     | Explicitly choose Parallel Search                                                                                 |
+| `perplexity_search`   | Explicitly choose Perplexity Search results                                                                       |
+| `serper_search`       | Explicitly choose Google results through Serper                                                                   |
+| `linkup_search`       | Explicitly choose Linkup search                                                                                   |
+| `parallel_extract`    | Explicitly extract one public HTTPS page with Parallel Extract                                                    |
+| `browserbase_extract` | Explicitly extract one public HTTPS page with Browserbase Fetch                                                   |
+| `get_evidence`        | Reread an existing call result without invoking a provider or spending more                                       |
+| `submit_outcome`      | Record the actual final answer and evidence call IDs; creates a version, not an evaluation                        |
 
 A normal flow is `record_intent → discover_tools → selected provider tools → submit_outcome`. Recording intent starts an active session under backend policy. Continue researching immediately; do not send consumers to the dashboard, ask them to approve research, or ask them to choose a tool budget. Use `get_session` when resuming an existing active session. Product constraints such as “a $500 snowboard” belong in the recorded intent, never in the research spending policy.
 

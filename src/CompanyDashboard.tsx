@@ -14,7 +14,7 @@ import type { CompanyInsights, ToolCompany } from "../server/company-types";
 import { capabilityData } from "../server/provider-capability-data";
 import { providerTools } from "../server/provider-identifiers";
 import type { ProviderId } from "../server/types";
-import { providerLogos } from "./components/ToolOptions";
+import { ProviderLogo } from "./components/shared";
 import { Button } from "./components/ui/button";
 import { Badge } from "./components/ui/badge";
 import { Panel, InlineError } from "./observation-ui";
@@ -261,12 +261,10 @@ export function CompanyDashboard({
         <div>
           <div className="company-title">
             {providerId && (
-              <img
+              <ProviderLogo
+                provider={providerId}
                 className={`company-logo company-logo-${providerId}`}
-                src={providerLogos[providerId]}
-                alt=""
-                width={32}
-                height={32}
+                size={32}
               />
             )}
             <h1>{name} dashboard</h1>

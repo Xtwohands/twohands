@@ -1,3 +1,4 @@
+import { providerToolNames } from "../server/provider-catalog.js";
 import { afterEach, beforeEach, expect, it } from "vitest";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -79,7 +80,10 @@ async function connect(base = url, token = "stdio-test-token", scopedKey = "") {
 }
 it("bridges stdio to authenticated HTTP and records the client alongside cached evidence", async () => {
   await connect();
-  expect((await client.listTools()).tools).toHaveLength(8);
+  // Five core tools, route_call, and one tool per provider.
+  expect((await client.listTools()).tools).toHaveLength(
+    6 + providerToolNames.length,
+  );
   const s = payload(
     await client.callTool({
       name: "record_intent",

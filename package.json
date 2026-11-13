@@ -28,7 +28,8 @@
     "verify:release": "node scripts/verify-release-artifact.mjs",
     "db:backup": "node --use-env-proxy build/backup-cli.js backup",
     "db:restore": "node --use-env-proxy build/backup-cli.js restore",
-    "test:restore": "node --import tsx scripts/restore-drill.ts"
+    "test:restore": "node --import tsx scripts/restore-drill.ts",
+    "simulate:sellers": "node --import tsx scripts/simulate-seller-data.ts"
   },
   "engines": {
     "node": ">=24.5.0"

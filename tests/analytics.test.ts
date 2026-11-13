@@ -1,3 +1,4 @@
+import { providerIds } from "../server/provider-catalog.js";
 import { beforeEach, afterEach, describe, it, expect } from "vitest";
 import { Store } from "../server/store";
 import { analytics } from "../server/analytics";
@@ -143,7 +144,7 @@ describe("privacy-preserving cross-provider aggregates", () => {
       cohortSize: 0,
       minCohort: 0,
     });
-    expect(data.providers).toHaveLength(3);
+    expect(data.providers).toHaveLength(providerIds.length);
     for (const provider of data.providers)
       expect(provider).toMatchObject({
         calls: 0,

@@ -38,7 +38,7 @@ Discovery is a snapshot. Execution recomputes prices and enforces current keys, 
 
 ## Required selection summaries
 
-Every new `exa_search`, `tavily_search`, and `firecrawl_extract` call requires a trimmed, non-empty `statedReason` of at most 2,000 characters. Explain the tool's fit and the unresolved need, briefly. The record is labeled agent-reported, not observed reasoning.
+Every new provider tool call (each `*_search` and `*_extract` tool) requires a trimmed, non-empty `statedReason` of at most 2,000 characters. Explain the tool's fit and the unresolved need, briefly. The record is labeled agent-reported, not observed reasoning.
 
 Historical explanations are not backfilled. The HTTP execution path can replay an identical historical receipt with an empty reason without new work; changed arguments still fail. MCP schemas require a reason, so use `get_evidence` to recover older receipts rather than resubmit their obsolete arguments.
 

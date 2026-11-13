@@ -1,8 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { candidates, coverage } from "../server/router";
-import { intent } from "./helpers";
+import { availability, intent } from "./helpers";
 import { config } from "../server/config";
-const available = { exa: true, tavily: true, firecrawl: false };
+const available = { ...availability(false), exa: true, tavily: true };
 describe("deterministic routing", () => {
   it("uses neutral values and flags missing observations", () => {
     const r = candidates(intent, 100000, [], available);

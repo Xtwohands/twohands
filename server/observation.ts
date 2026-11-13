@@ -1,13 +1,20 @@
 import { isExtractProvider, providerToolNames } from "./provider-catalog.js";
 import { providerWork } from "./provider-settings-gate.js";
-import {
-  applyOperatorAllowance,
-  operatorAllows,
-} from "./account-allowance.js";
+import { applyOperatorAllowance, operatorAllows } from "./account-allowance.js";
 import { z } from "zod";
 import { providerRegistry, registeredToolSchema } from "./provider-adapters.js";
 import { providerAccountForCall } from "./provider-accounts.js";
-import { matchTools, type DiscoveryInput } from "./tool-discovery.js";
+import {
+  matchTools,
+  discoveryOperation,
+  type DiscoveryInput,
+} from "./tool-discovery.js";
+import {
+  rankRoute,
+  routePriorities,
+  ROUTE_MIN_SAMPLES,
+  type RouteRanking,
+} from "./route-policy.js";
 import { SHARING_POLICY, sharingPolicyEvent } from "./sharing-policy.js";
 import {
   searchOptions,
@@ -26,6 +33,7 @@ import { digest, ObservationStore } from "./observation-store.js";
 import type { Store } from "./store.js";
 import type { ProviderId } from "./types.js";
 import type { RoutingPolicy } from "./account-data-types.js";
+import { taskTypes, reasonThemes } from "./seller-taxonomy.js";
 import type {
   ObservationSession,
   ObservedCall,
@@ -50,6 +58,12 @@ export const sessionInput = z
       .min(1)
       .max(20),
     constraints: z.string().max(4000).default(""),
+    taskType: z
+      .enum(taskTypes)
+      .default("other")
+      .describe(
+        "The closest category for this task. Used only to group aggregate reports; choose other when none fits.",
+      ),
     budgetMicros: z.number().int().min(0).max(5000000).default(100000),
     model: text(160).default("Not reported"),
     host: text(100).default("External agent"),
@@ -72,11 +86,62 @@ const legacyCallInput = z
     url: text(2048).optional(),
     domains: requestDomains,
     statedReason: z.string().max(2000).default(""),
+    reasonTheme: z
+      .enum(reasonThemes)
+      .optional()
+      .describe(
+        "Optional: the single closest theme for your stated reason. Used only to group aggregate reports.",
+      ),
   })
   .strict();
 export const callInput = legacyCallInput.extend({
   statedReason: selectionReason,
 });
+/** A provider-neutral request. Octolab chooses the provider and records why. */
+export const routeInput = z
+  .object({
+    requestKey: text(100).describe(
+      "A unique key for this request. Reuse the same key and arguments to retry without a new decision or duplicate spend.",
+    ),
+    need: selectionReason.describe(
+      "Required brief statement of what this request must establish. Agent-reported, never private chain of thought.",
+    ),
+    priority: z
+      .enum(routePriorities)
+      .default("balanced")
+      .describe(
+        "What to weight most when several tools are eligible. Default balanced.",
+      ),
+    allowFallback: z
+      .boolean()
+      .default(true)
+      .describe(
+        "If the chosen provider fails, try the next eligible tool once. Each attempt is a separate recorded call with its own estimate.",
+      ),
+    operation: discoveryOperation,
+  })
+  .strict();
+export type RouteDecision = Omit<RouteRanking, "ranking"> & {
+  decisionId: string;
+  requestKey: string;
+  signature: string;
+  operation: z.infer<typeof discoveryOperation>;
+  need: string;
+  ranking: ToolName[];
+  chosenTool: ToolName;
+  fallbackAllowed: boolean;
+  remainingBudgetMicros: number;
+  catalogVersion: string;
+  selectedBy: "server_route";
+  meaning: string;
+};
+export type RouteAttempt = {
+  attempt: number;
+  tool: ToolName;
+  callId: string | null;
+  status: ObservedCall["status"] | "not_started";
+  error: string | null;
+};
 export const outcomeInput = z
   .object({
     requestKey: text(120),
@@ -128,6 +193,20 @@ export class Observatory {
   controlledSamples?: () => Promise<
     Partial<
       Record<ProviderId, import("./provider-lab-types.js").ControlledSample>
+    >
+  >;
+  /** Seller-approved listing text, shown to agents in place of the adapter default. */
+  listings?: () => Promise<
+    Partial<
+      Record<
+        ProviderId,
+        {
+          version: number;
+          description: string;
+          useWhen: string;
+          limitations: string;
+        }
+      >
     >
   >;
   constructor(
@@ -252,7 +331,7 @@ export class Observatory {
     };
   }
   async create(
-    input: z.infer<typeof sessionInput>,
+    input: z.input<typeof sessionInput>,
     source: ObservationSession["modelSource"],
     backendAuthorized = false,
     apiKeyId?: string,
@@ -309,6 +388,9 @@ export class Observatory {
           model: s.model,
           modelSource: source,
           host: s.host,
+          ...(s.taskType && s.taskType !== "other"
+            ? { taskType: s.taskType }
+            : {}),
         },
       );
       await this.db.event(
@@ -328,7 +410,7 @@ export class Observatory {
     return s;
   }
   async createAgentSession(
-    input: z.infer<typeof agentSessionInput>,
+    input: z.input<typeof agentSessionInput>,
     apiKeyId?: string,
   ) {
     const data = agentSessionInput.parse(input);
@@ -370,6 +452,7 @@ export class Observatory {
       )
     ).flat();
     const controlled = (await this.controlledSamples?.()) ?? {};
+    const listings = (await this.listings?.()) ?? {};
     return await Promise.all(
       (Object.keys(names) as ToolName[]).map(async (tool) => {
         const provider = names[tool];
@@ -457,6 +540,15 @@ export class Observatory {
             controlled: controlled[provider] ?? null,
           },
           ...toolCapabilities[tool],
+          ...(listings[provider]
+            ? {
+                description: listings[provider].description,
+                useWhen: listings[provider].useWhen,
+                limitations: listings[provider].limitations,
+              }
+            : {}),
+          // 0 is the adapter's built-in text; higher numbers are seller-approved versions.
+          listingVersion: listings[provider]?.version ?? 0,
           available:
             providerRegistry.credentialStatus(tool).configured &&
             providerRegistry.credentialStatus(tool).enabled,
@@ -585,7 +677,275 @@ export class Observatory {
   async execute(id: string, raw: unknown, apiKeyId?: string) {
     return providerWork(() => this.executeCurrent(id, raw, apiKeyId));
   }
-  private async executeCurrent(id: string, raw: unknown, apiKeyId?: string) {
+  /** Octolab chooses the provider for a provider-neutral request and records the decision before any provider work. */
+  async route(id: string, raw: unknown, apiKeyId?: string) {
+    return providerWork(() => this.routeCurrent(id, raw, apiKeyId));
+  }
+  private async routeEvents(id: string, type: string) {
+    return (await this.db.events(id)).filter((e) => e.type === type);
+  }
+  private async routeDecision(id: string, requestKey: string) {
+    return (await this.routeEvents(id, "route_decided")).find(
+      (e) => e.data.requestKey === requestKey,
+    )?.data as RouteDecision | undefined;
+  }
+  private async routeCurrent(id: string, raw: unknown, apiKeyId?: string) {
+    const input = routeInput.parse(raw);
+    const signature = digest(input);
+    const mismatch = () =>
+      new ObservationError(
+        409,
+        "This request key was used with different arguments.",
+      );
+    let decision = await this.routeDecision(id, input.requestKey);
+    if (decision && decision.signature !== signature) throw mismatch();
+    const replayed = Boolean(decision);
+    if (!decision) {
+      const session = await this.require(id);
+      const key = apiKeyId ? await this.db.apiKeys.active(apiKeyId) : undefined;
+      const operatorAllowance = await this.db.store.allowance.status();
+      const remainingBudgetMicros = Math.max(
+        0,
+        Math.min(
+          operatorAllowance.remainingMicros ?? Infinity,
+          session.budgetMicros - session.spentMicros - session.reservedMicros,
+          key?.remainingMicros ?? Infinity,
+        ),
+      );
+      const catalog = await this.catalog(apiKeyId);
+      let discovery: ReturnType<typeof matchTools<ToolName>>;
+      try {
+        discovery = matchTools(
+          { need: input.need, operations: [input.operation] },
+          Object.fromEntries(
+            catalog.map((t) => [t.tool, t.available]),
+          ) as Record<ToolName, boolean>,
+          remainingBudgetMicros,
+        );
+      } catch (error) {
+        if (error instanceof z.ZodError) throw error;
+        throw new ObservationError(
+          400,
+          error instanceof Error ? error.message : "Invalid route request.",
+        );
+      }
+      applyOperatorAllowance(discovery.tools, operatorAllowance);
+      const now = Date.now();
+      const ranked = rankRoute(
+        catalog.map((t) => {
+          const matched = discovery.tools.find((m) => m.tool === t.tool)!;
+          let { status, reason }: { status: string; reason: string } =
+            matched.discoveryMatches[0];
+          if (status === "eligible" && !t.enabled) {
+            status = "disabled";
+            reason =
+              key && !key.allowedTools.includes(t.tool)
+                ? "Not allowed by this API key."
+                : "Paused by workspace routing settings.";
+          }
+          if (
+            status === "eligible" &&
+            (this.timestamps.get(t.provider) ?? []).filter(
+              (at) => now - at < 60000,
+            ).length >= providerRpm(t.provider)
+          ) {
+            status = "rate_limited";
+            reason = "Provider request limit reached for the current minute.";
+          }
+          const organic = t.reputation.organic;
+          return {
+            tool: t.tool,
+            provider: t.provider,
+            status,
+            reason,
+            estimatedMicros:
+              matched.requestEstimates[0]?.estimatedMicros ?? null,
+            medianLatencyMs:
+              organic.latencySampleCount >= ROUTE_MIN_SAMPLES
+                ? organic.medianLatencyMs
+                : null,
+            successRate: organic.successRate,
+            sampleCount: organic.sampleCount,
+          };
+        }),
+        input.priority,
+      );
+      const recorded = {
+        requestKey: input.requestKey,
+        operation: discovery.operations[0],
+        need: input.need,
+        ...ranked,
+        ranking: ranked.ranking as ToolName[],
+        remainingBudgetMicros,
+        catalogVersion: discovery.catalogVersion,
+        selectedBy: "server_route" as const,
+        meaning:
+          "Octolab's own routing decision, computed from request estimates and observed workspace execution. It is not an agent choice and not a judgement of answer quality. Unmeasured components use a neutral prior.",
+      };
+      if (!ranked.ranking.length) {
+        // Recorded, but does not hold the request key: a later retry is decided afresh.
+        await this.db.event(id, "route_unavailable", "observed", recorded);
+        throw new ObservationError(409, ranked.summary);
+      }
+      decision = await this.db.transaction(async () => {
+        const existing = await this.routeDecision(id, input.requestKey);
+        if (existing) {
+          if (existing.signature !== signature) throw mismatch();
+          return existing;
+        }
+        const created: RouteDecision = {
+          decisionId: this.db.newId(),
+          signature,
+          ...recorded,
+          chosenTool: recorded.ranking[0],
+          fallbackAllowed: input.allowFallback,
+        };
+        await this.db.event(id, "route_decided", "observed", created);
+        return created;
+      });
+    }
+    const { operation } = input;
+    const order = decision.ranking.slice(0, decision.fallbackAllowed ? 2 : 1);
+    const attempts: RouteAttempt[] = [];
+    let call: (ObservedCall & { replayed?: boolean }) | undefined;
+    let blocked: ObservationError | undefined;
+    for (const [index, tool] of order.entries()) {
+      const attempt = index + 1;
+      const adapter = providerRegistry.get(tool);
+      let failure: { error: string; httpStatus: number | null } | undefined;
+      try {
+        call = await this.executeCurrent(
+          id,
+          {
+            tool,
+            requestKey: `${input.requestKey}:r${attempt}`,
+            statedReason: input.need,
+            ...(adapter.operation === "extract"
+              ? { url: operation.url }
+              : {
+                  query: operation.query,
+                  domains: operation.domains,
+                  ...(operation.maxResults !== undefined
+                    ? { maxResults: operation.maxResults }
+                    : {}),
+                  ...(adapter.searchDepth && operation.searchDepth !== undefined
+                    ? { searchDepth: operation.searchDepth }
+                    : {}),
+                }),
+          },
+          apiKeyId,
+          { decisionId: decision.decisionId, attempt },
+        );
+        attempts.push({
+          attempt,
+          tool,
+          callId: call.id,
+          status: call.status,
+          error: call.error ?? null,
+        });
+        if (call.status !== "failed") break;
+        failure = {
+          error: call.error ?? "Provider request failed.",
+          httpStatus: call.httpStatus ?? null,
+        };
+      } catch (error) {
+        // A refusal before any provider work (limit, budget, pause). Nothing was spent.
+        if (
+          !(error instanceof ObservationError) ||
+          ![409, 429].includes(error.status)
+        )
+          throw error;
+        blocked = error;
+        attempts.push({
+          attempt,
+          tool,
+          callId: null,
+          status: "not_started",
+          error: error.message,
+        });
+        failure = { error: error.message, httpStatus: null };
+      }
+      const next = order[index + 1];
+      if (
+        next &&
+        !(await this.routeEvents(id, "route_fallback")).some(
+          (e) =>
+            e.data.decisionId === decision!.decisionId &&
+            e.data.fromAttempt === attempt,
+        )
+      )
+        await this.db.event(id, "route_fallback", "observed", {
+          decisionId: decision.decisionId,
+          fromAttempt: attempt,
+          fromTool: tool,
+          fromCallId: attempts.at(-1)!.callId,
+          ...failure,
+          toTool: next,
+          meaning:
+            "The chosen tool did not return a result, so octolab tried the next eligible tool from the recorded ranking. Each attempt is a separate call.",
+        });
+    }
+    if (!call) throw blocked!;
+    const { signature: _signature, ...publicDecision } = decision;
+    return {
+      routed: true,
+      replayed,
+      decision: publicDecision,
+      attempts,
+      call,
+    };
+  }
+  /** Every route decision in the workspace, newest first, with what each one led to. */
+  async routeDecisions(limit = 200) {
+    const rows: Record<string, unknown>[] = [];
+    for (const session of await this.db.list()) {
+      const events = await this.db.events(session.id);
+      if (!events.some((e) => e.type.startsWith("route_"))) continue;
+      const calls = await this.db.calls(session.id);
+      for (const e of events) {
+        if (e.type !== "route_decided" && e.type !== "route_unavailable")
+          continue;
+        const { signature: _signature, ...data } = e.data;
+        const attempts = calls
+          .filter(
+            (c) => e.data.decisionId && c.routeDecisionId === e.data.decisionId,
+          )
+          .map((c) => ({
+            callId: c.id,
+            tool: c.tool,
+            status: c.status,
+            latencyMs: c.latencyMs ?? null,
+            estimateMicros: c.estimateMicros,
+            error: c.error ?? null,
+          }));
+        rows.push({
+          sessionId: session.id,
+          sessionTitle: session.title,
+          at: e.at,
+          outcome: e.type === "route_decided" ? "decided" : "unavailable",
+          ...data,
+          attempts,
+          fallbacks: events
+            .filter(
+              (f) =>
+                f.type === "route_fallback" &&
+                f.data.decisionId === e.data.decisionId,
+            )
+            .map((f) => ({ at: f.at, ...f.data })),
+          finalStatus: attempts.at(-1)?.status ?? null,
+        });
+      }
+    }
+    return rows
+      .sort((a, b) => String(b.at).localeCompare(String(a.at)))
+      .slice(0, limit);
+  }
+  private async executeCurrent(
+    id: string,
+    raw: unknown,
+    apiKeyId?: string,
+    routed?: { decisionId: string; attempt: number },
+  ): Promise<ObservedCall & { replayed?: boolean }> {
     const input = legacyCallInput.parse(raw);
     if (apiKeyId) await this.db.apiKeys.toolAccess(apiKeyId, input.tool);
     const adapter = providerRegistry.get(input.tool);
@@ -717,7 +1077,16 @@ export class Observatory {
           this.db.store,
           input.tool,
         ),
+        ...(routed
+          ? {
+              selectedBy: "server_route" as const,
+              routeDecisionId: routed.decisionId,
+            }
+          : {}),
         statedReason: input.statedReason,
+        ...(input.reasonTheme && !routed
+          ? { reasonTheme: input.reasonTheme }
+          : {}),
         status: "running",
         startedAt: new Date().toISOString(),
         estimateMicros,
@@ -738,11 +1107,13 @@ export class Observatory {
       s.status = "active";
       await this.db.save(s);
       await this.db.saveCall(call, signature);
-      if (input.statedReason)
+      // A routed call carries the agent's stated need, not a reason for choosing this tool.
+      if (input.statedReason && !routed)
         await this.db.event(id, "selection_explanation", "agent_reported", {
           callId: call.id,
           tool: input.tool,
           text: input.statedReason,
+          ...(input.reasonTheme ? { theme: input.reasonTheme } : {}),
           meaning: "Agent-supplied explanation, not private reasoning.",
         });
       await this.db.event(id, "tool_called", "observed", {
@@ -752,7 +1123,13 @@ export class Observatory {
         estimateMicros,
         costEstimate: estimate,
         rateCardVersion: config.rateCardVersion,
-        selectedBy: "explicit_caller_choice",
+        selectedBy: routed ? "server_route" : "explicit_caller_choice",
+        ...(routed
+          ? {
+              routeDecisionId: routed.decisionId,
+              routeAttempt: routed.attempt,
+            }
+          : {}),
         ...(apiKeyId ? { apiKeyId } : {}),
       });
       this.timestamps.get(provider)!.push(now);

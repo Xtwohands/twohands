@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
+import { providerToolNames } from "../../server/provider-catalog";
 test.use({ baseURL: "http://127.0.0.1:3102", reducedMotion: "reduce" });
 const proposal = {
   title: "QA observation fixture",
@@ -889,8 +890,13 @@ test("provider options start collapsed, show logos and prices, and expand indepe
   await page.goto(`/#sessions/${s.id}/trace`);
   await page.getByRole("button", { name: /Tool options returned/ }).click();
   const cards = page.locator(".provider-option");
-  await expect(cards).toHaveCount(3);
-  for (const name of ["exa search", "tavily search", "firecrawl extract"]) {
+  await expect(cards).toHaveCount(providerToolNames.length);
+  for (const name of [
+    "exa search",
+    "tavily search",
+    "firecrawl extract",
+    "jina extract",
+  ]) {
     await expect(
       page.getByRole("button", { name: new RegExp(`^${name}`) }),
     ).toHaveAttribute("aria-expanded", "false");

@@ -40,7 +40,7 @@ const settings = z
     allowedTools: z
       .array(z.enum(API_KEY_TOOLS))
       .min(1)
-      .max(3)
+      .max(API_KEY_TOOLS.length)
       .default([...API_KEY_TOOLS])
       .transform((v) => [...new Set(v)].sort()),
     limitUsd: dollars,
@@ -370,6 +370,7 @@ export function requiredApiKeyScope(
   if (
     method === "GET" &&
     (path === "/api/observations" ||
+      path === "/api/observations/route-decisions" ||
       new RegExp(
         `^/api/observations/${session}(?:/calls/${session}|/export)?$`,
       ).test(path))
@@ -382,7 +383,7 @@ export function requiredApiKeyScope(
     return "tools:discover";
   if (
     method === "POST" &&
-    new RegExp(`^/api/observations/${session}/call$`).test(path)
+    new RegExp(`^/api/observations/${session}/(?:call|route)$`).test(path)
   )
     return "tools:execute";
   if (

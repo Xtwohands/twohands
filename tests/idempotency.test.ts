@@ -1,3 +1,4 @@
+import { availability } from "./helpers";
 import { beforeEach, afterEach, describe, it, expect, vi } from "vitest";
 import request from "supertest";
 import { Store } from "../server/store";
@@ -13,9 +14,11 @@ beforeEach(() => {
   engine = new Engine(store);
   app = createApp(store, engine);
   vi.spyOn(engine, "available").mockReturnValue({
+    ...availability(false),
     exa: true,
     tavily: true,
     firecrawl: true,
+    jina: true,
   });
 });
 afterEach(async () => {
