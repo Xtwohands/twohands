@@ -8,7 +8,9 @@ export const STORAGE_TABLES = [
   ...SQLITE_SCHEMA.matchAll(/CREATE TABLE IF NOT EXISTS (\w+)\(/g),
 ]
   .map((m) => m[1])
-  .filter((t) => t !== "api_key_workspace");
+  // Seller state is keyed by provider, not by workspace. Hosted mode keeps it in its
+  // own tables, so it is never part of a workspace import.
+  .filter((t) => t !== "api_key_workspace" && !t.startsWith("seller_"));
 export const RUNTIME_LOCK = "octolab-runtime-v1";
 export async function applyMigrations(database: PostgresDatabase) {
   const client = await database.pool.connect();

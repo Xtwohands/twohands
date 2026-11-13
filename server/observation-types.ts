@@ -53,6 +53,8 @@ export interface ObservationSession {
   objective: string;
   criteria: Criterion[];
   constraints: string;
+  /** Agent-reported category. Absent on sessions recorded before categories existed. */
+  taskType?: import("./seller-taxonomy.js").TaskType;
   intentHash: string;
   budgetMicros: number;
   spentMicros: number;
@@ -94,7 +96,12 @@ export interface ObservedCall {
     settings: Record<string, string | number | boolean>;
   };
   costEstimate?: import("./request-cost.js").RequestEstimate;
+  /** Present only when octolab chose the provider through a recorded route decision. */
+  selectedBy?: "server_route";
+  routeDecisionId?: string;
   statedReason: string;
+  /** Agent-reported theme for the stated reason. */
+  reasonTheme?: import("./seller-taxonomy.js").ReasonTheme;
   status: "running" | "succeeded" | "failed" | "interrupted";
   startedAt: string;
   finishedAt?: string;

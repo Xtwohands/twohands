@@ -26,7 +26,7 @@ export default defineConfig({
     },
     {
       command:
-        "STORAGE_BACKEND=sqlite DATABASE_URL= PORT=3101 DB_PATH=:memory: EXA_API_KEY= TAVILY_API_KEY= FIRECRAWL_API_KEY= API_TOKEN= npm start",
+        "STORAGE_BACKEND=sqlite DATABASE_URL= PORT=3101 DB_PATH=:memory: EXA_API_KEY= TAVILY_API_KEY= FIRECRAWL_API_KEY= JINA_API_KEY= STRIPE_TEST_ENABLED= DEPOSITS_TESTNET_ENABLED= API_TOKEN= npm start",
       url: "http://127.0.0.1:3101",
       reuseExistingServer: false,
     },

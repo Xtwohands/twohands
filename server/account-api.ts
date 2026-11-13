@@ -236,6 +236,7 @@ function operatorRestricted(req: Request, path: string) {
   if (
     path.startsWith("/provider-lab") ||
     path.startsWith("/company-insights") ||
+    path.startsWith("/seller") ||
     path.startsWith("/provider-activity") ||
     path === "/observations/aggregate"
   )

@@ -43,6 +43,7 @@ import {
   FileCheck02,
   TerminalSquare,
   Activity,
+  GitBranch01,
   CreditCard01,
   Key01,
 } from "@untitledui/icons";
@@ -199,6 +200,8 @@ function readRoute() {
       "plans",
       "insights",
       "activity",
+      "choices",
+      "listing",
       "team",
       "details",
       "integration",
@@ -221,6 +224,9 @@ function eventLabel(e: ObservationEvent) {
         tools_offered: "Tool options returned",
         selection_explanation: "Agent’s stated reason",
         tool_called: "Tool requested",
+        route_decided: "Route decided by octolab",
+        route_fallback: "Route fallback",
+        route_unavailable: "No eligible route",
         tool_result: "Tool result received",
         call_interrupted: "Call interrupted",
         outcome_submitted: "Output submitted",
@@ -302,6 +308,10 @@ function eventText(e: ObservationEvent) {
   if (e.type === "tool_result")
     return `${String(d.status)} · ${d.httpStatus ? `HTTP ${d.httpStatus} · ` : ""}${d.latencyMs} ms · ${reportedUsage(d.result as Record<string, any> | null)}`;
   if (e.type === "tools_offered") return String(d.need);
+  if (e.type === "route_decided" || e.type === "route_unavailable")
+    return String(d.summary);
+  if (e.type === "route_fallback")
+    return `${String(d.fromTool).replaceAll("_", " ")} → ${String(d.toTool).replaceAll("_", " ")} · ${String(d.error)}`;
   if (e.type === "intent_recorded") return String(d.objective);
   if (e.type === "outcome_submitted")
     return "A new output version is ready for review.";
@@ -722,6 +732,8 @@ export function ObservationApp() {
           [
             { id: "overview", label: "Overview", icon: Grid01 },
             { id: "activity", label: "Live usage", icon: Activity },
+            { id: "choices", label: "Agent choices", icon: GitBranch01 },
+            { id: "listing", label: "Listing", icon: FileCheck02 },
             {
               id: "benchmarks",
               label: "Controlled tests",

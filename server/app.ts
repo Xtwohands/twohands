@@ -42,6 +42,14 @@ import { observationRoutes } from "./observation-api.js";
 import { ProviderLab } from "./provider-lab.js";
 import { providerLabRoutes } from "./provider-lab-api.js";
 import { companyReport } from "./company-insights.js";
+import { sellerReport } from "./seller-report.js";
+import {
+  sellerRoutes,
+  localSellerDeps,
+  type SellerDeps,
+} from "./seller-api.js";
+import { SellerStore, PostgresSellerDb } from "./seller-store.js";
+import { hostedSellerRoutes, loadSellerDataHosted } from "./seller-hosted.js";
 const domain = z
   .string()
   .trim()
@@ -134,6 +142,26 @@ export function createApp(
   );
   if (accounts) app.use("/api", accountPreviewAccess(accounts));
   accountRoutes(app, accounts);
+  const sellers = new SellerStore(
+    store.db instanceof PostgresDatabase
+      ? new PostgresSellerDb(store.db.pool)
+      : store,
+  );
+  app.locals.sellers = sellers;
+  const sellerDeps: SellerDeps =
+    store.db instanceof PostgresDatabase
+      ? {
+          loadData: (
+            (pool) => () =>
+              loadSellerDataHosted(pool)
+          )(store.db.pool),
+          sellers,
+          simulated: async () => null,
+        }
+      : localSellerDeps(observatory, sellers);
+  // Agents are shown seller-approved listing text wherever a tool is described.
+  observatory.listings = async () => await sellers.liveAll();
+  if (accounts) hostedSellerRoutes(app, accounts, sellerDeps);
   companyAccountRoutes(app, accounts);
   workspaceAllowanceAdminRoutes(app, store, accounts);
   toolSettingsRoutes(app, toolSettings, accounts);
@@ -236,6 +264,9 @@ export function createApp(
   app.use(express.json({ limit: "24kb" }));
   apiKeyRoutes(app, observatory.db.apiKeys, !!accounts);
   observationRoutes(app, observatory);
+  // The operator's provider-keyed view. In hosted mode the account gate limits it to
+  // platform administrators; companies use /api/companies/:id/seller instead.
+  sellerRoutes(app, sellerDeps, { admin: true });
   workspaceRoutes(app, observatory);
   fundingRoutes(app, funding, stripeFunding);
   providerLabRoutes(app, providerLab);
@@ -250,6 +281,23 @@ export function createApp(
     }
     res.json(
       await providerActivity(observatory, provider.data, Number(days.data)),
+    );
+  });
+  app.get("/api/company-insights/:provider/choices", async (req, res) => {
+    const p = z.enum(providerIds).safeParse(req.params.provider);
+    const days = z.enum(["7", "30", "90"]).safeParse(req.query.days ?? "30");
+    const named = z.enum(["0", "1"]).safeParse(req.query.named ?? "0");
+    if (!p.success || !days.success || !named.success) {
+      res.status(400).json({
+        error: "Choose a supported provider, a 7, 30 or 90 day window.",
+      });
+      return;
+    }
+    res.json(
+      await sellerReport(observatory, p.data, {
+        days: Number(days.data),
+        named: named.data === "1",
+      }),
     );
   });
   app.get("/api/company-insights/:provider", async (req, res) => {

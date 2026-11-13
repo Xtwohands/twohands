@@ -80,8 +80,9 @@ async function connect(base = url, token = "stdio-test-token", scopedKey = "") {
 }
 it("bridges stdio to authenticated HTTP and records the client alongside cached evidence", async () => {
   await connect();
+  // Five core tools, route_call, and one tool per provider.
   expect((await client.listTools()).tools).toHaveLength(
-    5 + providerToolNames.length,
+    6 + providerToolNames.length,
   );
   const s = payload(
     await client.callTool({

@@ -124,10 +124,17 @@
 }
 .company-tabs {
   gap: 24px;
+  min-width: 0;
+  max-width: 100%;
 }
 .company-tabs > [data-slot="tabs-list"] {
   height: 42px;
   width: 100%;
+  /* More tabs than a phone is wide: scroll the strip, never the page. */
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
   justify-content: flex-start;
   border-bottom: 1px solid #303030;
   border-radius: 0;
@@ -1302,4 +1309,213 @@
   .provider-activity .company-metric strong {
     font-size: 22px;
   }
+}
+
+/* Agent choices (seller report). Charts stay neutral; no accent colour. */
+.seller-choices {
+  display: grid;
+  gap: 16px;
+}
+.choices-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+.choices-switch {
+  display: grid;
+  justify-items: start;
+}
+.choices-simulated {
+  margin: 0;
+  padding: 12px 16px;
+  border: 1px solid #5a4a24;
+  border-radius: 10px;
+  background: #221c0f;
+  color: #e6d3a6;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.choices-track {
+  display: block;
+  height: 8px;
+  border-radius: 4px;
+  background: #262626;
+  overflow: hidden;
+}
+.choices-track > span {
+  display: block;
+  height: 100%;
+  border-radius: 4px;
+  background: #a3a3a3;
+}
+.choices-funnel,
+.choices-bars,
+.choices-notes {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 12px;
+}
+.choices-funnel li {
+  display: grid;
+  grid-template-columns: 200px minmax(0, 1fr) 56px;
+  gap: 14px;
+  align-items: center;
+  font-size: 13px;
+}
+.choices-funnel li .choices-track {
+  height: 18px;
+}
+.choices-funnel small {
+  display: block;
+  color: var(--muted-foreground);
+  font-size: 12px;
+}
+.choices-funnel strong,
+.choices-bars strong,
+.choices-table td:not(:first-child),
+.choices-facts dd {
+  font-variant-numeric: tabular-nums;
+}
+.choices-funnel strong {
+  text-align: right;
+}
+.choices-bars li {
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+}
+.choices-bars li > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+.choices-stack {
+  display: flex;
+  width: 100%;
+  min-width: 160px;
+  height: 12px;
+  border-radius: 3px;
+  overflow: hidden;
+  background: #2a2a2a;
+}
+.choices-stack .you {
+  background: #d4d4d4;
+}
+.choices-stack .rival {
+  background: #6b6b6b;
+}
+.choices-note,
+.choices-empty,
+.choices-notes {
+  color: var(--muted-foreground);
+  font-size: 12px;
+}
+.choices-note {
+  margin: 14px 0 0;
+}
+.choices-notes {
+  gap: 4px;
+}
+.choices-facts {
+  margin: 0;
+  display: grid;
+}
+.choices-facts > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 0;
+  border-top: 1px solid var(--border);
+  font-size: 13px;
+}
+.choices-facts > div:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+.choices-facts dt {
+  color: var(--muted-foreground);
+}
+.choices-facts dd {
+  margin: 0;
+  text-align: right;
+}
+@media (max-width: 860px) {
+  .choices-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .choices-funnel li {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .choices-funnel li .choices-track {
+    grid-column: 1 / -1;
+    order: 3;
+  }
+}
+
+.choices-callouts,
+.choices-findings {
+  list-style: none;
+  margin: 14px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+  font-size: 13px;
+}
+.choices-callouts li {
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #221c0f;
+  color: #e6d3a6;
+}
+.choices-findings {
+  margin-top: 0;
+}
+.choices-findings li {
+  display: grid;
+  gap: 4px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+}
+.choices-findings li:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+.choices-findings span {
+  color: var(--muted-foreground);
+}
+.choices-note a {
+  color: inherit;
+  text-decoration: underline;
+}
+.seller-choices .activity-controls {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.listing-form {
+  display: grid;
+  gap: 14px;
+}
+.listing-form textarea {
+  min-height: 84px;
+}
+.listing-current {
+  display: grid;
+  gap: 12px;
+  font-size: 13px;
+}
+.listing-current dt {
+  color: var(--muted-foreground);
+  font-size: 12px;
+  margin-bottom: 4px;
+}
+.listing-current dd {
+  margin: 0;
+}
+.listing-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
 }
