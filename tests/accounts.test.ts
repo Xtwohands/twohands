@@ -217,11 +217,11 @@ suite("authenticated account and tenant boundaries", () => {
     ).toBe(403);
     for (const path of [
       "/api/admin/workspace-allowances",
-      "/api/provider-lab/runs",
+      "/api/provider-lab",
       "/api/auth/preview-targets",
     ]) {
       const response = await request(app).get(path).set(personal);
-      expect(response.status).toBe(200);
+      expect([path, response.status]).toEqual([path, 200]);
       if (path !== "/api/auth/preview-targets") {
         const preview = await request(app)
           .get(path)

@@ -976,7 +976,7 @@ test("workspace members get usable connection guidance without owner-only key co
   await page.goto("/#dashboard/connections");
   await expect(
     page.getByText(
-      "Ask your workspace owner for a scoped API key before starting the bridge.",
+      "Ask your account owner for a scoped API key before starting the bridge.",
     ),
   ).toBeVisible();
   await expect(
@@ -1355,7 +1355,8 @@ test("ordinary accounts cannot open admin tool access and see honest workspace a
       },
     }),
   );
-  await login(page);
+  // The allowance notice is shown on the dashboard overview and tool catalog.
+  await login(page, "/#dashboard");
   await expect(
     page.getByRole("status").filter({
       hasText: "Tool access has not been enabled",

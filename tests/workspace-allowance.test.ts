@@ -298,7 +298,7 @@ suite("operator-owned hosted workspace allowances", () => {
         const pending = obs.execute(s.id, args);
         await vi.waitFor(() => expect(search).toHaveBeenCalledTimes(1));
         await expect(other.execute(t.id, call())).rejects.toThrow(
-          /operator allowance/,
+          /tool access is inactive or the remaining allowance is too low/,
         );
         expect(await store.allowance.status()).toMatchObject({
           reservedMicros: 7000,
@@ -370,7 +370,9 @@ suite("operator-owned hosted workspace allowances", () => {
         expect((await reopened.allowance.status()).state).toBe("unconfigured");
         await expect(
           reopened.allowance.reserve(randomUUID(), "task", 1),
-        ).rejects.toThrow(/operator allowance/);
+        ).rejects.toThrow(
+          /tool access is inactive or the remaining allowance is too low/,
+        );
         expect(
           await reopened.db
             .prepare("SELECT * FROM workspace_allowance_spend")
@@ -391,10 +393,14 @@ suite("operator-owned hosted workspace allowances", () => {
         });
       await expect(
         engine.reserve(task.id, "exa", randomUUID(), "search", {}),
-      ).rejects.toThrow(/operator allowance/);
+      ).rejects.toThrow(
+        /tool access is inactive or the remaining allowance is too low/,
+      );
       await expect(
         lab.start({ requestKey: randomUUID(), providers: ["exa"] }),
-      ).rejects.toThrow(/operator allowance/);
+      ).rejects.toThrow(
+        /tool access is inactive or the remaining allowance is too low/,
+      );
       expect(search).not.toHaveBeenCalled();
       await grantFixtureAllowance(store, 7000);
       const id = randomUUID();
@@ -408,7 +414,9 @@ suite("operator-owned hosted workspace allowances", () => {
       });
       await expect(
         lab.start({ requestKey: randomUUID(), providers: ["exa"] }),
-      ).rejects.toThrow(/operator allowance/);
+      ).rejects.toThrow(
+        /tool access is inactive or the remaining allowance is too low/,
+      );
     });
   });
   it("recovers interrupted observation receipts and key reservations in the same conservative settlement", async () => {
