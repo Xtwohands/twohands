@@ -4,7 +4,7 @@ A general-purpose tool router and observation layer for **Claude, Codex, and oth
 
 The app uses the black [Two Hands logo](public/two-hands.svg) and the [standalone mark](public/two-hands-mark.svg) for its favicon and compact placements. Existing MCP registrations and technical identifiers remain `apilayer` for compatibility.
 
-The interface uses dark neutral surfaces with restrained `#FF6A00` selection indicators and `#A8B4CF` logo, focus, and small state accents.
+The interface uses Geist, light grayscale surfaces, white panels, neutral navigation, and charcoal actions. Blue is reserved for key actions and focus. The same theme applies to the dashboard, company pages, Settings, and administration.
 
 The local MCP server works with Claude desktop and Codex CLI. Both have completed live research sessions through it. See [validation evidence](docs/OBSERVATION_VALIDATION.md) for the exact scope and limitations.
 

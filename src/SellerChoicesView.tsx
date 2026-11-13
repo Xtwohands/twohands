@@ -439,7 +439,7 @@ export function SellerChoicesView({
                   <dd>{data.cost.lostOnCost}</dd>
                 </div>
                 <div>
-                  <dt>Calls octolab routed here, not counted as choices</dt>
+                  <dt>Calls Two Hands routed here, not counted as choices</dt>
                   <dd>{data.calls.routedByOctolab}</dd>
                 </div>
               </dl>

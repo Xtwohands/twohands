@@ -772,7 +772,7 @@ export function UserDashboardView({
                     Your agent chooses from the tools enabled on your account.
                   </strong>
                   <p>
-                    octolab matches tools to a request and returns compatible
+                    Two Hands matches tools to a request and returns compatible
                     options with estimates. The agent explicitly selects a tool
                     and supplies its reason. Paused tools are excluded from
                     eligible choices and blocked from new calls.
@@ -1662,7 +1662,7 @@ function CatalogToolDetails({
         </a>
       </Button>
       <p className="field-hint">
-        Observed execution metrics describe this workspace. API success does not
+        Observed execution metrics describe this account. API success does not
         measure answer quality.
       </p>
     </div>
@@ -1949,7 +1949,7 @@ function ConnectionView({
       <div className="ws-connection-grid">
         <Section
           title="Connect your agent"
-          description="Use octolab inside your existing conversations."
+          description="Use Two Hands inside your existing conversations."
         >
           <div
             className="ws-client-picker"
@@ -1990,8 +1990,8 @@ function ConnectionView({
               <div>
                 <strong>Build the local MCP bridge</strong>
                 <p>
-                  Run this in the octolab project folder. If you run the server
-                  locally, keep it running in a separate terminal.
+                  Run this in the Two Hands project folder. If you run the
+                  server locally, keep it running in a separate terminal.
                 </p>
                 <div className="command-box">
                   <code>npm run build</code>
@@ -2006,7 +2006,7 @@ function ConnectionView({
                 <p>
                   Save these in the bridge project’s private .env file. Replace
                   the placeholder with your API key. The address points to this
-                  octolab server, including its port.
+                  Two Hands server, including its port.
                 </p>
                 <AgentEnvironment />
               </div>
@@ -2035,7 +2035,7 @@ function ConnectionView({
               <div>
                 <strong>Restart your client and ask your agent</strong>
                 <p>
-                  “Use octolab to find evidence for my next task.” Your agent
+                  “Use Two Hands to find evidence for my next task.” Your agent
                   records intent and chooses tools under the backend policy.
                 </p>
               </div>
@@ -2057,7 +2057,7 @@ function ConnectionView({
             </h3>
             <p>
               {connection?.clients.length
-                ? "These clients have sent requests to octolab. Last seen is not a live heartbeat."
+                ? "These clients have sent requests to Two Hands. Last seen is not a live heartbeat."
                 : "Connect an MCP client. It will appear here after its first request."}
             </p>
           </div>

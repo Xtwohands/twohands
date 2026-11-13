@@ -230,7 +230,7 @@ function eventLabel(e: ObservationEvent) {
         tools_offered: "Tool options returned",
         selection_explanation: "Agent’s stated reason",
         tool_called: "Tool requested",
-        route_decided: "Route decided by octolab",
+        route_decided: "Route decided by Two Hands",
         route_fallback: "Route fallback",
         route_unavailable: "No eligible route",
         tool_result: "Tool result received",
@@ -366,7 +366,6 @@ export function ObservationApp() {
     route.page === "dashboard" &&
       Boolean(ownerAccess && (!account.enabled || account.profile?.user.id)),
     [
-      account.profile?.user.id,
       account.profile?.user.id,
       account.sessionEpoch,
       account.previewRole,
