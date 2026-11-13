@@ -1,7 +1,7 @@
 import { test, expect } from "@playwright/test";
 import { captureJourney } from "./helpers/launch-screenshots";
 import AxeBuilder from "@axe-core/playwright";
-import { extractProviderIds } from "../../server/provider-catalog";
+import { extractProviderIds, providerIds } from "../../server/provider-catalog";
 
 const fixture = "http://127.0.0.1:3102";
 test("sidebar pages have independent routes, browser history, and accessible layouts", async ({
@@ -28,7 +28,10 @@ test("sidebar pages have independent routes, browser history, and accessible lay
     ).toBe(true);
   }
   await page.goto("/#dashboard/tools");
-  const configure = page.getByRole("link", { name: "Configure", exact: true });
+  const configure = page.getByRole("link", {
+    name: "Configure routing",
+    exact: true,
+  });
   await configure.click();
   await expect(page).toHaveURL(/#dashboard\/routing$/);
   await expect(
@@ -67,6 +70,9 @@ test("catalog search, capability filters, and tool details", async ({
     extractProviderIds.length,
   );
   const firecrawl = page.locator(".ws-tool-card", { hasText: "Firecrawl" });
+  const parallel = page.locator(".ws-tool-card").filter({
+    has: page.getByRole("heading", { name: "Parallel", exact: true }),
+  });
   await expect(firecrawl).toHaveCount(1);
   await expect(
     page.locator(".ws-tool-card", { hasText: "Jina Reader" }),
@@ -75,15 +81,34 @@ test("catalog search, capability filters, and tool details", async ({
   await expect(page.getByRole("dialog")).toContainText("What to expect");
   await expect(page.getByRole("dialog")).toContainText("firecrawl_extract");
   await page.getByRole("button", { name: "Close", exact: true }).click();
+  const viewParallel = parallel.getByRole("button", { name: "View tool" });
+  await expect(parallel).toContainText("2 endpoints");
+  await viewParallel.click();
+  const details = page.getByRole("dialog");
+  await expect(
+    details.getByRole("button", { name: "parallel_extract", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
+  const searchEndpoint = details.getByRole("button", {
+    name: "parallel_search",
+    exact: true,
+  });
+  await searchEndpoint.click();
+  await expect(searchEndpoint).toHaveAttribute("aria-pressed", "true");
+  await details.getByRole("button", { name: "Close", exact: true }).click();
+  await expect(viewParallel).toBeFocused();
   await page.getByRole("button", { name: /All tools/ }).click();
-  await page.getByRole("textbox", { name: "Search tools" }).fill("tavily");
+  const search = page.getByRole("textbox", { name: "Search tools" });
+  await search.fill("tavily");
   await expect(page.locator(".ws-tool-card")).toHaveCount(1);
-  await page
-    .getByRole("textbox", { name: "Search tools" })
-    .fill("no-such-tool");
+  await search.fill("no-such-tool");
   await expect(
     page.getByRole("heading", { name: "No matching tools" }),
   ).toBeVisible();
+  await page.getByRole("button", { name: "Clear filters" }).click();
+  await expect(search).toBeFocused();
+  await expect(page.locator(".ws-tool-card")).toHaveCount(
+    providerIds.length - 1,
+  );
 });
 
 test("route preview is free, capability-aware, and respects server switches", async ({
@@ -280,10 +305,10 @@ test("remote HTTP previews explain the secure endpoint requirement before agent 
   });
   await page.goto(origin + "/#dashboard/connections");
   await expect(page.getByRole("alert")).toContainText(
-    "Open octolab over HTTPS",
+    "Open Two Hands over HTTPS",
   );
   await expect(
-    page.getByRole("heading", { name: "Open octolab securely", exact: true }),
+    page.getByRole("heading", { name: "Open Two Hands securely", exact: true }),
   ).toBeVisible();
   await expect(
     page.getByRole("link", { name: "Open HTTPS address", exact: true }),
