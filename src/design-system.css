@@ -179,8 +179,7 @@
   --ws-panel: var(--panel-surface);
 }
 .tool-workspace .ws-metrics,
-.tool-workspace .ws-chart-grid,
-.tool-workspace .ws-catalog-grid {
+.tool-workspace .ws-chart-grid {
   gap: var(--grid-gap);
 }
 .tool-workspace .ws-metrics,
@@ -188,8 +187,7 @@
   margin-bottom: var(--grid-gap);
 }
 .tool-workspace .ws-metric,
-.tool-workspace .ws-panel,
-.tool-workspace .ws-tool-card {
+.tool-workspace .ws-panel {
   border-color: var(--panel-line);
   border-radius: 11px;
   background: var(--panel-surface);
@@ -206,15 +204,13 @@
   border-radius: 11px;
   margin: 0 0 var(--grid-gap);
 }
-.tool-workspace .ws-metric:hover,
-.tool-workspace .ws-tool-card:hover {
+.tool-workspace .ws-metric:hover {
   border-color: #505050;
 }
 
 /* Soft pills stay quiet so tool results and charts remain the primary content. */
 [data-slot="badge"],
 .tool-workspace .ws-status,
-.tool-workspace .ws-tool-tags span,
 .portal-status {
   min-height: 23px;
   padding: 2px 8px;
@@ -229,28 +225,6 @@
 }
 .tool-workspace .ws-status-failed {
   color: #edb3b3;
-}
-.tool-workspace .ws-category-tabs button[aria-pressed="true"] {
-  background: #303030;
-  border-color: transparent;
-  color: #eeeeec;
-}
-.tool-workspace .ws-category-tabs button {
-  align-items: center;
-  padding: 6px 11px;
-  border: 1px solid transparent;
-  border-radius: 999px;
-  background: #242424;
-}
-.tool-workspace .ws-category-tabs {
-  gap: 8px;
-  border: 0;
-  flex-wrap: wrap;
-}
-.tool-workspace .ws-category-tabs span {
-  border: 0;
-  border-radius: 999px;
-  background: #383838;
 }
 
 .account-menu-trigger {

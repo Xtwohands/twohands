@@ -1,9 +1,6 @@
 import { test, expect } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
-import {
-  providerCatalog,
-  providerToolNames,
-} from "../../server/provider-catalog";
+import { providerCatalog, providerIds } from "../../server/provider-catalog";
 
 // This fixture server configures every catalog provider with synthetic keys
 // and answers each provider endpoint with a response shaped like its real API.
@@ -64,13 +61,32 @@ test("the tool catalog lists every provider as ready when keys are configured", 
   page,
 }) => {
   await page.goto("/#dashboard/tools");
-  await expect(page.locator(".ws-tool-card")).toHaveCount(
-    providerToolNames.length,
-  );
-  for (const provider of providerCatalog)
+  const cards = page.locator(".ws-tool-card");
+  await expect(cards).toHaveCount(providerIds.length - 1);
+  for (const { label, tool } of providerCatalog) {
+    const grouped = tool === "parallel_search" || tool === "parallel_extract";
+    const card = cards.filter({
+      has: page.getByRole("heading", {
+        name: grouped ? "Parallel" : label,
+        exact: true,
+      }),
+    });
+    await expect(card).toBeVisible();
+    await expect(card.getByText("Available", { exact: true })).toBeVisible();
+    if (!grouped)
+      await expect(card.getByText(tool, { exact: true })).toBeVisible();
+  }
+  const parallel = cards.filter({
+    has: page.getByRole("heading", { name: "Parallel", exact: true }),
+  });
+  await parallel.getByRole("button", { name: "View tool" }).click();
+  const dialog = page.getByRole("dialog");
+  for (const endpoint of ["parallel_search", "parallel_extract"]) {
     await expect(
-      page.locator(".ws-tool-card", { hasText: provider.label }).first(),
+      dialog.getByRole("button", { name: endpoint, exact: true }),
     ).toBeVisible();
+  }
+  await dialog.getByRole("button", { name: "Close", exact: true }).click();
   await expect(page.getByText("Not configured")).toHaveCount(0);
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
 });

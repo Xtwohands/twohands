@@ -6,6 +6,7 @@ import "@fontsource-variable/geist";
 import "@fontsource-variable/geist-mono";
 import "./observation.css";
 import "./design-system.css";
+import "./customer-theme.css";
 const Legacy = lazy(() => import("./Legacy"));
 const insecureRemote =
   location.protocol === "http:" &&
@@ -17,13 +18,12 @@ createRoot(document.getElementById("root")!).render(
     {insecureRemote ? (
       <main className="account-page">
         <a className="account-brand" href="#home">
-          <img src="/octolab.svg" width="34" height="34" alt="" />
-          octolab
+          <img src="/two-hands.svg" width="156" height="34" alt="Two Hands" />
         </a>
         <section className="account-card">
-          <h1>Open octolab securely</h1>
+          <h1>Open Two Hands securely</h1>
           <p role="alert">
-            This page uses a remote HTTP address. Open octolab over HTTPS to
+            This page uses a remote HTTP address. Open Two Hands over HTTPS to
             sign in or connect an agent. HTTP is supported on localhost.
           </p>
           <a className="ws-text-link" href={secureUrl.href}>

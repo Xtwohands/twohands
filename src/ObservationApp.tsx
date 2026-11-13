@@ -14,6 +14,8 @@ import {
 import { AdminNavigation } from "./AdminNavigation";
 import { ToolAccessView, OperatorAllowanceNotice } from "./ToolAccessView";
 import { AccountControls, useAccount } from "./AccountGate";
+import { CustomerFunding, useCustomerFunding } from "./customer-funding";
+import { testUsdc } from "./FundingView";
 import { DisputeReviewView } from "./DisputeReviewView";
 import { ToolOptions } from "./components/ToolOptions";
 import { OutcomeContent } from "./components/DeferredOutcomeContent";
@@ -26,6 +28,7 @@ import {
   type DashboardSection,
 } from "./UserDashboardView";
 import "./provider.css";
+import "./customer-navigation.css";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Grid01,
@@ -165,6 +168,7 @@ function readRoute() {
       labProvider: "all",
       labFinding: "all",
       section: "overview",
+      focusPaymentMethods: false,
     };
   return {
     page: ([
@@ -208,6 +212,8 @@ function readRoute() {
     ].includes(section)
       ? section
       : "overview",
+    focusPaymentMethods:
+      page === "dashboard" && id === "credits" && section === "add-funds",
   };
 }
 function navigate(page: Page, id?: string) {
@@ -350,10 +356,29 @@ export function ObservationApp() {
   const [newOpen, setNewOpen] = useState(false);
   const [connectOpen, setConnectOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const navigatingFromMenu = useRef(false);
   const [filter, setFilter] = useState("all");
   const [query, setQuery] = useState("");
   const [token, setTokenInput] = useState("");
   const [connectionRevision, setConnectionRevision] = useState(0);
+  const ownerAccess =
+    !account.enabled ||
+    account.profile?.isAdmin ||
+    account.profile?.workspaces.some(
+      (w) => w.id === account.workspaceId && w.role === "owner",
+    );
+  const funding = useCustomerFunding(
+    route.page === "dashboard" &&
+      Boolean(ownerAccess && (!account.enabled || account.workspaceId)),
+    [
+      account.profile?.user.id,
+      account.workspaceId,
+      account.sessionEpoch,
+      account.previewRole,
+      connectionRevision,
+    ].join("|"),
+    route.id === "credits",
+  );
   const generation = useRef(0);
   const detailGeneration = useRef(0);
   const selectedId = useRef<string | undefined>(route.id);
@@ -526,12 +551,6 @@ export function ObservationApp() {
     );
   if (account.enabled && account.profile?.isAdmin && route.page === "admin")
     return <AdminCompanyReview />;
-  const ownerAccess =
-    !account.enabled ||
-    account.profile?.isAdmin ||
-    account.profile?.workspaces.some(
-      (w) => w.id === account.workspaceId && w.role === "owner",
-    );
   if (
     account.enabled &&
     !ownerAccess &&
@@ -628,13 +647,22 @@ export function ObservationApp() {
         ? "business"
         : "operator";
   const inToolCatalog = route.id === "tools" || route.id === "routing";
+  const customerSidebar = surface === "user";
+  const onOverview = !route.id || route.id === "overview";
   const sidebarContent = (
     <>
-      <a href="#home" className="obs-brand">
-        <img src="/octolab.svg" alt="" width="32" height="32" />
-        octolab
-      </a>
+      {customerSidebar ? (
+        <a href="#home" className="obs-brand">
+          <img src="/two-hands.svg" width="136" height="30" alt="Two Hands" />
+        </a>
+      ) : (
+        <a href="#home" className="obs-brand">
+          <img src="/octolab.svg" alt="" width="32" height="32" />
+          octolab
+        </a>
+      )}
       <nav
+        className={customerSidebar ? "customer-navigation" : undefined}
         aria-label={
           surface === "user"
             ? "User navigation"
@@ -649,10 +677,15 @@ export function ObservationApp() {
           <>
             <a
               href="#dashboard"
-              className={!route.id || route.id === "overview" ? "selected" : ""}
+              className={onOverview || route.id === "usage" ? "selected" : ""}
               aria-current={
-                !route.id || route.id === "overview" ? "page" : undefined
+                onOverview
+                  ? "page"
+                  : route.id === "usage"
+                    ? "location"
+                    : undefined
               }
+              onClick={() => setMenuOpen(false)}
             >
               <Grid01 />
               My dashboard
@@ -667,66 +700,65 @@ export function ObservationApp() {
                     ? "location"
                     : undefined
               }
+              onClick={() => setMenuOpen(false)}
             >
               <Link01 />
               Tool catalog
             </a>
-            <div className="ws-nav-group">
-              <span>Account</span>
-              <a
-                href="#dashboard/activity"
-                className={route.id === "activity" ? "selected" : ""}
-                aria-current={route.id === "activity" ? "page" : undefined}
-              >
-                <Activity />
-                Activity
-              </a>
-              <a
-                href="#dashboard/usage"
-                className={route.id === "usage" ? "selected" : ""}
-                aria-current={route.id === "usage" ? "page" : undefined}
-              >
-                <BarChartSquare02 />
-                Usage
-              </a>
-            </div>
+            <a
+              href="#dashboard/activity"
+              className={route.id === "activity" ? "selected" : ""}
+              aria-current={route.id === "activity" ? "page" : undefined}
+              onClick={() => setMenuOpen(false)}
+            >
+              <Activity />
+              Activity
+            </a>
             {ownerAccess && (
-              <div className="ws-nav-group">
-                <span>Funding</span>
-                <a
-                  href="#dashboard/credits"
-                  className={route.id === "credits" ? "selected" : ""}
-                  aria-current={route.id === "credits" ? "page" : undefined}
-                >
-                  <CreditCard01 />
-                  Credits
-                  <Badge variant="outline" className="ws-testnet-nav">
-                    Testnet
-                  </Badge>
-                </a>
-              </div>
-            )}
-            <div className="ws-nav-group">
-              <span>Integration</span>
-              {ownerAccess && (
+              <>
                 <a
                   href="#dashboard/keys"
                   className={route.id === "keys" ? "selected" : ""}
                   aria-current={route.id === "keys" ? "page" : undefined}
+                  onClick={() => setMenuOpen(false)}
                 >
                   <Key01 />
                   API keys
                 </a>
-              )}
-              <a
-                href="#dashboard/connections"
-                className={route.id === "connections" ? "selected" : ""}
-                aria-current={route.id === "connections" ? "page" : undefined}
-              >
-                <TerminalSquare />
-                Connections
-              </a>
-            </div>
+                <div className="customer-navigation-divider" />
+                <a
+                  href="#dashboard/credits"
+                  className={`customer-navigation-credits${route.id === "credits" ? " selected" : ""}`}
+                  aria-current={route.id === "credits" ? "page" : undefined}
+                  onClick={() => setMenuOpen(false)}
+                >
+                  <CreditCard01 />
+                  Credits
+                  {funding.summary && (
+                    <span className="customer-navigation-balance">
+                      {testUsdc(funding.summary.balanceUnits)} test
+                      <span className="sr-only"> credits</span>
+                    </span>
+                  )}
+                </a>
+                <Button
+                  className="customer-add-funds"
+                  variant="brand"
+                  size="sm"
+                  asChild
+                >
+                  <a
+                    href="#dashboard/credits/add-funds"
+                    onClick={() => {
+                      if (menuOpen) navigatingFromMenu.current = true;
+                      setMenuOpen(false);
+                    }}
+                  >
+                    Add test funds
+                  </a>
+                </Button>
+              </>
+            )}
           </>
         ) : surface === "business" ? (
           [
@@ -772,12 +804,15 @@ export function ObservationApp() {
         )}
       </nav>
       <div className="sidebar-bottom">
-        <AccountControls showWorkspace={false} />
+        <AccountControls showWorkspace={false} compact={customerSidebar} />
       </div>
     </>
   );
   return (
-    <div className="observation-shell dark">
+    <div
+      className={`observation-shell${customerSidebar ? "" : " dark"}`}
+      data-surface={surface}
+    >
       <a
         className="skip-link"
         href="#main-content"
@@ -788,12 +823,25 @@ export function ObservationApp() {
       >
         Skip to content
       </a>
-      <aside className="obs-sidebar">{sidebarContent}</aside>
+      <aside
+        className={`obs-sidebar${customerSidebar ? " customer-sidebar" : ""}`}
+      >
+        {sidebarContent}
+      </aside>
       <Dialog open={menuOpen} onOpenChange={setMenuOpen}>
         <DialogContent
-          className="mobile-navigation translate-x-0 translate-y-0"
+          className={`mobile-navigation translate-x-0 translate-y-0${customerSidebar ? " customer-mobile-navigation" : ""}`}
           onCloseAutoFocus={(e) => {
             e.preventDefault();
+            if (navigatingFromMenu.current) {
+              navigatingFromMenu.current = false;
+              const fundingOptions = document.getElementById(
+                "test-funding-options",
+              );
+              if (fundingOptions) fundingOptions.focus();
+              else document.getElementById("main-content")?.focus();
+              return;
+            }
             document
               .querySelector<HTMLButtonElement>(".mobile-nav-button")
               ?.focus();
@@ -801,7 +849,11 @@ export function ObservationApp() {
           aria-describedby={undefined}
         >
           <DialogTitle className="sr-only">Navigation</DialogTitle>
-          <div className="mobile-sidebar-content">{sidebarContent}</div>
+          <div
+            className={`mobile-sidebar-content${customerSidebar ? " customer-sidebar" : ""}`}
+          >
+            {sidebarContent}
+          </div>
         </DialogContent>
       </Dialog>
       <div className="obs-body">
@@ -887,17 +939,24 @@ export function ObservationApp() {
               <OperatorAllowanceNotice />
             )}
           {route.page === "dashboard" && (
-            <UserDashboardView
-              key={connectionRevision}
-              section={
-                dashboardSections.includes(route.id as DashboardSection)
-                  ? (route.id as DashboardSection)
-                  : "overview"
-              }
-              catalog={catalog}
-              refreshCatalog={refresh}
-              connectionRevision={connectionRevision}
-            />
+            <CustomerFunding.Provider
+              value={{
+                ...funding,
+                focusPaymentMethods: route.focusPaymentMethods,
+              }}
+            >
+              <UserDashboardView
+                key={connectionRevision}
+                section={
+                  dashboardSections.includes(route.id as DashboardSection)
+                    ? (route.id as DashboardSection)
+                    : "overview"
+                }
+                catalog={catalog}
+                refreshCatalog={refresh}
+                connectionRevision={connectionRevision}
+              />
+            </CustomerFunding.Provider>
           )}
           {route.page === "sessions" && !route.id && (
             <>

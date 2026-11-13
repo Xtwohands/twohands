@@ -20,7 +20,7 @@ async function login(page: Page) {
     page.getByRole("button", { name: "Create API key", exact: true }),
   ).toBeEnabled();
   await expect(
-    page.getByRole("heading", { name: "Your API keys", exact: true }),
+    page.getByRole("heading", { name: "Your keys", exact: true }),
   ).toBeVisible();
 }
 async function create(page: Page, name: string, limit = "0.008") {
@@ -104,9 +104,6 @@ test("create, use, limit, edit, and revoke a scoped key without revealing it aga
     (await request.get(`${base}/api/workspace/api-keys`, { headers })).status(),
   ).toBe(403);
   await page
-    .getByRole("button", { name: "Refresh API keys", exact: true })
-    .click();
-  await page
     .getByRole("button", { name: `Manage ${name}`, exact: true })
     .click();
   await expect(page.getByRole("dialog")).toContainText("At spend limit");
@@ -142,9 +139,24 @@ test("create, use, limit, edit, and revoke a scoped key without revealing it aga
     ).status(),
   ).toBe(401);
   await page.getByRole("textbox", { name: "Search API keys" }).fill(name);
+  await page.getByRole("combobox", { name: "Key status" }).click();
+  await page.getByRole("option", { name: "Revoked", exact: true }).click();
+  const keys = page.getByRole("region", { name: "API keys", exact: true });
+  await expect(keys.getByRole("columnheader")).toHaveText([
+    "Name",
+    "Spend",
+    "Expires",
+    "Last used",
+    "Actions",
+  ]);
+  const view = keys.getByRole("button", { name: `View ${name}`, exact: true });
+  await expect(view).toBeVisible();
+  await view.click();
+  await expect(page.getByRole("dialog")).toContainText("Revoked");
   await expect(
-    page.getByRole("region", { name: "API keys", exact: true }),
-  ).toContainText("Revoked");
+    page.getByRole("button", { name: "Save key settings" }),
+  ).toHaveCount(0);
+  await page.keyboard.press("Escape");
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
   expect(
     await page.evaluate(

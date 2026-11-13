@@ -207,7 +207,7 @@ export function StripeFundingPanel({
           if (!busy) setOpen(value);
         }}
       >
-        <DialogContent className="ws-detail-dialog translate-x-0 translate-y-0">
+        <DialogContent className="ws-detail-dialog customer-funding-dialog translate-x-0 translate-y-0">
           <DialogHeader>
             <DialogTitle>
               {selected ? "Card deposit details" : "Deposit with Stripe"}
@@ -336,7 +336,7 @@ export function StripeFundingPanel({
                 <small>$5–$1,000 · Up to two decimal places</small>
               </label>
               <p>
-                Enter card details on Stripe. octolab never receives your card
+                Enter card details on Stripe. Two Hands never receives your card
                 number.
               </p>
               <Button

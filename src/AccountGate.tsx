@@ -48,14 +48,20 @@ export const useAccount = () => useContext(Context);
 export function AccountControls({
   showWorkspace = true,
   showIdentity = true,
+  compact = false,
 }: {
   showWorkspace?: boolean;
   showIdentity?: boolean;
+  compact?: boolean;
 }) {
   const account = useAccount();
   if (!account.enabled)
     return showIdentity ? (
-      <AccountMenu label="Local account" detail="Local mode" />
+      <AccountMenu
+        label="Local account"
+        detail="Local mode"
+        compact={compact}
+      />
     ) : null;
   if (!account.profile) return null;
   const selector =
@@ -83,6 +89,7 @@ export function AccountControls({
       label={account.profile.user.email}
       detail={account.profile.isAdmin ? "Administrator" : "Personal account"}
       onSignOut={account.signOut}
+      compact={compact}
     >
       {selector}
     </AccountMenu>
@@ -465,7 +472,8 @@ export function AccountGate({ children }: { children: ReactNode }) {
     };
   }, [config?.enabled]);
   const publicPage =
-    !location.pathname.startsWith("/research") && (!route || route === "#home");
+    !location.pathname.startsWith("/research") &&
+    (!route || route === "#home" || route.startsWith("#home/"));
   const context: AccountContext = {
     sessionEpoch: sessionEpoch.current,
     enabled: !!config?.enabled,
@@ -576,12 +584,11 @@ export function AccountGate({ children }: { children: ReactNode }) {
         ? "Reset your password"
         : mode === "recover"
           ? "Choose a new password"
-          : "Sign in to octolab";
+          : "Sign in to Two Hands";
   return (
     <main className="account-page">
       <a href="#home" className="account-brand">
-        <img src="/octolab.svg" width="34" height="34" alt="" />
-        octolab
+        <img src="/two-hands.svg" width="156" height="34" alt="Two Hands" />
       </a>
       <section className="account-card">
         {previewRole === "user" && (

@@ -376,7 +376,7 @@ async function mockAuth(
 async function login(page: Page, destination = "/#dashboard/activity") {
   await page.goto(destination);
   await expect(
-    page.getByRole("heading", { name: "Sign in to octolab" }),
+    page.getByRole("heading", { name: "Sign in to Two Hands" }),
   ).toBeVisible();
   await page
     .getByLabel("Email", { exact: true })
@@ -428,7 +428,7 @@ test("email sign-in, persisted session, and sign-out clear the private workspace
     .last()
     .click();
   await expect(
-    page.getByRole("heading", { name: "Sign in to octolab" }),
+    page.getByRole("heading", { name: "Sign in to Two Hands" }),
   ).toBeVisible();
   await expect(page.getByText("Private A receipt")).toHaveCount(0);
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
@@ -486,7 +486,7 @@ test("new accounts start automatically and expired access removes private conten
   state.revoked = true;
   await page.getByRole("button", { name: "Refresh account" }).click();
   await expect(
-    page.getByRole("heading", { name: "Sign in to octolab" }),
+    page.getByRole("heading", { name: "Sign in to Two Hands" }),
   ).toBeVisible();
   await expect(page.getByText("Private A receipt")).toHaveCount(0);
   await captureJourney(page, "expired-session");
@@ -584,7 +584,7 @@ test("a delayed setup response cannot restore the previous account after sign-ou
     window.dispatchEvent(new Event("octolab-session-invalid")),
   );
   await expect(
-    page.getByRole("heading", { name: "Sign in to octolab", exact: true }),
+    page.getByRole("heading", { name: "Sign in to Two Hands", exact: true }),
   ).toBeVisible();
   state.actorId = "00000000-0000-4000-8000-000000000099";
   state.workspaces = [{ id: second, name: "Next account", role: "owner" }];
@@ -613,11 +613,11 @@ test("confirmation, recovery, invalid credentials, and public landing stay usabl
   await mockAuth(page);
   await page.goto("/#home");
   await expect(
-    page.getByRole("heading", { name: "Sign in to octolab" }),
+    page.getByRole("heading", { name: "Sign in to Two Hands" }),
   ).toHaveCount(0);
   await page.goto("/#dashboard");
   await expect(
-    page.getByRole("heading", { name: "Sign in to octolab" }),
+    page.getByRole("heading", { name: "Sign in to Two Hands" }),
   ).toBeVisible();
   await page
     .getByLabel("Email", { exact: true })
@@ -1494,7 +1494,7 @@ test("a previous settings response cannot overwrite the next signed-in admin's c
     .last()
     .click();
   await expect(
-    page.getByRole("heading", { name: "Sign in to octolab" }),
+    page.getByRole("heading", { name: "Sign in to Two Hands" }),
   ).toBeVisible();
   state.actorId = "00000000-0000-4000-8000-000000000099";
   await page

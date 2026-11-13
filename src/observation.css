@@ -289,22 +289,22 @@
 [data-slot="input"],
 [data-slot="textarea"],
 [data-slot="select-trigger"] {
-  background: #171717;
-  border-color: #3b3b3b;
+  background: var(--control-surface, #171717);
+  border-color: var(--control-border, #3b3b3b);
   box-shadow: none;
   font-size: 13px;
 }
 [data-slot="input"]::placeholder,
 [data-slot="textarea"]::placeholder {
-  color: #8b8b8b;
+  color: var(--placeholder-color, #8b8b8b);
 }
 [data-slot="textarea"] {
   resize: vertical;
   line-height: 1.65;
 }
 [data-slot="dialog-content"] {
-  background: #1d1d1d;
-  border: 1px solid #3e3e3e;
+  background: var(--dialog-surface, #1d1d1d);
+  border: 1px solid var(--dialog-border, #3e3e3e);
   max-height: 92vh;
   overflow-y: auto;
 }
@@ -316,7 +316,7 @@
 [data-slot="dialog-description"] {
   font-size: 13px;
   line-height: 1.65;
-  color: #aaaaaa;
+  color: var(--dialog-muted, #aaaaaa);
 }
 [data-slot="dialog-footer"] {
   margin-top: 24px;

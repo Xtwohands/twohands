@@ -8,8 +8,8 @@
   align-items: center;
   justify-content: center;
   gap: 28px;
-  background: #0b0b0c;
-  color: #ededee;
+  background: var(--background);
+  color: var(--foreground);
   padding: 28px 18px;
   font-family: Geist, sans-serif;
 }
@@ -26,10 +26,10 @@
   width: 100%;
   max-width: 420px;
   padding: 30px;
-  border: 1px solid #29292c;
+  border: 1px solid var(--border);
   border-radius: 16px;
-  background: #121214;
-  box-shadow: 0 16px 60px #0003;
+  background: var(--card);
+  box-shadow: var(--shadow-lg);
 }
 .account-card h1 {
   font-size: 23px;
@@ -38,7 +38,7 @@
   margin: 0 0 8px;
 }
 .account-card > p {
-  color: #9b9ba4;
+  color: var(--muted-foreground);
   font-size: 14px;
   line-height: 1.6;
   margin: 0 0 22px;
@@ -56,9 +56,9 @@
   font-size: 13px;
 }
 .account-card input {
-  background: #19191c;
-  color: #eee;
-  border-color: #343438;
+  background: var(--card);
+  color: var(--foreground);
+  border-color: var(--input);
   min-height: 42px;
 }
 .account-card form > button {
@@ -79,14 +79,14 @@
   padding: 0;
   height: auto;
   min-height: 32px;
-  color: #babac2;
+  color: var(--muted-foreground);
 }
 .account-card .account-notice {
-  border: 1px solid #3b3b40;
+  border: 1px solid var(--border);
   border-radius: 8px;
   padding: 12px;
   font-size: 13px;
-  color: #d0d0d6;
+  color: var(--foreground);
 }
 .account-scope-select {
   display: flex;

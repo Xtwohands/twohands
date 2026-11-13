@@ -2,7 +2,6 @@ import { ProviderLogo } from "./components/shared";
 import {
   providerCatalog,
   providerEntry,
-  providerForTool,
   providerIds,
   providerLabel,
   toolOperation,
@@ -12,7 +11,7 @@ import {
   ProviderAdaptersView,
 } from "./ProviderBillingView";
 import { useAccount } from "./AccountGate";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Activity,
   ArrowRight,
@@ -22,15 +21,23 @@ import {
   ChevronRight,
   Download01,
   GitBranch01,
-  Link01,
   RefreshCw01,
   SearchLg,
+  SearchMd,
   Settings02,
   TerminalSquare,
 } from "@untitledui/icons";
 import { Button } from "./components/ui/button";
 import { Badge } from "./components/ui/badge";
+import { Card, CardTitle } from "./components/ui/card";
 import { Input } from "./components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "./components/ui/select";
 import { Switch } from "./components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./components/ui/tabs";
 import {
@@ -57,6 +64,11 @@ import type {
 } from "../server/workspace-types";
 import type { Observatory } from "../server/observation";
 import "./workspace.css";
+import "./dashboard-overview.css";
+import claudeMark from "./assets/claude-mark.svg";
+import codexMark from "./assets/codex-mark.png";
+import cursorMark from "./assets/cursor-mark.svg";
+import "./tool-catalog.css";
 import { ApiKeysView } from "./ApiKeysView";
 import { FundingView } from "./FundingView";
 import { AgentEnvironment } from "./components/AgentEnvironment";
@@ -164,7 +176,7 @@ function Section({
   title: string;
   description?: string;
   action?: React.ReactNode;
-  children: React.ReactNode;
+  children?: React.ReactNode;
   className?: string;
 }) {
   return (
@@ -267,6 +279,7 @@ export function UserDashboardView({
   const [notice, setNotice] = useState("");
   const [selectedCall, setSelectedCall] = useState<ActivityItem>();
   const [selectedTool, setSelectedTool] = useState<Catalog[number]>();
+  const catalogTrigger = useRef<HTMLButtonElement>(null);
   const generation = useRef(0);
   const activityGeneration = useRef(0);
   const requestKey = `${days}|${query}|${provider}|${status}|${page}|${section}`;
@@ -390,18 +403,29 @@ export function UserDashboardView({
       setSaving(false);
     }
   }
-  const ready = catalog.filter(
-    (t) => t.available && !policy?.disabledTools.includes(t.tool),
-  ).length;
   const enabled = (tool: ToolName) => !policy?.disabledTools.includes(tool);
+  const detailTool = selectedTool
+    ? (catalog.find(({ tool }) => tool === selectedTool.tool) ?? selectedTool)
+    : undefined;
   const showPeriod = ["overview", "activity", "usage"].includes(section);
   const completed = usage ? usage.succeeded + usage.failed : 0;
+  if (section === "keys") {
+    return (
+      <div className="tool-workspace">
+        <ApiKeysView key={connectionRevision} />
+      </div>
+    );
+  }
   return (
-    <div className="tool-workspace">
-      <div className="page-heading ws-page-heading">
+    <div className="tool-workspace" data-dashboard-section={section}>
+      <div
+        className={`page-heading ws-page-heading${section === "tools" ? " catalog-page-heading" : ""}`}
+      >
         <div>
           <h1>{labels[section][0]}</h1>
-          <p>{labels[section][1]}</p>
+          {section !== "tools" && section !== "overview" && (
+            <p>{labels[section][1]}</p>
+          )}
         </div>
         <div className="ws-heading-actions">
           {showPeriod && (
@@ -432,12 +456,20 @@ export function UserDashboardView({
             <RefreshCw01 size={15} />
           </Button>
           {section === "tools" && (
-            <Button variant="outline" size="sm" asChild>
-              <a href="#dashboard/routing">
-                <Settings02 />
-                Configure
-              </a>
-            </Button>
+            <>
+              <Button variant="outline" size="sm" asChild>
+                <a href="#dashboard/routing">
+                  <Settings02 />
+                  Configure
+                </a>
+              </Button>
+              <Button variant="brand" size="sm" asChild>
+                <a href="#dashboard/connections">
+                  <TerminalSquare />
+                  Connect agent
+                </a>
+              </Button>
+            </>
           )}
           {section === "routing" && (
             <Button variant="outline" size="sm" asChild>
@@ -448,9 +480,13 @@ export function UserDashboardView({
             </Button>
           )}
           {section === "overview" && (
-            <Button size="sm" asChild>
+            <Button variant="brand" size="sm" asChild>
               <a href="#dashboard/connections">
-                <TerminalSquare />
+                <span className="ws-agent-marks" aria-hidden="true">
+                  <img src={claudeMark} alt="" />
+                  <img src={codexMark} alt="" />
+                  <img src={cursorMark} alt="" />
+                </span>
                 Connect agent
               </a>
             </Button>
@@ -510,22 +546,45 @@ export function UserDashboardView({
                   href="#dashboard/activity"
                 />
               </div>
-              <div className="ws-chart-grid">
-                <Section
-                  title="Request volume"
-                  description="Daily tool requests · UTC"
-                  action={<Go section="activity">View activity</Go>}
-                >
-                  {usage && <UsageChart usage={usage} />}
-                </Section>
-                <Section
-                  title="Usage by provider"
-                  description="Requests in this period"
-                  action={<Go section="usage">Details</Go>}
-                >
-                  <ProviderBreakdown usage={usage} />
-                </Section>
-              </div>
+              {section === "overview" && (
+                <div className="ws-overview-grid">
+                  <Section
+                    title="Usage"
+                    action={<Go section="activity">View activity</Go>}
+                  >
+                    <InlineError message={activityError} />
+                    <OverviewRequests
+                      items={activity?.items.slice(0, 5) ?? []}
+                      loading={activityLoading && !activity}
+                      onSelect={setSelectedCall}
+                    />
+                  </Section>
+                  <Section
+                    title="By provider"
+                    action={<Go section="usage">Details</Go>}
+                  >
+                    <OverviewProviders usage={usage} />
+                  </Section>
+                </div>
+              )}
+              {section === "usage" && (
+                <div className="ws-chart-grid">
+                  <Section
+                    title="Request volume"
+                    description="Daily tool requests · UTC"
+                    action={<Go section="activity">View activity</Go>}
+                  >
+                    {usage && <UsageChart usage={usage} />}
+                  </Section>
+                  <Section
+                    title="Usage by provider"
+                    description="Requests in this period"
+                    action={<Go section="usage">Details</Go>}
+                  >
+                    <ProviderBreakdown usage={usage} />
+                  </Section>
+                </div>
+              )}
               {section === "usage" && (
                 <Section
                   title="Cost and reported usage"
@@ -583,71 +642,10 @@ export function UserDashboardView({
               )}
               {section === "overview" && (
                 <Section
-                  title="Recent requests"
-                  description="From the conversations your agent is working on."
-                  action={<Go section="activity">All activity</Go>}
-                >
-                  <InlineError message={activityError} />
-                  <ActivityTable
-                    items={activity?.items.slice(0, 5) ?? []}
-                    loading={activityLoading && !activity}
-                    onSelect={setSelectedCall}
-                  />
-                  <div className="ws-panel-note">
-                    Requests appear automatically as your connected agent uses
-                    tools.{" "}
-                    <a href="#dashboard/tools">
-                      Explore the catalog
-                      <ArrowRight size={13} />
-                    </a>
-                  </div>
-                </Section>
-              )}
-              {section === "overview" && (
-                <Section
-                  title="Available tools"
-                  description={`${ready} tools ready for your agent`}
+                  title="Discover more tools"
+                  className="ws-overview-discover"
                   action={<Go section="tools">Browse catalog</Go>}
-                >
-                  <div className="ws-tool-strip">
-                    {catalog.map((t) => (
-                      <button key={t.tool} onClick={() => setSelectedTool(t)}>
-                        <ProviderIcon provider={t.provider} />
-                        <span>
-                          <strong>{providerLabel(t.provider)}</strong>
-                          <small>{toolLabels[t.tool]}</small>
-                        </span>
-                        <Badge variant="outline">
-                          {!t.available
-                            ? "Not configured"
-                            : enabled(t.tool)
-                              ? "Available"
-                              : "Paused"}
-                        </Badge>
-                      </button>
-                    ))}
-                  </div>
-                </Section>
-              )}
-              {section === "overview" && !connection?.clients.length && (
-                <div className="ws-connect-banner">
-                  <span className="ws-banner-icon">
-                    <TerminalSquare />
-                  </span>
-                  <div>
-                    <strong>Your tools are ready. Bring your agent.</strong>
-                    <p>
-                      Connect Claude, Codex, or any MCP client to start using{" "}
-                      {ready} available tools.
-                    </p>
-                  </div>
-                  <Button variant="outline" size="sm" asChild>
-                    <a href="#dashboard/connections">
-                      Set up connection
-                      <ArrowRight />
-                    </a>
-                  </Button>
-                </div>
+                />
               )}
             </>
           )}
@@ -756,7 +754,10 @@ export function UserDashboardView({
             <CatalogView
               catalog={catalog}
               enabled={enabled}
-              onSelect={setSelectedTool}
+              onSelect={(tool, trigger) => {
+                catalogTrigger.current = trigger;
+                setSelectedTool(tool);
+              }}
             />
           )}
           {section === "routing" && (
@@ -849,7 +850,6 @@ export function UserDashboardView({
           {section === "usage" && canManage && (
             <ProviderBillingView key={connectionRevision} days={days} />
           )}
-          {section === "keys" && <ApiKeysView key={connectionRevision} />}
           {section === "credits" && <FundingView key={connectionRevision} />}
           {section === "connections" && (
             <>
@@ -865,23 +865,37 @@ export function UserDashboardView({
           if (!open) setSelectedTool(undefined);
         }}
       >
-        <DialogContent className="ws-detail-dialog translate-x-0 translate-y-0">
+        <DialogContent
+          className="ws-detail-dialog catalog-dialog translate-x-0 translate-y-0"
+          onCloseAutoFocus={(event) => {
+            if (catalogTrigger.current?.isConnected) {
+              event.preventDefault();
+              catalogTrigger.current.focus();
+            }
+            catalogTrigger.current = null;
+          }}
+        >
           <DialogHeader>
-            <DialogTitle>
-              {selectedTool ? providerLabel(selectedTool.provider) : "Tool"}
+            <DialogTitle className="catalog-dialog-title">
+              {detailTool && <ProviderIcon provider={detailTool.provider} />}
+              {detailTool ? catalogProviderLabel(detailTool.provider) : "Tool"}
+              {detailTool && (
+                <CatalogStatus label={toolAvailability(detailTool, enabled)} />
+              )}
             </DialogTitle>
-            <DialogDescription>
-              {selectedTool && toolLabels[selectedTool.tool]}
-            </DialogDescription>
+            <DialogDescription>{detailTool?.description}</DialogDescription>
           </DialogHeader>
-          {selectedTool && (
-            <ToolDetail
-              tool={
-                catalog.find((t) => t.tool === selectedTool.tool) ??
-                selectedTool
-              }
-              enabled={enabled(selectedTool.tool)}
-              onToggle={(v) => void toggle(selectedTool.tool, v)}
+          {detailTool && (
+            <CatalogToolDetails
+              tool={detailTool}
+              endpoints={catalog.filter(
+                (endpoint) =>
+                  catalogProviderId(endpoint.provider) ===
+                  catalogProviderId(detailTool.provider),
+              )}
+              onSelect={setSelectedTool}
+              enabled={enabled}
+              onToggle={(tool, value) => void toggle(tool, value)}
               saving={saving || !policy || !canManage}
             />
           )}
@@ -1015,6 +1029,116 @@ function ProviderBreakdown({ usage }: { usage?: WorkspaceUsage }) {
     </div>
   );
 }
+function OverviewRequests({
+  items,
+  loading,
+  onSelect,
+}: {
+  items: ActivityItem[];
+  loading: boolean;
+  onSelect: (item: ActivityItem) => void;
+}) {
+  if (loading || !items.length) {
+    return (
+      <ActivityTable items={items} loading={loading} onSelect={onSelect} />
+    );
+  }
+  return (
+    <table className="ws-overview-requests">
+      <thead>
+        <tr>
+          <th scope="col">Request</th>
+          <th scope="col">Model</th>
+          <th scope="col">Est. cost</th>
+          <th scope="col">
+            <span className="sr-only">Action</span>
+          </th>
+        </tr>
+      </thead>
+      <tbody>
+        {items.map((item) => (
+          <tr key={item.id}>
+            <th scope="row">
+              <strong>{item.sessionTitle}</strong>
+              <small>{providerLabel(item.provider)}</small>
+            </th>
+            <td>{item.model || "—"}</td>
+            <td>{money(item.estimateMicros)}</td>
+            <td>
+              <Button
+                variant="secondary"
+                className="ws-overview-request-action"
+                size="xs"
+                aria-label={"Inspect request " + item.id}
+                onClick={() => onSelect(item)}
+              >
+                View <ArrowUpRight />
+              </Button>
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+function OverviewProviders({ usage }: { usage?: WorkspaceUsage }) {
+  const [query, setQuery] = useState("");
+  const term = query.trim().toLowerCase();
+  const providers =
+    usage?.providers.filter(
+      ({ provider, requests }) =>
+        requests > 0 && providerLabel(provider).toLowerCase().includes(term),
+    ) ?? [];
+  return (
+    <div className="ws-overview-providers">
+      <label className="ws-overview-provider-search">
+        <SearchMd size={16} />
+        <Input
+          type="search"
+          aria-label="Search providers"
+          placeholder="Search providers"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+        />
+      </label>
+      {providers.map(({ provider, requests, estimatedMicros }) => (
+        <div className="ws-overview-provider" key={provider}>
+          <h3>
+            <ProviderLogo provider={provider} size={22} />
+            {providerLabel(provider)}
+          </h3>
+          <dl>
+            <div>
+              <dt>Requests</dt>
+              <dd>{requests.toLocaleString()}</dd>
+            </div>
+            <div>
+              <dt>Estimated cost</dt>
+              <dd>{money(estimatedMicros)}</dd>
+            </div>
+            <div>
+              <dt>Request share</dt>
+              <dd>
+                {usage?.requests
+                  ? Math.round((requests / usage.requests) * 100)
+                  : 0}
+                %
+              </dd>
+            </div>
+          </dl>
+        </div>
+      ))}
+      {!providers.length && (
+        <p className="ws-panel-note" role="status">
+          {term
+            ? "No matching providers"
+            : "Provider usage appears after your agent runs a tool."}
+        </p>
+      )}
+    </div>
+  );
+}
 function ActivityTable({
   items,
   loading,
@@ -1042,7 +1166,7 @@ function ActivityTable({
       >
         {filtered
           ? "Try another search, provider, status, or date range."
-          : "Use octolab tools in your agent. Each call will appear here with its cost estimate and result."}
+          : "Use Two Hands tools in your agent. Each call will appear here with its cost estimate and result."}
       </Empty>
     );
   return (
@@ -1113,240 +1237,324 @@ function ActivityTable({
     </div>
   );
 }
+const toolCategories = [
+  ["all", "All tools"],
+  ["search", "Web search"],
+  ["extract", "Extraction"],
+] as const;
+
+type ToolAvailability =
+  "Available" | "Paused" | "Not configured" | "Restricted";
+type ToolEnabled = (tool: ToolName) => boolean;
+
+function catalogProviderId(provider: Catalog[number]["provider"]) {
+  return provider === "parallel_extract" ? "parallel" : provider;
+}
+
+function catalogProviderLabel(provider: Catalog[number]["provider"]) {
+  const id = catalogProviderId(provider);
+  return id === "parallel" ? "Parallel" : providerLabel(id);
+}
+
+function toolAvailability(
+  tool: Catalog[number],
+  enabled: ToolEnabled,
+): ToolAvailability {
+  if (!enabled(tool.tool)) return "Paused";
+  if (!tool.available) return "Not configured";
+  return tool.operatorAllowed ? "Available" : "Restricted";
+}
+
+function CatalogStatus({ label }: { label: ToolAvailability | "Mixed" }) {
+  return (
+    <Badge className="catalog-status" variant="secondary">
+      {label}
+    </Badge>
+  );
+}
+
 function CatalogView({
   catalog,
   enabled,
   onSelect,
 }: {
   catalog: Catalog;
-  enabled: (tool: ToolName) => boolean;
-  onSelect: (tool: Catalog[number]) => void;
+  enabled: ToolEnabled;
+  onSelect: (tool: Catalog[number], trigger: HTMLButtonElement) => void;
 }) {
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("all");
   const [availability, setAvailability] = useState("all");
   const [sort, setSort] = useState("name");
-  const filtered = useMemo(
-    () =>
-      catalog
-        .filter(
-          (t) =>
-            (!query.trim() ||
-              `${t.provider} ${t.tool} ${t.description}`
-                .toLowerCase()
-                .includes(query.trim().toLowerCase())) &&
-            (category === "all" ||
-              (toolOperation(t.tool) ?? "search") === category) &&
-            (availability === "all" ||
-              (availability === "ready"
-                ? t.available && enabled(t.tool)
-                : !enabled(t.tool))),
-        )
-        .sort((a, b) =>
-          sort === "price"
-            ? a.estimatedMicros - b.estimatedMicros
-            : a.provider.localeCompare(b.provider),
-        ),
-    [catalog, query, category, availability, sort, enabled],
-  );
+  const search = useRef<HTMLInputElement>(null);
+
+  const providers = new Map<
+    ReturnType<typeof catalogProviderId>,
+    Catalog[number][]
+  >();
+  for (const tool of catalog) {
+    const id = catalogProviderId(tool.provider);
+    const endpoints = providers.get(id) ?? [];
+    endpoints.push(tool);
+    providers.set(id, endpoints);
+  }
+
+  const term = query.trim().toLowerCase();
+  const visible = Array.from(providers, ([id, endpoints]) => ({
+    id,
+    endpoints,
+    label: catalogProviderLabel(id),
+    lowestEstimate: Math.min(...endpoints.map((tool) => tool.estimatedMicros)),
+    statuses: new Set(endpoints.map((tool) => toolAvailability(tool, enabled))),
+    matchingEndpoint: endpoints.find(
+      (endpoint) =>
+        (category === "all" || toolOperation(endpoint.tool) === category) &&
+        (availability === "all" ||
+          toolAvailability(endpoint, enabled) === availability),
+    ),
+  }))
+    .filter(
+      ({ label, endpoints, matchingEndpoint }) =>
+        matchingEndpoint &&
+        [label, ...endpoints.flatMap((tool) => [tool.tool, tool.description])]
+          .join(" ")
+          .toLowerCase()
+          .includes(term),
+    )
+    .sort(
+      (a, b) =>
+        (sort === "price" ? a.lowestEstimate - b.lowestEstimate : 0) ||
+        a.label.localeCompare(b.label),
+    );
+
   return (
-    <>
-      <div className="ws-catalog-toolbar">
-        <div className="search-input">
-          <SearchLg />
-          <Input
-            aria-label="Search tools"
-            placeholder="Search tools, providers, or capabilities…"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-          />
+    <section className="tool-catalog" aria-label="Browse tools">
+      <div className="catalog-controls">
+        <div className="catalog-toolbar">
+          <label className="catalog-search">
+            <SearchMd size={16} aria-hidden="true" />
+            <Input
+              ref={search}
+              aria-label="Search tools"
+              placeholder="Search tools or providers"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+            />
+          </label>
+          <Select value={availability} onValueChange={setAvailability}>
+            <SelectTrigger aria-label="Availability" className="catalog-select">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent position="popper" align="end">
+              <SelectItem value="all">Any availability</SelectItem>
+              <SelectItem value="Available">Available</SelectItem>
+              <SelectItem value="Paused">Paused</SelectItem>
+              <SelectItem value="Not configured">Not configured</SelectItem>
+              <SelectItem value="Restricted">Restricted</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select value={sort} onValueChange={setSort}>
+            <SelectTrigger aria-label="Sort tools" className="catalog-select">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent position="popper" align="end">
+              <SelectItem value="name">Provider name</SelectItem>
+              <SelectItem value="price">Lowest estimate</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
-        <NativeSelect
-          label="Availability"
-          value={availability}
-          onChange={setAvailability}
-          options={[
-            ["all", "All tools"],
-            ["ready", "Available"],
-            ["paused", "Paused"],
-          ]}
-        />
-        <NativeSelect
-          label="Sort tools"
-          value={sort}
-          onChange={setSort}
-          options={[
-            ["name", "Provider name"],
-            ["price", "Lowest default estimate"],
-          ]}
-        />
+        <div
+          className="catalog-categories"
+          role="group"
+          aria-label="Tool categories"
+        >
+          {toolCategories.map(([id, label]) => (
+            <Button
+              key={id}
+              type="button"
+              variant="ghost"
+              size="xs"
+              aria-pressed={category === id}
+              onClick={() => setCategory(id)}
+            >
+              {label}
+            </Button>
+          ))}
+        </div>
+        <p className="sr-only" role="status">
+          {visible.length} {visible.length === 1 ? "provider" : "providers"}
+        </p>
       </div>
-      <div
-        className="ws-category-tabs"
-        role="group"
-        aria-label="Tool categories"
-      >
-        {[
-          ["all", "All tools"],
-          ["search", "Web search"],
-          ["extract", "Extraction"],
-        ].map(([id, label]) => (
-          <button
-            key={id}
-            aria-pressed={category === id}
-            onClick={() => setCategory(id)}
+      {visible.length ? (
+        <div className="catalog-grid">
+          {visible.map(
+            ({
+              id,
+              endpoints,
+              label,
+              lowestEstimate,
+              statuses,
+              matchingEndpoint,
+            }) => {
+              const endpoint = endpoints[0]!;
+              const multiple = endpoints.length > 1;
+              return (
+                <Card className="ws-tool-card" role="article" key={id}>
+                  <div className="catalog-card-intro">
+                    <div className="catalog-card-header">
+                      <div className="catalog-card-identity">
+                        <ProviderIcon provider={id} />
+                        <CardTitle>{label}</CardTitle>
+                      </div>
+                      <CatalogStatus
+                        label={
+                          statuses.size === 1
+                            ? toolAvailability(endpoint, enabled)
+                            : "Mixed"
+                        }
+                      />
+                    </div>
+                    <p className="catalog-summary">
+                      {multiple
+                        ? "Find ranked excerpts or extract the full content of a page."
+                        : (providerEntry(id)?.summary ?? endpoint.description)}
+                    </p>
+                  </div>
+                  <div className="catalog-estimate">
+                    <p>{multiple ? "Estimates from" : "Default estimate"}</p>
+                    <div className="catalog-estimate-value">
+                      <span>
+                        {money(lowestEstimate)} <small>/ call</small>
+                      </span>
+                      <span>
+                        {endpoints.length} {multiple ? "endpoints" : "endpoint"}
+                      </span>
+                    </div>
+                  </div>
+                  <footer className="catalog-card-footer">
+                    {multiple ? (
+                      <span>Search and extraction</span>
+                    ) : (
+                      <code>{endpoint.tool}</code>
+                    )}
+                    <Button
+                      className="catalog-action-chip"
+                      type="button"
+                      variant="secondary"
+                      size="xs"
+                      onClick={(event) =>
+                        onSelect(
+                          matchingEndpoint ?? endpoint,
+                          event.currentTarget,
+                        )
+                      }
+                    >
+                      View tool
+                      <ArrowUpRight className="size-[13px]" />
+                    </Button>
+                  </footer>
+                </Card>
+              );
+            },
+          )}
+        </div>
+      ) : (
+        <Card className="catalog-empty">
+          <CardTitle>No matching tools</CardTitle>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              setQuery("");
+              setCategory("all");
+              setAvailability("all");
+              search.current?.focus();
+            }}
           >
-            {label}
-            <span>
-              {
-                catalog.filter(
-                  (t) =>
-                    id === "all" || (toolOperation(t.tool) ?? "search") === id,
-                ).length
-              }
-            </span>
-          </button>
-        ))}
-      </div>
-      <p className="ws-result-count">
-        {filtered.length} tools · Prices are request estimates. Actual options
-        affect cost.
-      </p>
-      <div className="ws-catalog-grid">
-        {filtered.map((t) => (
-          <article className="ws-tool-card" key={t.tool}>
-            <div className="ws-tool-card-top">
-              <ProviderIcon provider={t.provider} />
-              <Badge variant="outline">
-                {!t.available
-                  ? "Not configured"
-                  : enabled(t.tool)
-                    ? "Available"
-                    : "Paused"}
-              </Badge>
-            </div>
-            <h2>
-              <button onClick={() => onSelect(t)}>
-                {providerLabel(t.provider)}
-                <ArrowUpRight size={17} />
-              </button>
-            </h2>
-            <code>{t.tool}</code>
-            <p>{t.description}</p>
-            <div className="ws-tool-tags">
-              <span>
-                {toolOperation(t.tool) === "extract"
-                  ? "Extraction"
-                  : "Web search"}
-              </span>
-              <span>
-                {providerEntry(providerForTool(t.tool) ?? "")?.resultDetail ??
-                  "Page text"}
-              </span>
-            </div>
-            <div className="ws-tool-stats">
-              <div>
-                <span>Default estimate</span>
-                <strong>
-                  {money(t.estimatedMicros)}
-                  <small>/ call</small>
-                </strong>
-              </div>
-              <div>
-                <span>Observed calls</span>
-                <strong>{t.sampleCount.toLocaleString()}</strong>
-              </div>
-            </div>
-            <footer>
-              <span>
-                {t.averageLatencyMs == null
-                  ? "Latency not yet measured"
-                  : `${latency(t.averageLatencyMs)} avg. latency`}
-              </span>
-              <Button variant="ghost" size="sm" onClick={() => onSelect(t)}>
-                View tool
-                <ArrowRight />
-              </Button>
-            </footer>
-          </article>
-        ))}
-      </div>
-      {!filtered.length && (
-        <Empty title="No matching tools">
-          Try a different capability or clear your filters.
-        </Empty>
+            Clear filters
+          </Button>
+        </Card>
       )}
-      <div className="ws-catalog-footnote">
-        <Link01 size={16} />
-        Tools are available through a single MCP connection. Provider
-        credentials stay on the server.
-        <Go section="connections">Connect agent</Go>
-      </div>
-    </>
+    </section>
   );
 }
-function ToolDetail({
+
+function CatalogToolDetails({
   tool,
+  endpoints,
   enabled,
+  onSelect,
   onToggle,
   saving,
 }: {
   tool: Catalog[number];
-  enabled: boolean;
-  onToggle: (v: boolean) => void;
+  endpoints: Catalog;
+  enabled: ToolEnabled;
+  onSelect: (tool: Catalog[number]) => void;
+  onToggle: (tool: ToolName, enabled: boolean) => void;
   saving: boolean;
 }) {
   return (
-    <div className="ws-tool-detail">
-      <div className="ws-detail-tool">
-        <ProviderIcon provider={tool.provider} />
-        <code>{tool.tool}</code>
-        <Badge variant="outline">
-          {tool.available ? "Configured" : "Not configured"}
-        </Badge>
-      </div>
-      <p>{tool.description}</p>
-      <div className="ws-detail-facts">
+    <div className="catalog-tool-details">
+      <dl className="catalog-facts">
         <div>
-          <span>Default estimate</span>
-          <strong>{money(tool.estimatedMicros)} / call</strong>
+          <dt>Workspace calls</dt>
+          <dd>{tool.sampleCount}</dd>
         </div>
         <div>
-          <span>Account calls</span>
-          <strong>{tool.sampleCount}</strong>
+          <dt>Average latency</dt>
+          <dd>{latency(tool.averageLatencyMs)}</dd>
         </div>
         <div>
-          <span>Average latency</span>
-          <strong>{latency(tool.averageLatencyMs)}</strong>
-        </div>
-        <div>
-          <span>API success rate</span>
-          <strong>
+          <dt>API success rate</dt>
+          <dd>
             {tool.successRate == null
               ? "Needs 5 completed calls"
               : `${(tool.successRate * 100).toFixed(1)}%`}
-          </strong>
+          </dd>
         </div>
-      </div>
+      </dl>
       <h3>When to use it</h3>
       <p>{tool.useWhen}</p>
       <h3>What to expect</h3>
       <p>{tool.limitations}</p>
-      <h3>Adapter defaults</h3>
-      <pre>{JSON.stringify(tool.adapter, null, 2)}</pre>
-      <div className="ws-detail-enable">
-        <div>
-          <strong>Allow on this account</strong>
-          <p>Applies to discovery and new provider calls.</p>
-        </div>
-        <Switch
-          checked={enabled}
-          disabled={saving}
-          onCheckedChange={onToggle}
-          aria-label={`${enabled ? "Pause" : "Enable"} ${tool.tool}`}
-        />
-      </div>
-      <Button variant="outline" asChild>
+      <h3>Endpoints</h3>
+      <ul className="catalog-endpoints">
+        {endpoints.map((endpoint) => (
+          <li key={endpoint.tool} className="catalog-endpoint">
+            <div>
+              {endpoints.length > 1 ? (
+                <button
+                  type="button"
+                  aria-pressed={endpoint.tool === tool.tool}
+                  onClick={() => onSelect(endpoint)}
+                >
+                  <code>{endpoint.tool}</code>
+                </button>
+              ) : (
+                <code>{endpoint.tool}</code>
+              )}
+              <span>{money(endpoint.estimatedMicros)} / call</span>
+            </div>
+            <Switch
+              checked={enabled(endpoint.tool)}
+              disabled={saving}
+              onCheckedChange={(value) => onToggle(endpoint.tool, value)}
+              aria-label={`${enabled(endpoint.tool) ? "Pause" : "Enable"} ${endpoint.tool}`}
+            />
+          </li>
+        ))}
+      </ul>
+      <p className="catalog-detail-note">
+        Availability settings apply to discovery and new provider calls.
+        Estimates can vary by request.
+      </p>
+      <details className="catalog-adapter-details">
+        <summary>Adapter defaults</summary>
+        <pre>{JSON.stringify(tool.adapter, null, 2)}</pre>
+      </details>
+      <Button variant="outline" size="sm" asChild>
         <a
           href={tool.documentationUrl}
           target="_blank"
@@ -1357,8 +1565,8 @@ function ToolDetail({
         </a>
       </Button>
       <p className="field-hint">
-        Observed execution metrics describe this account. API success is not
-        answer quality.
+        Observed execution metrics describe this workspace. API success does not
+        measure answer quality.
       </p>
     </div>
   );

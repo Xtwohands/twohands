@@ -17,7 +17,7 @@
 .billing-summary span,
 .billing-subtext {
   font-size: 11px;
-  color: #999;
+  color: var(--dialog-muted, #999);
 }
 .billing-summary strong {
   font-size: 17px;
@@ -36,7 +36,7 @@
 }
 .billing-empty p,
 .billing-dialog p {
-  color: #aaa;
+  color: var(--dialog-muted, #aaa);
   font-size: 12px;
   line-height: 1.65;
 }
@@ -76,10 +76,10 @@
 .billing-label select {
   height: 36px;
   padding: 0 10px;
-  border: 1px solid #393939;
+  border: 1px solid var(--control-border, #393939);
   border-radius: 6px;
-  background: #202020;
-  color: #ddd;
+  background: var(--control-surface, #202020);
+  color: var(--dialog-text, #ddd);
 }
 .billing-label textarea {
   font-family: inherit;

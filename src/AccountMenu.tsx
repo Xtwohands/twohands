@@ -1,6 +1,7 @@
 import { useRef, useState, type ReactNode } from "react";
 import { Popover } from "radix-ui";
 import {
+  BarChartSquare02,
   ChevronUp,
   HelpCircle,
   LogOut01,
@@ -22,6 +23,7 @@ export function AccountMenu({
   children,
   settingsHref = "#settings",
   onSettings,
+  compact = false,
 }: {
   label: string;
   detail?: string;
@@ -29,6 +31,7 @@ export function AccountMenu({
   children?: ReactNode;
   settingsHref?: string;
   onSettings?: () => void;
+  compact?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
@@ -42,17 +45,21 @@ export function AccountMenu({
           aria-label={`Account menu: ${label}${detail ? ` ${detail}` : ""}`}
         >
           <span className="account-menu-avatar" aria-hidden="true">
-            <User01 />
+            {!compact && <User01 />}
           </span>
           <span className="account-menu-identity">
             <strong title={label}>{label}</strong>{" "}
-            {detail && <small>{detail}</small>}
+            {!compact && detail && <small>{detail}</small>}
           </span>
-          <ChevronUp className="account-menu-chevron" aria-hidden="true" />
+          {compact ? (
+            <Settings01 className="account-menu-chevron" aria-hidden="true" />
+          ) : (
+            <ChevronUp className="account-menu-chevron" aria-hidden="true" />
+          )}
         </Popover.Trigger>
         <Popover.Portal>
           <Popover.Content
-            className="account-menu-popover dark"
+            className={`account-menu-popover${compact ? " customer-account-menu" : " dark"}`}
             side="top"
             align="start"
             sideOffset={10}
@@ -83,6 +90,12 @@ export function AccountMenu({
                 <Settings01 />
                 Settings
               </a>
+              {compact && (
+                <a href="#dashboard/usage" onClick={() => setOpen(false)}>
+                  <BarChartSquare02 />
+                  Usage
+                </a>
+              )}
               <button
                 onClick={() => {
                   setOpen(false);
@@ -110,7 +123,7 @@ export function AccountMenu({
       </Popover.Root>
       <Dialog open={helpOpen} onOpenChange={setHelpOpen}>
         <DialogContent
-          className="account-help-dialog dark"
+          className={`account-help-dialog${compact ? " customer-account-help" : " dark"}`}
           onCloseAutoFocus={(event) => {
             event.preventDefault();
             trigger.current?.focus();
@@ -119,7 +132,8 @@ export function AccountMenu({
           <DialogHeader>
             <DialogTitle>Help and documentation</DialogTitle>
             <DialogDescription>
-              Use octolab tools in the agent you already work with.
+              Use {compact ? "Two Hands" : "octolab"} tools in the agent you
+              already work with.
             </DialogDescription>
           </DialogHeader>
           <div className="account-help-topics">
