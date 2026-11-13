@@ -594,7 +594,7 @@ it("keeps all-session sharing enabled and updates exports after deletion without
   ).not.toContain("PRIVATE");
   await expect(
     (async () => await obs.consent(ids[0], false))(),
-  ).rejects.toThrow(/workspace policy/);
+  ).rejects.toThrow(/account policy/);
   await obs.db.remove(ids[0]);
   expect(
     (await companyReport("tavily", "local", obs, lab)).organic,

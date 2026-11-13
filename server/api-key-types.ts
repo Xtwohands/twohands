@@ -8,7 +8,7 @@ export const API_KEY_SCOPES = [
 export type ApiKeyScope = (typeof API_KEY_SCOPES)[number];
 export { toolIdentifiers as API_KEY_TOOLS } from "./provider-identifiers.js";
 import { toolIdentifiers as API_KEY_TOOLS } from "./provider-identifiers.js";
-export interface WorkspaceApiKey {
+export interface ScopedApiKey {
   id: string;
   workspaceId: string;
   name: string;
@@ -33,6 +33,6 @@ export interface ApiKeyEvent {
   at: string;
   actor: "workspace_owner_credential" | "authenticated_account";
   actorId?: string;
-  previous: WorkspaceApiKey | null;
-  current: WorkspaceApiKey;
+  previous: ScopedApiKey | null;
+  current: ScopedApiKey;
 }

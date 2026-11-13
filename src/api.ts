@@ -27,23 +27,16 @@ export function setPreviewRole(
   previewTarget = role === "company" ? target : null;
   contextEpoch++;
 }
-let workspaceId = "",
-  accountId = "",
+let accountId = "",
   contextEpoch = 0;
-export function setAccountSession(
-  token: string,
-  workspace: string,
-  userId: string,
-) {
-  if (workspaceId !== workspace || accountId !== userId) contextEpoch++;
+export function setAccountSession(token: string, userId: string) {
+  if (accountId !== userId) contextEpoch++;
   accessToken = token;
-  workspaceId = workspace;
   accountId = userId;
 }
 export function apiHeaders(): Record<string, string> {
   return {
     ...(accessToken ? { Authorization: "Bearer " + accessToken } : {}),
-    ...(workspaceId ? { "X-Octolab-Workspace": workspaceId } : {}),
     ...(previewRole ? { "X-Octolab-Preview": previewRole } : {}),
     ...(previewTarget ? { "X-Octolab-Preview-Target": previewTarget } : {}),
   };
@@ -51,7 +44,6 @@ export function apiHeaders(): Record<string, string> {
 export function setToken(value: string) {
   contextEpoch++;
   accessToken = value;
-  workspaceId = "";
   accountId = "";
   previewRole = null;
   previewTarget = null;
@@ -74,7 +66,7 @@ export async function api<T = any>(path: string, body?: unknown): Promise<T> {
   const data = await response.json();
   if (epoch !== contextEpoch)
     throw new ApiError(
-      "Workspace changed. The earlier response was discarded.",
+      "Account changed. The earlier response was discarded.",
       409,
     );
   if (response.status === 401 && accountId && token === accessToken)

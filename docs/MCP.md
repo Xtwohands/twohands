@@ -1,6 +1,6 @@
 # External-agent connection
 
-APILayer runs an MCP stdio server that forwards a narrow tool catalog to the local HTTP service. The host owns conversation, planning, tool selection, evidence interpretation, and answer generation. The dashboard observes and evaluates those records.
+Two Hands runs an MCP stdio server registered as `apilayer` that forwards a narrow tool catalog to the local HTTP service. The host owns conversation, planning, tool selection, evidence interpretation, and answer generation. The dashboard observes and evaluates those records.
 
 ## Setup
 
@@ -31,7 +31,7 @@ Restart Claude desktop or start a new Codex session. Claude Code may ask to enab
 
 After pulling the automatic-session update, run `npm run build`, restart the local HTTP service, and restart the host's MCP connection (or start a new Codex chat). Both processes matter: an older stdio bridge keeps its old tool schema, approval instructions, and proposal endpoint even after the HTTP service is restarted. A fresh `record_intent` response contains an active session ID with no `approvalRequired` flag, dashboard link, or budget field. Existing pending proposals remain historical records; they are not rewritten into backend authorizations.
 
-To test the consumer path, ask: “Use APILayer to find a snowboard around $500 for an intermediate rider, 135 lb, with US men's 8.5 boots.” The agent should ask only useful shopping questions, record intent internally, and continue searching. The $500 remains an equipment constraint. Operators can inspect the resulting authorization, calls, and output in the dashboard afterward.
+To test the consumer path, ask: “Use the connected apilayer tools to find a snowboard around $500 for an intermediate rider, 135 lb, with US men's 8.5 boots.” The agent should ask only useful shopping questions, record intent internally, and continue searching. The $500 remains an equipment constraint. Operators can inspect the resulting authorization, calls, and output in the dashboard afterward.
 
 For manual Codex registration:
 
@@ -69,11 +69,11 @@ Output submission also uses a request key. Retrying an older submission returns 
 
 ## Backend policy and host permissions
 
-APILayer authorizes new MCP sessions automatically using server-managed policy. Separately, the agent host may require permission to invoke tools. Backend authorization does not change the host's permissions. No per-request APILayer approval step belongs in the consumer conversation.
+Two Hands authorizes new MCP sessions automatically using server-managed policy. Separately, the agent host may require permission to invoke tools. Backend authorization does not change the host's permissions. No per-request Two Hands approval step belongs in the consumer conversation.
 
-In noninteractive Codex runs, a host policy that disallows approval prompts can block a provider tool before APILayer receives it. The recorded Codex integration test encountered this and retained the incomplete first output. The subsequent bounded test authorized only its specific provider tools for that invocation using per-tool `approval_mode="approve"` overrides; it did not change global host permissions.
+In noninteractive Codex runs, a host policy that disallows approval prompts can block a provider tool before Two Hands receives it. The recorded Codex integration test encountered this and retained the incomplete first output. The subsequent bounded test authorized only its specific provider tools for that invocation using per-tool `approval_mode="approve"` overrides; it did not change global host permissions.
 
-For ordinary use, keep the host’s interactive prompts. Do not use a blanket sandbox/approval bypass to solve an MCP setup issue. A host-blocked call is not an observed provider failure: APILayer only receives the agent’s later report of that blockage.
+For ordinary use, keep the host’s interactive prompts. Do not use a blanket sandbox/approval bypass to solve an MCP setup issue. A host-blocked call is not an observed provider failure: Two Hands only receives the agent’s later report of that blockage.
 
 ## Configuration and troubleshooting
 
@@ -83,7 +83,7 @@ For ordinary use, keep the host’s interactive prompts. Do not use a blanket sa
 - Without `APILAYER_API_KEY`, the bridge uses `API_TOKEN` for SQLite/local compatibility, matching the HTTP server when configured. The local browser owner token stays in tab memory; the bridge reads its environment.
 - Keep the configured server available (`npm start` for local use). The stdio bridge does not open either storage backend or start a server. HTTPS connections require a scoped `oct_key_` credential and never forward `API_TOKEN` or retry a rejected key with owner access. Requests have one 135-second deadline and a 2 MB response limit; failures may represent work already submitted, so reuse the same request key and arguments when inspecting or retrying saved operations.
 - Provider keys may be configured while expired or invalid. Only actual execution verifies access.
-- Host tool timeouts should allow the configured provider timeout plus transport overhead. Codex supports `mcp_servers.apilayer.tool_timeout_sec`; 150 seconds covers APILayer’s maximum configurable provider deadline.
+- Host tool timeouts should allow the configured provider timeout plus transport overhead. Codex supports `mcp_servers.apilayer.tool_timeout_sec`; 150 seconds covers the maximum configurable provider deadline.
 - After changing MCP tools, rebuild and restart the client’s MCP process. An already-running client can keep an earlier catalog until restarted.
 - Inspect `status`, API `httpStatus`, and extraction `pageStatus` independently. API HTTP 200 can contain a missing page.
 - Search snippets are excerpts. Extraction text is bounded at 20,000 characters; new receipts include `truncated`, `originalCharacters`, and `returnedCharacters`. These describe the text returned by the provider, not proof that the provider retrieved every part of a website. Earlier receipts without these fields have no recorded truncation measurement.
@@ -91,7 +91,7 @@ For ordinary use, keep the host’s interactive prompts. Do not use a blanket sa
 
 ## What this integration cannot attest
 
-MCP does not give APILayer private chain of thought, the complete Claude/Codex conversation, or visibility into tools called outside this server. An explanation supplied with `statedReason` is labeled agent-reported. Returned catalog options do not establish that the model considered every alternative. Model identity remains reported unless a future trusted host integration provides verification.
+MCP does not give Two Hands private chain of thought, the complete Claude/Codex conversation, or visibility into tools called outside this server. An explanation supplied with `statedReason` is labeled agent-reported. Returned catalog options do not establish that the model considered every alternative. Model identity remains reported unless a future trusted host integration provides verification.
 
 PostgreSQL HTTP access uses [account sessions, membership, and platform roles](AUTH.md); scoped keys remain restricted to their machine-access allowlist. Operator acceptance and evaluation are deliberately absent from the MCP catalog and require platform administrator access in account mode. SQLite retains its shared local trust boundary. Neither mode protects against software already trusted with server credentials or database access.
 
@@ -99,7 +99,7 @@ References: [MCP tools specification](https://modelcontextprotocol.io/specificat
 
 ## Discovery and selection summaries
 
-Send `discover_tools` a provider-neutral `operations` array plus the immediate `need` and relevant `context`; octolab includes the recorded intent and finds compatible candidates with costs and reputation evidence. Use `operation: "search"` with `query`, or `operation: "extract"` with a public HTTPS `url`. Legacy provider-specific `requests` are supported and expand into relevant alternatives. See [the complete discovery contract](TOOL_DISCOVERY.md).
+Send `discover_tools` a provider-neutral `operations` array plus the immediate `need` and relevant `context`; Two Hands includes the recorded intent and finds compatible candidates with costs and reputation evidence. Use `operation: "search"` with `query`, or `operation: "extract"` with a public HTTPS `url`. Legacy provider-specific `requests` are supported and expand into relevant alternatives. See [the complete discovery contract](TOOL_DISCOVERY.md).
 
 Every new provider call requires `statedReason`: a brief, non-empty explanation of the tool choice, not private reasoning. After upgrading, reconnect the MCP client so it reloads the required input schema. Historical calls remain readable with `get_evidence`; no explanation is invented for older calls.
 

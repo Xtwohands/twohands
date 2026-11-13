@@ -99,30 +99,30 @@ describe("scoped workspace API keys", () => {
   });
   it("requires owner access for issuance and never treats an invalid scoped key as local owner", async () => {
     expect(
-      (await request(app).post("/api/workspace/api-keys").send(settings()))
+      (await request(app).post("/api/account/api-keys").send(settings()))
         .status,
     ).toBe(401);
     const issued = await request(app)
-      .post("/api/workspace/api-keys")
+      .post("/api/account/api-keys")
       .set(auth(config.token))
       .send(settings());
     expect(issued.status).toBe(201);
     const secret = issued.body.secret;
     expect(
-      (await request(app).get("/api/workspace/api-keys").set(auth(secret)))
+      (await request(app).get("/api/account/api-keys").set(auth(secret)))
         .status,
     ).toBe(403);
     expect(
       (
         await request(app)
-          .post("/api/workspace/api-keys")
+          .post("/api/account/api-keys")
           .set(auth(secret))
           .send(settings())
       ).status,
     ).toBe(403);
     config.token = "";
     expect(
-      (await request(app).get("/api/workspace/api-keys").set(auth(secret)))
+      (await request(app).get("/api/account/api-keys").set(auth(secret)))
         .status,
     ).toBe(503);
     expect((await request(app).get("/api/observations")).status).toBe(503);
@@ -132,19 +132,19 @@ describe("scoped workspace API keys", () => {
       expect(
         (
           await request(local)
-            .get("/api/workspace/api-keys")
+            .get("/api/account/api-keys")
             .set(auth("oct_key_" + "a".repeat(43)))
         ).status,
       ).toBe(401);
       const disabled = await request(local)
-        .get("/api/workspace/api-keys")
+        .get("/api/account/api-keys")
         .set("Host", "localhost");
       expect(disabled.status).toBe(200);
       expect(disabled.body.enabled).toBe(false);
       expect(
         (
           await request(local)
-            .post("/api/workspace/api-keys")
+            .post("/api/account/api-keys")
             .set("Host", "localhost")
             .send(settings())
         ).status,
@@ -157,10 +157,10 @@ describe("scoped workspace API keys", () => {
     const { secret } = await keys.create(settings());
     for (const [method, path] of [
       ["get", "/api/provider-lab"],
-      ["get", "/api/workspace/funding"],
-      ["get", "/api/workspace/routing"],
+      ["get", "/api/account/funding"],
+      ["get", "/api/account/routing"],
       ["post", "/api/tasks"],
-      ["post", "/api/workspace/routing"],
+      ["post", "/api/account/routing"],
       ["post", "/api/observations"],
       ["post", "/api/observations/proposals"],
       [
@@ -169,7 +169,7 @@ describe("scoped workspace API keys", () => {
       ],
       [
         "post",
-        "/api/workspace/api-keys/00000000-0000-4000-8000-000000000000/revoke",
+        "/api/account/api-keys/00000000-0000-4000-8000-000000000000/revoke",
       ],
     ]) {
       const operation =
@@ -209,11 +209,11 @@ describe("scoped workspace API keys", () => {
     expect(
       requiredApiKeyScope("POST", "/api/observations/summary/call"),
     ).toBeNull();
-    expect(requiredApiKeyScope("GET", "/api/workspace/api-keys")).toBeNull();
+    expect(requiredApiKeyScope("GET", "/api/account/api-keys")).toBeNull();
     expect(
       (
         await request(app)
-          .post("/api/workspace/preview")
+          .post("/api/account/preview")
           .set(auth(secret!))
           .set("Origin", "https://evil.example")
           .send({ need: "fixture" })
@@ -235,7 +235,7 @@ describe("scoped workspace API keys", () => {
     expect(result.status).toBe(200);
     expect(result.body.candidateTools).toEqual(["tavily_search"]);
     const preview = await request(app)
-      .post("/api/workspace/preview")
+      .post("/api/account/preview")
       .set(auth(secret!))
       .send({
         need: "fixture",

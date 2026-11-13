@@ -111,7 +111,7 @@ test("a provider authors a suite, runs it live, revises checks in replay, and co
     .click();
   const download = await downloadPromise;
   expect(download.suggestedFilename()).toBe(
-    `octolab-private-run-${replayId}.json`,
+    `two-hands-private-run-${replayId}.json`,
   );
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
   expect(

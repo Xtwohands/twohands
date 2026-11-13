@@ -1,6 +1,6 @@
 # Tool discovery
 
-Octolab finds suitable tools; the external agent chooses and executes one explicitly. Discovery is a free catalog lookup, not a provider request or an internal research conversation.
+Two Hands finds suitable tools; the external agent chooses and executes one explicitly. Discovery is a free catalog lookup, not a provider request or an internal research conversation.
 
 ## Inputs
 

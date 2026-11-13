@@ -2,7 +2,7 @@
 
 The user sidebar has **API keys** at `#dashboard/keys`. Create separate credentials for agents/applications, restrict permissions and tools, set expiry and a lifetime estimated-spend limit, inspect usage, edit policy, or permanently revoke a key.
 
-Each key belongs to one persistent workspace UUID, preserved by the [verified PostgreSQL import](POSTGRES_MIGRATION.md). In PostgreSQL [account mode](AUTH.md), the backend resolves the owning workspace from the key hash and applies current scope, tool, expiry, revocation, and spending checks. Browser workspace selection cannot retarget a key. SQLite retains one shared local workspace.
+Each key belongs to one persistent data partition, preserved by the [verified PostgreSQL import](POSTGRES_MIGRATION.md). In PostgreSQL [account mode](AUTH.md), the backend resolves the owning partition from the key hash and applies current scope, tool, expiry, revocation, and spending checks. SQLite uses one local partition.
 
 ## Owner protection is required
 
@@ -58,11 +58,11 @@ All management routes require a workspace owner or platform administrator accoun
 
 | Method | Route                                | Behavior                                                                                         |
 | ------ | ------------------------------------ | ------------------------------------------------------------------------------------------------ |
-| GET    | `/api/workspace/api-keys`            | Configuration status, workspace UUID, public key metadata, supported scopes/tools.               |
-| POST   | `/api/workspace/api-keys`            | `{requestKey,name,scopes,allowedTools,limitUsd,expiresInDays}`; returns `{key,secret,replayed}`. |
-| GET    | `/api/workspace/api-keys/:id`        | Public metadata and latest 100 policy audit events.                                              |
-| POST   | `/api/workspace/api-keys/:id`        | Full editable policy `{revision,name,scopes,allowedTools,limitUsd}`.                             |
-| POST   | `/api/workspace/api-keys/:id/revoke` | `{revision}`; repeated revocation returns the saved revoked state.                               |
+| GET    | `/api/account/api-keys`            | Configuration status, workspace UUID, public key metadata, supported scopes/tools.               |
+| POST   | `/api/account/api-keys`            | `{requestKey,name,scopes,allowedTools,limitUsd,expiresInDays}`; returns `{key,secret,replayed}`. |
+| GET    | `/api/account/api-keys/:id`        | Public metadata and latest 100 policy audit events.                                              |
+| POST   | `/api/account/api-keys/:id`        | Full editable policy `{revision,name,scopes,allowedTools,limitUsd}`.                             |
+| POST   | `/api/account/api-keys/:id/revoke` | `{revision}`; repeated revocation returns the saved revoked state.                               |
 
 Scoped callers send `Authorization: Bearer <scoped key>` to permitted observation/usage endpoints. Management supports at most 1,000 saved keys and 100 unexpired/unrevoked credentials. Secret digests, key-spend receipts, and policy audit records remain outside provider/model statistics and commercial aggregate exports. Single-server database ownership and process-local rate limits still apply with either backend.
 

@@ -130,7 +130,7 @@ describe("workspace tool routing", () => {
   });
   it("returns actionable validation for unsupported extraction URLs", async () => {
     const result = await request(createApp(store, undefined, obs))
-      .post("/api/workspace/preview")
+      .post("/api/account/preview")
       .set("Host", "localhost")
       .send({
         need: "preview",
@@ -172,10 +172,10 @@ describe("workspace API", () => {
       );
     const app = createApp(store, undefined, obs);
     const first = await request(app)
-      .get("/api/workspace/activity?q=pagination")
+      .get("/api/account/activity?q=pagination")
       .set("Host", "localhost");
     const second = await request(app)
-      .get("/api/workspace/activity?q=pagination&page=2")
+      .get("/api/account/activity?q=pagination&page=2")
       .set("Host", "localhost");
     expect(first.body.items).toHaveLength(20);
     expect(second.body.items).toHaveLength(3);
@@ -187,7 +187,7 @@ describe("workspace API", () => {
       ).size,
     ).toBe(23);
     const exported = await request(app)
-      .get("/api/workspace/activity?q=pagination&export=true")
+      .get("/api/account/activity?q=pagination&export=true")
       .set("Host", "localhost");
     expect(exported.body.items).toHaveLength(23);
     expect(exported.body.total).toBe(23);
@@ -197,7 +197,7 @@ describe("workspace API", () => {
     const s = await create();
     const c = await obs.execute(s.id, call());
     const usage = await request(app)
-      .get("/api/workspace/usage?days=7")
+      .get("/api/account/usage?days=7")
       .set("Host", "localhost");
     expect(usage.status).toBe(200);
     expect(usage.body.requests).toBe(1);
@@ -206,7 +206,7 @@ describe("workspace API", () => {
     expect(usage.body.usdReportingCalls).toBe(1);
     expect(usage.body.providers[0].reportedCredits).toBe(1);
     const log = await request(app)
-      .get("/api/workspace/activity?provider=exa&status=succeeded&q=fixture")
+      .get("/api/account/activity?provider=exa&status=succeeded&q=fixture")
       .set("Host", "localhost");
     expect(log.body.total).toBe(1);
     expect(log.body.items[0].id).toBe(c.id);
@@ -214,14 +214,14 @@ describe("workspace API", () => {
     expect(
       (
         await request(app)
-          .get("/api/workspace/activity?provider=tavily")
+          .get("/api/account/activity?provider=tavily")
           .set("Host", "localhost")
       ).body.total,
     ).toBe(0);
     expect(
       (
         await request(app)
-          .get("/api/workspace/usage?days=6")
+          .get("/api/account/usage?days=6")
           .set("Host", "localhost")
       ).status,
     ).toBe(400);
@@ -235,7 +235,7 @@ describe("workspace API", () => {
       )
       .run();
     const result = await request(createApp(store, undefined, obs))
-      .get("/api/workspace/usage")
+      .get("/api/account/usage")
       .set("Host", "localhost");
     expect(result.body.requests).toBe(0);
     expect(result.body.reportedUsd).toBeNull();
@@ -246,13 +246,13 @@ describe("workspace API", () => {
     config.token = "fixture-token";
     try {
       const app = createApp(store, undefined, obs);
-      expect((await request(app).get("/api/workspace/activity")).status).toBe(
+      expect((await request(app).get("/api/account/activity")).status).toBe(
         401,
       );
       expect(
         (
           await request(app)
-            .post("/api/workspace/routing")
+            .post("/api/account/routing")
             .set("Authorization", "Bearer fixture-token")
             .set("Origin", "https://evil.example")
             .send({ revision: 0, disabledTools: [] })
@@ -261,7 +261,7 @@ describe("workspace API", () => {
       expect(
         (
           await request(app)
-            .get("/api/workspace/connection")
+            .get("/api/account/connection")
             .set("Authorization", "Bearer fixture-token")
         ).body.providers.exa,
       ).toBe(true);

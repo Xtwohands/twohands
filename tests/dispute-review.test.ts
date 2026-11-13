@@ -225,7 +225,7 @@ describe("admin dispute review workflow", () => {
     expect(
       (
         await request(app)
-          .get("/api/workspace/funding")
+          .get("/api/account/funding")
           .set("Authorization", "Bearer admin-fixture")
       ).status,
     ).toBe(401);

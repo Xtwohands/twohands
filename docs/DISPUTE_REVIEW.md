@@ -36,7 +36,7 @@ Review saves use UUID idempotency keys. Retrying unchanged details after a lost 
 
 ## API
 
-In PostgreSQL mode, all routes below require `Authorization: Bearer <account access token>` and a platform administrator UUID allowlisted server-side. Send `X-Octolab-Workspace: <workspace ID>` to choose the workspace to review; omission selects the first accessible workspace. SQLite requires `Authorization: Bearer <ADMIN_API_TOKEN>`. Mutating routes require JSON and enforce same-origin writes. The admin router authenticates before the general workspace middleware. Unknown routes inside this prefix remain behind admin authentication.
+In PostgreSQL mode, all routes below require `Authorization: Bearer <account access token>` and a platform administrator UUID allowlisted server-side. The queue spans accounts. Individual reviews resolve from the stored payment ID. SQLite requires `Authorization: Bearer <ADMIN_API_TOKEN>`. Mutating routes require JSON and enforce same-origin writes. The admin router authenticates before the personal account middleware. Unknown routes inside this prefix remain behind admin authentication.
 
 | Method | Route                                              | Behavior                                                                                                                |
 | ------ | -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |

@@ -1,8 +1,8 @@
-# Accounts and workspace access
+# Account access
 
-octolab uses Supabase Auth for browser identity and PostgreSQL for workspace ownership. The backend verifies identities with Supabase Auth, checks live Auth session/user records, and reads workspace membership on every request. User-editable metadata never grants membership or administrator access.
+Two Hands uses Supabase Auth for browser identity and PostgreSQL for personal data. The backend verifies the session and resolves private data from the signed-in user ID. The first personal-data request prepares a private storage partition if the account has no existing solely owned partition. Company-only routes require only account identity and company authorization.
 
-The public landing page stays public. The account interface supports email/password signup, email confirmation, sign-in, password reset/recovery, session persistence, automatic private account setup, and sign-out. Customer workspace creation and switching are deferred. The first visit to the customer tools area reuses an existing authorized private scope or prepares one automatically; company-only, administration-only and preview journeys do not provision customer scopes. Signup and recovery preserve the chosen user, company, or administration area. Password requests go directly to the configured Supabase Auth origin; octolab never stores passwords. The pinned browser SDK uses PKCE and manages session refresh/storage. See [the three role journeys](ROLE_JOURNEYS.md) for entry points, company registration, and administrator review.
+The public landing page remains available before sign-in. The browser uses the Supabase Auth SDK for email/password signup, confirmation, recovery, session refresh, and sign-out. See [the three role journeys](ROLE_JOURNEYS.md).
 
 ## Configuration
 
@@ -26,63 +26,32 @@ Use the same Supabase project for Auth and PostgreSQL. The backend database acco
 
 In Supabase Auth, enable email/password sign-in and email confirmation. Set the Site URL and allow only actual development/production callback URLs at the app origin. The callback uses /?auth_callback=1 with #dashboard, #company, or #admin to preserve the intended area. Configure production email delivery before relying on confirmations or password resets for customers. SMTP secrets stay outside frontend configuration.
 
-## Initial migration and account bootstrap
+## Historical data
 
-1. Follow [PostgreSQL migration](POSTGRES_MIGRATION.md) through source inspection and schema migration. Preserve the SQLite source/backup.
-2. Fill public Auth settings, database URL, and inspected legacy workspace ID. Start the PostgreSQL app. Signup can run before importing history; historical records are not claimed or exposed.
-3. Create and confirm the intended owner's account. Copy its UUID from Supabase Auth's user list, or resolve that specific verified account through connected management tools. A first customer-tools visit may prepare an empty private account. That scope does not claim historical records and remains separate from the imported scope.
-4. Stop the PostgreSQL runtime. Set LEGACY_OWNER_USER_ID explicitly, then run db:import and db:verify. Runtime ownership prevents import/recovery from overlapping an active server.
-5. Restart. The assigned owner receives access to the imported scope. Trusted administrators can select the intended customer account in their account menu. Other customer signups receive only their automatically prepared private scope or separately granted memberships; no customer workspace picker is shown.
-
-The source is never edited by the importer. Consent events, content, key hashes, balances, and receipts remain intact. A fresh workspace created before import stays separate; the importer does not merge it into history.
+Follow [PostgreSQL migration](POSTGRES_MIGRATION.md) for SQLite imports. The configured import owner retains access through their account. When an account already solely owns several legacy partitions, the oldest is used for personal access. Other partitions stay stored with their original keys, payments, audit events, and consent records. Historical membership grants do not provide shared browser access.
 
 ## Roles and machine access
 
-| Principal              | Allowed access                                                                                                                                                                                                         |
-| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Workspace owner        | Own research, routing settings, API-key management, and test-funding controls.                                                                                                                                         |
-| Workspace member       | Research/tool operations and usage reads; no key management, funding controls, or owner settings.                                                                                                                      |
-| Platform administrator | Explicit operator access across registered workspaces, company ownership/access review, controlled diagnostics, manual approval/evaluation, dispute review, and audited workspace tool allowances.                     |
-| Tool company owner     | Own registration, feedback, team grants/revocation, and access history; approved, separately released aggregate metrics for the assigned provider. Company membership grants no customer workspace or operator access. |
-| Company analyst        | Company profile and approved aggregate insights only; no registration edits, team management, access history, or provider-lab access.                                                                                  |
-| Scoped API key         | Explicit route/scope/tool allowlist for its owning workspace, within spend/expiry/revocation checks.                                                                                                                   |
+- Signed-in accounts manage their own activity, routing settings, API keys, and test funding.
+- Platform administrators manage tool allowances by account, review company ownership, run controlled diagnostics, and review the global payment dispute queue. Account activity uses the signed-in operator's own data.
+- Tool company owners and analysts retain their independently verified company permissions and approved aggregate insights.
+- Scoped machine keys remain attached to the original storage partition. Their route, tool, spend, expiry, and revocation restrictions continue to apply.
 
-Platform roles come from the server UUID allowlist. Workspace and company roles come from their separate membership tables. There is no first-signup administrator rule or editable JWT metadata shortcut. User previews remove admin privileges while retaining actual workspace memberships. Company previews require an explicit registered-company or integrated-provider target and restrict requests to that target; they create no permanent membership. Authorization normalizes URL casing, trailing slashes, and encoded parameters to match Express routing.
-
-An administrator can use their own customer account through a real workspace membership without elevating to administrator access. User preview follows the same membership boundaries. Operator actions, access to other workspaces through the platform-admin role, company impersonation, and company-preview target discovery require an allowlisted administrator with a verified live session. A user preview cannot perform administrator actions or access a workspace without membership.
-
-Automatic customer account setup, company registration, and platform administration are separate flows. A company owner or administrator can enter their area without creating a customer workspace. Company owners can grant analyst access to existing confirmed accounts and revoke it in Company team. Emailed invitations, workspace membership editing, and OAuth/SSO setup remain separate work. See [administrator settings](ADMIN_TOOL_SETTINGS.md) for privileged access requirements. Trusted operators can manage workspace memberships; removal or role changes take effect on the next backend request.
-
-In PostgreSQL account mode, API_TOKEN and ADMIN_API_TOKEN do not replace account authentication. They retain their previous behavior only in explicit SQLite/local mode. For Claude, Codex, and other MCP hosts, issue a scoped workspace key and configure APILAYER_API_KEY. The consumer's conversation stays in its MCP host; it does not visit the dashboard or approve backend research spending.
-
-Signing out ends the current browser session. Machine keys remain separate workspace credentials until revoked, expired, or capped. Admitted calls still settle conservatively after revocation or interruption.
+Platform roles come from the server UUID allowlist. User preview removes operator privileges and uses the administrator's existing personal data. Company preview uses an explicit company or integrated provider and retains the administrator as the audit actor.
 
 ## Account API
 
-| Method | Route                  | Behavior                                                                                                                                                                                                             |
-| ------ | ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| GET    | `/api/auth/config`     | Public `{enabled:false}` in SQLite mode, or validated public Auth URL/key in account mode.                                                                                                                           |
-| GET    | `/api/auth/me`         | Authenticated account ID/email, accessible workspaces/roles, company memberships/roles, platform-admin status, and admin preview availability.                                                                       |
-| POST   | `/api/auth/setup`      | Reuse the earliest accessible private scope or prepare a private owned scope for the verified identity. Strict empty JSON body, same-origin writes and a per-account transaction lock; no spending or funding grant. |
-| POST   | `/api/auth/workspaces` | Create a workspace with `{name, requestKey}` and owner membership. Requires a verified account, JSON, and same-origin writes.                                                                                        |
-| POST   | `/api/auth/companies`  | Register a tool company for ownership/integration review; no existing customer workspace is required.                                                                                                                |
-| GET    | `/api/public/catalog`  | Public tool descriptions, provider availability, and configured estimates; no private activity or credentials.                                                                                                       |
+| Method | Route                 | Behavior                                                                                               |
+| ------ | --------------------- | ------------------------------------------------------------------------------------------------------ |
+| GET    | `/api/auth/config`    | Public Auth configuration                                                                              |
+| GET    | `/api/auth/me`        | Signed-in identity, personal account availability, company memberships, and administrator capabilities |
+| POST   | `/api/auth/companies` | Register a tool company for review                                                                     |
+| GET    | `/api/account/usage`  | Personal tool usage                                                                                    |
+| GET    | `/api/public/catalog` | Public provider availability and configured estimates                                                  |
 
-Company team grant/revocation requests are idempotent by actor, company, and request key. A replay after revocation does not restore a previous grant. Successful aggregate report requests append access status/policy audit events without copying report payloads. See [company team contracts](ROLE_JOURNEYS.md#company-and-review-api).
+Protected browser requests send the Supabase bearer token. The backend resolves personal data from that token. Writes require same-origin JSON. Existing published `/api/workspace/…` tool and account endpoints are accepted for compatibility.
 
-Protected browser requests send `Authorization: Bearer <Supabase access token>` and `X-Octolab-Workspace: <workspace ID>`. Omitting the workspace header selects the first accessible workspace; an inaccessible requested ID returns `403`. `/api/auth/me`, automatic account setup, legacy workspace creation, company registration, company-owner routes, and the global company-review queue do not require an existing workspace. Company and admin routes verify account identity independently of customer workspace headers; see [their API reference](ROLE_JOURNEYS.md#company-and-review-api). Login, signup, confirmation, refresh, recovery, and sign-out use the browser Auth SDK directly.
-
-The legacy workspace-creation API remains compatible, while customer management controls are deferred. Workspace names are 2–80 characters. Creation accepts a UUID request key and refuses a new workspace when the account already has ten memberships. An identical retry returns the saved workspace; changed names under the same key return `409`, and a removed membership cannot be recovered by replay. Account/database verification failures return `503`; ended, expired, or invalid sessions return `401`.
-
-## Session, audit, and payment boundaries
-
-Verified identity lookups are briefly cached by token hash; live session/user status and membership are checked freshly. Logout/session deletion, account deletion/bans, expiry, and lost membership block subsequent requests. Verification/database outages fail closed without treating an Auth outage as an invalid password.
-
-The frontend clears protected state on sign-out and rejected sessions. Account/workspace changes remount private views; request generations reject late responses from the previous workspace. Key-policy events record the authenticated account UUID. Observation events identify the requesting account/key separately from agent-reported model/host/reason fields.
-
-Dispute review requires a configured platform administrator and records that account UUID. Signed Stripe webhooks remain independent of browser auth: signature verification precedes workspace resolution. External receipt/event identities remain globally unique; conflicting ownership stops processing. Existing test-credit holds remain retained.
-
-Provider credentials stay server-side. Test credits do not authorize live provider spending. Stripe and Base Sepolia deposits stay disabled until explicitly configured. This checkpoint enables neither real-money payments nor production funding enforcement.
+Signed Stripe webhooks resolve the account partition from verified payment identifiers. The dispute queue spans accounts, and individual reviews resolve from the stored payment ID and record the verified administrator.
 
 ## Validation and deployment
 
@@ -95,9 +64,3 @@ OCTOLAB_TEST_POSTGRES_URL=postgresql://... npm test -- tests/accounts.test.ts te
 ```
 
 These fixtures create a minimal synthetic Auth schema. Never point them at production Supabase.
-
-The combined allowance, admin-navigation, and company-dashboard checkpoint passed 309 normal tests with 34 conditional skips, 41 fresh disposable PostgreSQL cases, and 197 desktop/mobile browser cases with one intentional skip. These totals cover the combined integration, not Auth alone. Fixture results remain separate from hosted-account checks, provider performance, and payments.
-
-Separately from fixture testing, the connected Supabase project has all eight checked-in schema migrations installed with matching application checksums. The actual session-pooler database connection succeeds with certificate and hostname verification. A confirmed account is explicitly assigned as the imported workspace owner; its requested platform-admin allowlist entry is configured separately. Historical SQLite data has passed import and content verification. The canonical account runtime uses port 3008; see the [hosted rollout checkpoint](SUPABASE_ROLLOUT.md).
-
-Before public launch, check recovery/login/logout, imported-workspace access, and role transitions against the hosted project. The confirmed account establishes confirmation for that account; it does not establish production SMTP delivery or complete end-to-end recovery coverage. The operator-controlled workspace allowance is active and defaults to denial without a grant; customer-issued keys and test-credit balances cannot raise it. See [allowance administration](WORKSPACE_ALLOWANCES.md). Fixture tests themselves made no hosted writes, provider calls, or payments.

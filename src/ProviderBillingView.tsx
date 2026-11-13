@@ -40,7 +40,7 @@ export function ProviderAdaptersView() {
     [saving, setSaving] = useState(false);
   useEffect(() => {
     let current = true;
-    api<{ adapters: AdapterStatus[] }>("/workspace/provider-adapters")
+    api<{ adapters: AdapterStatus[] }>("/account/provider-adapters")
       .then((data) => {
         if (current) setAdapters(data.adapters);
       })
@@ -144,7 +144,7 @@ export function ProviderAdaptersView() {
               setError("");
               try {
                 await api(
-                  `/workspace/provider-adapters/${selected.tool}/account`,
+                  `/account/provider-adapters/${selected.tool}/account`,
                   {
                     accountReference: account,
                     credentialRevision: selected.credential.revision,
@@ -197,7 +197,7 @@ export function ProviderBillingView({ days }: { days: string }) {
     const id = ++generation.current;
     try {
       const next = await api<BillingOverview>(
-        `/workspace/provider-billing?days=${days}`,
+        `/account/provider-billing?days=${days}`,
       );
       if (id === generation.current) {
         setData(next);
@@ -221,7 +221,7 @@ export function ProviderBillingView({ days }: { days: string }) {
     setBusy(true);
     setError("");
     try {
-      await api(`/workspace/provider-billing/imports/${selected.id}/review`, {
+      await api(`/account/provider-billing/imports/${selected.id}/review`, {
         requestKey: crypto.randomUUID(),
         decision,
         note,
@@ -270,7 +270,7 @@ export function ProviderBillingView({ days }: { days: string }) {
               try {
                 download(
                   "provider-billing.json",
-                  await api("/workspace/provider-billing/export"),
+                  await api("/account/provider-billing/export"),
                   "application/json",
                 );
               } catch (e) {
@@ -584,7 +584,7 @@ function BillingImport({
       const start = String(form.get("start")),
         end = String(form.get("end")),
         rate = String(form.get("rate") ?? "").trim();
-      await api("/workspace/provider-billing/imports", {
+      await api("/account/provider-billing/imports", {
         requestKey: crypto.randomUUID(),
         provider: form.get("provider"),
         accountReference: form.get("account"),
@@ -627,7 +627,7 @@ function BillingImport({
           </DialogTitle>
           <DialogDescription>
             Use a provider invoice or account usage report. Record and request
-            references let octolab find matching calls.
+            references let Two Hands find matching calls.
           </DialogDescription>
         </DialogHeader>
         <form

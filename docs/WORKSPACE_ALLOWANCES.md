@@ -1,10 +1,10 @@
-# Operator workspace allowances
+# Operator account allowances
 
-The PostgreSQL runtime requires an explicit platform-operator allowance before executing provider calls. New and previously existing workspaces have no allowance by default. Customer-issued API keys and backend session budgets remain additional limits; neither grants access to platform spending. Payment balances and test credits do not grant an allowance.
+The PostgreSQL runtime requires an explicit platform-operator allowance before executing provider calls. New and previously existing accounts have no allowance by default. Customer-issued API keys and backend session budgets remain additional limits; neither grants access to platform spending. Payment balances and test credits do not grant an allowance.
 
 Migration `20261109032233_workspace_operator_allowances.sql` is applied to the hosted project and verified by the application checksum ledger. The canonical PostgreSQL runtime enforces the guard. No hosted allowances, reservations, or allowance audit events were created during activation: positive-estimate calls remain denied until a platform administrator deliberately grants access. Deposits remain disabled.
 
-Open **Tool access** (`#tool-access`) from the persistent admin sidebar. Choose a workspace, enter the lifetime USD estimate limit, choose whether access is paused, and supply an audit reason. Saves use the current revision and an idempotency key; stale state requires refreshing. The page lists all registered workspaces independently of the currently selected customer workspace. User workspaces show a read-only allowance notice and cannot change their own platform limit.
+Open **Tool access** (`#tool-access`) from the persistent admin sidebar. Choose an account, enter the lifetime USD estimate limit, choose whether access is paused, and supply an audit reason. Saves use the current revision and an idempotency key; stale state requires refreshing. The page lists confirmed accounts by email. The customer dashboard shows a notice when an existing allowance is paused or exhausted. Accounts without an allowance receive an unavailable message if they try to use a paid tool.
 
 ## Authorization and accounting
 
@@ -18,7 +18,7 @@ Pausing blocks new admission and keeps spent/reserved balances. Reducing a limit
 
 ## HTTP contract
 
-Authenticated workspace members and scoped keys with `usage:read` can read `GET /api/workspace/operator-allowance`. It returns:
+Authenticated accounts and scoped keys with `usage:read` can read `GET /api/account/operator-allowance`. It returns:
 
 ```json
 {
@@ -39,8 +39,8 @@ Discovery, preview, and catalog responses include `operatorAllowance`. Candidate
 
 Only freshly verified platform administrators can use:
 
-- `GET /api/admin/workspace-allowances?after=<workspace UUID>`: at most 50 `{workspaceId,name,operatorAllowance}` items and `nextCursor`.
-- `POST /api/admin/workspace-allowances/:workspaceId`: strict JSON `{requestKey,revision,limitMicros,paused,reason}`. `requestKey` is a UUID, initial revision is zero, and the cap is 0–1,000,000,000 micro-units. A stale revision or changed request-key payload returns 409. A replay returns the current state with `replayed:true`, preserving any later pause.
+- `GET /api/admin/account-allowances?after=<account UUID>`: at most 50 `{accountId,name,operatorAllowance}` items and `nextCursor`.
+- `POST /api/admin/account-allowances/:accountId`: strict JSON `{requestKey,revision,limitMicros,paused,reason}`. `requestKey` is a UUID, initial revision is zero, and the cap is 0–1,000,000,000 micro-units. A stale revision or changed request-key payload returns 409. A replay returns the current state with `replayed:true`, preserving any later pause.
 
 Company/user previews and customer keys cannot administer allowances. No customer endpoint changes the platform limit.
 

@@ -55,7 +55,7 @@ export function accountPreviewAccess(accounts: Accounts) {
           403,
           "Only administrators can preview another role.",
         );
-      // User preview removes admin powers and uses real memberships.
+      // User preview removes admin powers and uses the administrator’s own personal account.
       if (targetHeader && role !== "company")
         throw new AccountError(
           400,
@@ -144,23 +144,6 @@ export function accountRoutes(app: Express, accounts?: Accounts) {
       accountFailure(error, res);
     }
   });
-  router.post("/setup", async (req, res) => {
-    try {
-      z.object({}).strict().parse(req.body);
-      res.json(await accounts.ensureAccountWorkspace(res.locals.account));
-    } catch (error) {
-      accountFailure(error, res);
-    }
-  });
-  router.post("/workspaces", async (req, res) => {
-    try {
-      res
-        .status(201)
-        .json(await accounts.createWorkspace(res.locals.account, req.body));
-    } catch (error) {
-      accountFailure(error, res);
-    }
-  });
   router.post("/companies", async (req, res) => {
     try {
       res
@@ -169,6 +152,9 @@ export function accountRoutes(app: Express, accounts?: Accounts) {
     } catch (error) {
       accountFailure(error, res);
     }
+  });
+  router.use((_req, res) => {
+    res.status(404).json({ error: "Account route not found." });
   });
   app.use("/api/auth", router);
 }
@@ -184,7 +170,7 @@ export function accountAccess(
       const credential =
         req.header("authorization")?.replace(/^Bearer /, "") || "";
       if (credential.startsWith("oct_key_")) {
-        const workspaceId = await accounts.keyWorkspace(credential);
+        const workspaceId = await accounts.keyAccountScope(credential);
         await store.scope.run(workspaceId, async () => {
           const key = await keys.authenticate(credential),
             scope = requiredApiKeyScope(req.method, `/api${path}`);
@@ -199,23 +185,14 @@ export function accountAccess(
         return;
       }
       const identity = await accounts.identity(req);
-      const workspace = await accounts.workspace(
-        identity,
-        req.header("x-octolab-workspace"),
-      );
       if (!accounts.isAdmin(identity.userId) && operatorRestricted(req, path))
         throw new AccountError(
           403,
           "Administrator access is required for this operator action.",
         );
-      if (workspace.role === "member" && memberRestricted(req, path))
-        throw new AccountError(
-          403,
-          "Only the account owner can change this setting.",
-        );
+      const accountScope = await accounts.personalAccountScope(identity);
       res.locals.account = identity;
-      res.locals.workspaceRole = workspace.role;
-      store.scope.run(workspace.id, () =>
+      store.scope.run(accountScope, () =>
         store.actorScope.run({ kind: "account", id: identity.userId }, next),
       );
     } catch (error) {
@@ -250,15 +227,6 @@ function operatorRestricted(req: Request, path: string) {
     path,
   );
 }
-function memberRestricted(req: Request, path: string) {
-  if (
-    /^\/workspace\/(api-keys|funding)(?:\/|$)/.test(path) ||
-    path.startsWith("/provider-lab")
-  )
-    return true;
-  if (["GET", "HEAD", "OPTIONS"].includes(req.method)) return false;
-  return !requiredApiKeyScope(req.method, `/api${path}`);
-}
 export function adminAccountAccess(accounts: Accounts, store: Store) {
   return async (req: Request, res: Response, next: NextFunction) => {
     try {
@@ -270,21 +238,15 @@ export function adminAccountAccess(accounts: Accounts, store: Store) {
           403,
           "Administrator access is required for payment review.",
         );
-      const workspace = await accounts.workspace(
-        identity,
-        req.header("x-octolab-workspace"),
-      );
       res.locals.adminActor = `account ${identity.userId}`;
-      store.scope.run(workspace.id, () =>
-        store.actorScope.run({ kind: "account", id: identity.userId }, next),
-      );
+      store.actorScope.run({ kind: "account", id: identity.userId }, next);
     } catch (error) {
       accountFailure(error, res);
     }
   };
 }
 
-/** Company and global admin operations require account identity, never a consumer workspace or machine key. */
+/** Company and global admin operations require account identity, independent of personal data access. */
 export function companyAccountRoutes(app: Express, accounts?: Accounts) {
   if (!accounts) return;
   const router = express.Router();

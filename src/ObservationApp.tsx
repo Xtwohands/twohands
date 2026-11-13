@@ -15,7 +15,7 @@ import { AdminNavigation } from "./AdminNavigation";
 import { ToolAccessView, OperatorAllowanceNotice } from "./ToolAccessView";
 import { AccountControls, useAccount } from "./AccountGate";
 import { DisputeReviewView } from "./DisputeReviewView";
-import { ToolOptions } from "./components/ToolOptions";
+import { ToolOptions, providerLogos } from "./components/ToolOptions";
 import { OutcomeContent } from "./components/DeferredOutcomeContent";
 import { CompanyView } from "./CompanyView";
 import { ProviderLabView } from "./ProviderLabView";
@@ -226,7 +226,7 @@ function eventLabel(e: ObservationEvent) {
         outcome_submitted: "Output submitted",
         outcome_evaluated: "Outcome evaluated",
         sharing_consent_changed: "Historical sharing preference",
-        sharing_policy_applied: "Workspace sharing policy applied",
+        sharing_policy_applied: "Account sharing policy applied",
         review_case_opened: "Review case opened",
         review_case_closed: "Review case closed",
       } as Record<string, string>
@@ -308,7 +308,7 @@ function eventText(e: ObservationEvent) {
   if (e.type === "outcome_evaluated")
     return `${d.score === null ? "Unscored" : `${d.score}% intent match`} · ${d.coverage}% review coverage`;
   if (e.type === "intent_approved")
-    return "Intent and tool budget accepted by the workspace operator.";
+    return "Intent and tool budget accepted by the account operator.";
   if (e.type === "intent_authorized")
     return "Session authorized automatically under backend spending policy.";
   return "Recorded in this session’s audit history.";
@@ -365,8 +365,7 @@ export function ObservationApp() {
     (route.page === "company" ||
       route.page === "admin" ||
       route.page === "tool-access" ||
-      route.page === "tool-settings" ||
-      !account.workspaceId);
+      route.page === "tool-settings");
   const operatorArea =
     !account.enabled ||
     (!!account.profile?.isAdmin &&
@@ -516,29 +515,6 @@ export function ObservationApp() {
     );
   if (account.enabled && account.profile?.isAdmin && route.page === "admin")
     return <AdminCompanyReview />;
-  const ownerAccess =
-    !account.enabled ||
-    account.profile?.isAdmin ||
-    account.profile?.workspaces.some(
-      (w) => w.id === account.workspaceId && w.role === "owner",
-    );
-  if (
-    account.enabled &&
-    !ownerAccess &&
-    route.page === "dashboard" &&
-    ["credits", "keys"].includes(route.id || "")
-  )
-    return (
-      <main className="account-page">
-        <section className="account-card">
-          <h1>Account owner access required</h1>
-          <p>Ask your account owner to manage credits and API keys.</p>
-          <Button asChild>
-            <a href="#dashboard">Back to your dashboard</a>
-          </Button>
-        </section>
-      </main>
-    );
   if (
     account.enabled &&
     !account.profile?.isAdmin &&
@@ -585,32 +561,6 @@ export function ObservationApp() {
         <ToolSettingsView />
       </PortalShell>
     );
-  if (account.enabled && account.profile?.isAdmin && !account.workspaceId)
-    return (
-      <PortalShell
-        area="admin"
-        title={currentTitle}
-        links={[]}
-        adminPage={route.page}
-      >
-        <Panel title="Select a customer account">
-          <p>
-            Customer activity, payment disputes, and provider tests are scoped
-            to a customer account. Select one to open this page.
-          </p>
-          {account.profile.workspaces.length ? (
-            <AccountControls showIdentity={false} />
-          ) : (
-            <>
-              <p>
-                No customer accounts are available yet. Company reviews and Tool
-                access remain available.
-              </p>
-            </>
-          )}
-        </Panel>
-      </PortalShell>
-    );
   const surface =
     route.page === "dashboard"
       ? "user"
@@ -621,8 +571,7 @@ export function ObservationApp() {
   const sidebarContent = (
     <>
       <a href="#home" className="obs-brand">
-        <img src="/octolab.svg" alt="" width="32" height="32" />
-        octolab
+        <img src="/two-hands.svg" width="147" height="32" alt="Two Hands" />
       </a>
       <nav
         aria-label={
@@ -680,34 +629,30 @@ export function ObservationApp() {
                 Usage
               </a>
             </div>
-            {ownerAccess && (
-              <div className="ws-nav-group">
-                <span>Funding</span>
-                <a
-                  href="#dashboard/credits"
-                  className={route.id === "credits" ? "selected" : ""}
-                  aria-current={route.id === "credits" ? "page" : undefined}
-                >
-                  <CreditCard01 />
-                  Credits
-                  <Badge variant="outline" className="ws-testnet-nav">
-                    Testnet
-                  </Badge>
-                </a>
-              </div>
-            )}
+            <div className="ws-nav-group">
+              <span>Funding</span>
+              <a
+                href="#dashboard/credits"
+                className={route.id === "credits" ? "selected" : ""}
+                aria-current={route.id === "credits" ? "page" : undefined}
+              >
+                <CreditCard01 />
+                Credits
+                <Badge variant="outline" className="ws-testnet-nav">
+                  Testnet
+                </Badge>
+              </a>
+            </div>
             <div className="ws-nav-group">
               <span>Integration</span>
-              {ownerAccess && (
-                <a
-                  href="#dashboard/keys"
-                  className={route.id === "keys" ? "selected" : ""}
-                  aria-current={route.id === "keys" ? "page" : undefined}
-                >
-                  <Key01 />
-                  API keys
-                </a>
-              )}
+              <a
+                href="#dashboard/keys"
+                className={route.id === "keys" ? "selected" : ""}
+                aria-current={route.id === "keys" ? "page" : undefined}
+              >
+                <Key01 />
+                API keys
+              </a>
               <a
                 href="#dashboard/connections"
                 className={route.id === "connections" ? "selected" : ""}
@@ -760,12 +705,12 @@ export function ObservationApp() {
         )}
       </nav>
       <div className="sidebar-bottom">
-        <AccountControls showWorkspace={false} />
+        <AccountControls />
       </div>
     </>
   );
   return (
-    <div className="observation-shell dark">
+    <div className="observation-shell">
       <a
         className="skip-link"
         href="#main-content"
@@ -871,9 +816,9 @@ export function ObservationApp() {
           )}
           {route.page === "dashboard" &&
             account.enabled &&
-            (!route.id || route.id === "overview" || inToolCatalog) && (
-              <OperatorAllowanceNotice />
-            )}
+            (!route.id ||
+              ["overview", "activity"].includes(route.id) ||
+              inToolCatalog) && <OperatorAllowanceNotice />}
           {route.page === "dashboard" && (
             <UserDashboardView
               key={connectionRevision}
@@ -1017,7 +962,7 @@ export function ObservationApp() {
                   >
                     {sessions.length
                       ? "Try another search or status filter."
-                      : "Record the expected outcome here, then let your agent choose tools and do the work. Its calls and final output will appear in this workspace."}
+                      : "Record the expected outcome here, then let your agent choose tools and do the work. Its calls and final output will appear in this account."}
                   </Empty>
                 )}
               </Panel>
@@ -1165,7 +1110,7 @@ export function ObservationApp() {
                         <dd>{money(t.estimatedMicros)}</dd>
                       </div>
                       <div>
-                        <dt>Recorded workspace calls</dt>
+                        <dt>Recorded account calls</dt>
                         <dd>{t.sampleCount}</dd>
                       </div>
                       <div>
@@ -1218,7 +1163,7 @@ export function ObservationApp() {
                     <CheckCircle />
                     <strong>Observed behavior</strong>
                     <p>
-                      Tools offered through octolab, actual calls, arguments,
+                      Tools offered through Two Hands, actual calls, arguments,
                       response status, timings, and usage.
                     </p>
                   </div>
@@ -1291,18 +1236,19 @@ export function ObservationApp() {
             </>
           )}
           {route.page === "settings" && (
-            <>
+            <div className="settings-page">
               <div className="page-heading">
                 <div>
                   <h1>Connections & settings</h1>
                   <p>
-                    Your agent owns the conversation. octolab observes the tools
-                    and outcomes.
+                    Your agent owns the conversation. Two Hands observes the
+                    tools and outcomes.
                   </p>
                 </div>
               </div>
               {!account.enabled && (
                 <Panel
+                  className="settings-section"
                   title="Product views"
                   description="Manage your tools, your company, or platform activity."
                 >
@@ -1349,94 +1295,108 @@ export function ObservationApp() {
                   </nav>
                 </Panel>
               )}
-              <div className="settings-grid">
-                <Panel
-                  title="Agent connection"
-                  action={<Badge variant="outline">Local MCP</Badge>}
-                >
-                  <div className="connection-detail">
-                    <TerminalSquare />
-                    <div>
-                      <strong>
-                        {connection.clientName || "No MCP client seen yet"}
-                      </strong>
-                      <p>
-                        {connection.lastSeenAt
-                          ? `Last request ${date(connection.lastSeenAt)}. This records a connection, not a continuous health check.`
-                          : "Connect the local MCP server to Claude desktop, Claude Code, or Codex."}
-                      </p>
+              <Panel
+                className="settings-section settings-connections"
+                title="Connections"
+                description="Connect your agent and check which providers are available."
+              >
+                <div className="settings-grid">
+                  <Panel
+                    title="Agent connection"
+                    action={<Badge variant="outline">Local MCP</Badge>}
+                  >
+                    <div className="connection-detail">
+                      <TerminalSquare />
+                      <div>
+                        <strong>
+                          {connection.clientName || "No MCP client seen yet"}
+                        </strong>
+                        <p>
+                          {connection.lastSeenAt
+                            ? `Last request ${date(connection.lastSeenAt)}. This records a connection, not a continuous health check.`
+                            : "Connect the local MCP server to Claude desktop, Claude Code, or Codex."}
+                        </p>
+                      </div>
                     </div>
-                  </div>
-                  {!!connection.clients?.length && (
-                    <div className="connection-history">
-                      {connection.clients.map((c) => (
-                        <div key={`${c.clientName}/${c.clientVersion}`}>
-                          <strong>{c.clientName}</strong>
-                          <span>
-                            {c.clientVersion} · {date(c.lastSeenAt)}
+                    {!!connection.clients?.length && (
+                      <div className="connection-history">
+                        {connection.clients.map((c) => (
+                          <div key={`${c.clientName}/${c.clientVersion}`}>
+                            <strong>{c.clientName}</strong>
+                            <span>
+                              {c.clientVersion} · {date(c.lastSeenAt)}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    <div className="setup-steps">
+                      <div>
+                        <span>1</span>
+                        <p>
+                          Install the local connection from the project folder.
+                        </p>
+                      </div>
+                      <div className="command-box">
+                        <code>npm run mcp:install</code>
+                        <CopyButton text="npm run mcp:install" />
+                      </div>
+                      <div>
+                        <span>2</span>
+                        <p>
+                          Restart Claude desktop, enable the project server in
+                          Claude Code, or start a new Codex session.
+                        </p>
+                      </div>
+                      <div>
+                        <span>3</span>
+                        <p>
+                          Ask your agent to use the connected tools. Sessions
+                          start automatically under the backend spending policy.
+                        </p>
+                      </div>
+                    </div>
+                    <p className="field-hint">
+                      Keep this local server running. Provider keys stay in the
+                      server’s environment.
+                    </p>
+                  </Panel>
+                  <Panel title="Provider connections">
+                    <div className="provider-connections">
+                      {catalog.map((t) => (
+                        <div key={t.provider}>
+                          <span className={`provider-letter ${t.provider}`}>
+                            <img
+                              src={providerLogos[t.provider]}
+                              width="18"
+                              height="18"
+                              alt=""
+                            />
                           </span>
+                          <strong>{providerLabel(t.provider)}</strong>
+                          <StateBadge
+                            label={t.available ? "Configured" : "Missing key"}
+                          />
                         </div>
                       ))}
                     </div>
-                  )}
-                  <div className="setup-steps">
-                    <div>
-                      <span>1</span>
-                      <p>
-                        Install the local connection from the project folder.
-                      </p>
-                    </div>
-                    <div className="command-box">
-                      <code>npm run mcp:install</code>
-                      <CopyButton text="npm run mcp:install" />
-                    </div>
-                    <div>
-                      <span>2</span>
-                      <p>
-                        Restart Claude desktop, enable the project server in
-                        Claude Code, or start a new Codex session.
-                      </p>
-                    </div>
-                    <div>
-                      <span>3</span>
-                      <p>
-                        Ask your agent to use the connected tools. Sessions
-                        start automatically under the backend spending policy.
-                      </p>
-                    </div>
-                  </div>
-                  <p className="field-hint">
-                    Keep this local server running. Provider keys stay in the
-                    server’s environment.
-                  </p>
-                </Panel>
-                <Panel title="Provider connections">
-                  <div className="provider-connections">
-                    {catalog.map((t) => (
-                      <div key={t.provider}>
-                        <span className={`provider-letter ${t.provider}`}>
-                          {t.provider[0]}
-                        </span>
-                        <strong>{providerLabel(t.provider)}</strong>
-                        <StateBadge
-                          label={t.available ? "Configured" : "Missing key"}
-                        />
-                      </div>
-                    ))}
-                  </div>
-                  <Button
-                    variant="outline"
-                    onClick={() =>
-                      account.enabled ? account.signOut() : setConnectOpen(true)
-                    }
-                  >
-                    {account.enabled ? "Sign out" : "Workspace access token"}
-                  </Button>
-                </Panel>
-              </div>
+                    <Button
+                      variant="outline"
+                      onClick={() =>
+                        account.enabled
+                          ? account.signOut()
+                          : setConnectOpen(true)
+                      }
+                    >
+                      {account.enabled ? "Sign out" : "Account access token"}
+                    </Button>
+                  </Panel>
+                </div>
+              </Panel>
               <Panel
+                className="settings-section"
                 title="Data controls"
-                description="All sessions contribute to commercial aggregates under workspace policy."
+                description="All sessions contribute to commercial aggregates under account policy."
               >
                 <div className="data-control-row">
                   <div>
@@ -1474,7 +1434,7 @@ export function ObservationApp() {
                   Nothing is automatically sent or sold to tool companies.
                 </p>
               </Panel>
-            </>
+            </div>
           )}
         </main>
         <footer className="obs-footer">
@@ -1497,7 +1457,7 @@ export function ObservationApp() {
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Workspace access</DialogTitle>
+            <DialogTitle>Account access</DialogTitle>
             <DialogDescription>
               Enter the server’s access token when authentication is enabled. It
               stays in this browser tab’s memory.
@@ -1792,7 +1752,7 @@ function SessionView({
                             {e.provenance === "agent_reported"
                               ? "Agent reported"
                               : e.provenance === "workspace_review"
-                                ? "Workspace review"
+                                ? "Account review"
                                 : "Observed"}
                           </Badge>
                         </div>
@@ -2059,7 +2019,7 @@ function SessionView({
                 title="Waiting for the delivered output"
                 action={<CopyButton text={prompt} label="Copy agent prompt" />}
               >
-                Your agent submits its final answer through octolab. You can
+                Your agent submits its final answer through Two Hands. You can
                 then compare it with the original intent and record an
                 evaluation.
               </Empty>
@@ -2126,7 +2086,7 @@ function SessionView({
           <Panel title="Commercial aggregate sharing">
             <div className="data-control-row">
               <div>
-                <strong>Included by workspace policy</strong>
+                <strong>Included by account policy</strong>
                 <p>
                   All sessions contribute aggregate tool usage and outcome
                   statistics. Raw intent, outputs, queries, URLs, and
@@ -2136,13 +2096,13 @@ function SessionView({
               <Badge variant="outline">Enabled</Badge>
             </div>
             <p className="field-hint">
-              Usage is available without a minimum workspace or session count.
+              Usage is available without a minimum account or session count.
               Nothing is automatically published or sent to tool companies.
             </p>
           </Panel>
           <Panel
             title="Delete local session"
-            description="Removes its intent, tool results, outputs, evaluations, and cases from this workspace."
+            description="Removes its intent, tool results, outputs, evaluations, and cases from this account."
           >
             <Button
               variant="destructive"

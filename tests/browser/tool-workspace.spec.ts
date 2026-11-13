@@ -84,9 +84,9 @@ test("route preview is free, capability-aware, and respects server switches", as
   request,
 }) => {
   const previous = await (
-    await request.get(`${fixture}/api/workspace/routing`)
+    await request.get(`${fixture}/api/account/routing`)
   ).json();
-  await request.post(`${fixture}/api/workspace/routing`, {
+  await request.post(`${fixture}/api/account/routing`, {
     data: { revision: previous.revision, disabledTools: [] },
   });
   const before = await (
@@ -134,9 +134,9 @@ test("route preview is free, capability-aware, and respects server switches", as
     ).toBe(before.length);
   } finally {
     const current = await (
-      await request.get(`${fixture}/api/workspace/routing`)
+      await request.get(`${fixture}/api/account/routing`)
     ).json();
-    await request.post(`${fixture}/api/workspace/routing`, {
+    await request.post(`${fixture}/api/account/routing`, {
       data: {
         revision: current.revision,
         disabledTools: previous.disabledTools,
@@ -189,7 +189,7 @@ test("fixture requests flow into usage, filters, receipt inspection, and CSV", a
   const file = page.waitForEvent("download");
   await page.getByRole("button", { name: "Export CSV" }).click();
   const download = await file;
-  expect(download.suggestedFilename()).toBe("octolab-activity-7d.csv");
+  expect(download.suggestedFilename()).toBe("two-hands-activity-7d.csv");
   const stream = await download.createReadStream();
   let csv = "";
   for await (const chunk of stream!) csv += chunk.toString();
@@ -239,10 +239,19 @@ test("usage charts keep every day visible for longer periods", async ({
   page,
 }) => {
   await page.goto("/#dashboard/usage");
+  const period = page.getByRole("combobox", { name: "Date range" });
+  await expect(period).toHaveText("Last 7 days");
+  await period.focus();
+  await period.press("ArrowDown");
+  await expect(page.getByRole("listbox")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(period).toBeFocused();
   for (const days of [30, 90]) {
+    await period.click();
     await page
-      .getByRole("combobox", { name: "Date range" })
-      .selectOption(String(days));
+      .getByRole("option", { name: `Last ${days} days`, exact: true })
+      .click();
+    await expect(period).toHaveText(`Last ${days} days`);
     await expect(page.locator(".ws-bars > div")).toHaveCount(days);
     const layout = await page.locator(".ws-bars").evaluate((bars) => {
       const box = bars.getBoundingClientRect();
@@ -273,10 +282,10 @@ test("remote HTTP previews explain the secure endpoint requirement before agent 
   });
   await page.goto(origin + "/#dashboard/connections");
   await expect(page.getByRole("alert")).toContainText(
-    "Open octolab over HTTPS",
+    "Open Two Hands over HTTPS",
   );
   await expect(
-    page.getByRole("heading", { name: "Open octolab securely", exact: true }),
+    page.getByRole("heading", { name: "Open Two Hands securely", exact: true }),
   ).toBeVisible();
   await expect(
     page.getByRole("link", { name: "Open HTTPS address", exact: true }),

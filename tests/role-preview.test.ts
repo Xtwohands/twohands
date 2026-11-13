@@ -18,16 +18,10 @@ function fixture() {
     previewScope: new AsyncLocalStorage(),
     database: {
       pool: {
-        query: async (sql: string) => ({
-          rows: sql.includes("'platform_admin'")
-            ? [
-                { id: "own", name: "Own", role: "platform_admin" },
-                { id: "other", name: "Other", role: "platform_admin" },
-              ]
-            : sql.includes("workspace_memberships")
-              ? [{ id: "own", name: "Own", role: "member" }]
-              : [],
-        }),
+        query: async (sql: string) =>
+          sql.includes("workspace_memberships")
+            ? { rows: [{ id: "own" }], rowCount: 1 }
+            : { rows: [], rowCount: 0 },
       },
     },
     identity: async (req: express.Request) => {
@@ -60,12 +54,14 @@ function fixture() {
     actorScope: new AsyncLocalStorage(),
   };
   app.use(accountAccess(accounts, store as never, {} as never));
-  app.all("/{*path}", (_req, res) => res.json({ ok: true }));
+  app.all("/{*path}", (_req, res) =>
+    res.json({ scope: store.scope.getStore() }),
+  );
   return { app, accounts };
 }
 
 describe("administrator role preview", () => {
-  it("removes global workspace access and restores it without changing the admin account", async () => {
+  it("removes administrator access and restores it without changing the admin account", async () => {
     const { app, accounts } = fixture();
     const [preview, normal] = await Promise.all([
       request(app)
@@ -76,22 +72,19 @@ describe("administrator role preview", () => {
     expect(preview.body).toMatchObject({
       isAdmin: false,
       canPreview: true,
-      workspaces: [{ id: "own", role: "member" }],
+      hasPersonalAccount: true,
     });
     expect(normal.body.isAdmin).toBe(true);
-    expect(normal.body.workspaces).toHaveLength(2);
+    expect(normal.body).not.toHaveProperty("workspaces");
     expect(accounts.isAdmin("admin")).toBe(true);
-    expect(
-      (
-        await request(app).get("/observations").set({
-          authorization: "admin",
-          "X-Octolab-Preview": "user",
-          "X-Octolab-Workspace": "other",
-        })
-      ).status,
-    ).toBe(403);
+    const response = await request(app).get("/observations").set({
+      authorization: "admin",
+      "X-Octolab-Preview": "user",
+      "X-Octolab-Workspace": "other",
+    });
+    expect(response.body).toEqual({ scope: "own" });
   });
-  it("enforces operator, company admin, and membership restrictions during user preview", async () => {
+  it("enforces operator and company admin restrictions during user preview", async () => {
     const { app } = fixture();
     for (const role of ["user"]) {
       const headers = {
@@ -104,9 +97,6 @@ describe("administrator role preview", () => {
       ).toBe(200);
       expect(
         (await request(app).get("/provider-lab").set(headers)).status,
-      ).toBe(403);
-      expect(
-        (await request(app).get("/workspace/api-keys").set(headers)).status,
       ).toBe(403);
       expect((await request(app).get("/admin").set(headers)).status).toBe(403);
       expect(

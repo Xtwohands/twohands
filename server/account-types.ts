@@ -1,11 +1,6 @@
-export interface AccountWorkspace {
-  id: string;
-  name: string;
-  role: "owner" | "member" | "platform_admin";
-}
 export interface AccountProfile {
   user: { id: string; email: string };
-  workspaces: AccountWorkspace[];
+  hasPersonalAccount: boolean;
   isAdmin: boolean;
   canPreview?: boolean;
   companyPreview?: import("./company-types.js").CompanyPreviewTarget;

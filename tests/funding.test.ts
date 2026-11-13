@@ -221,11 +221,11 @@ describe("funding HTTP boundary", () => {
     config.token = "test-funding-token";
     try {
       const app = createApp(store, undefined, undefined, undefined, service);
-      expect((await request(app).get("/api/workspace/funding")).status).toBe(
+      expect((await request(app).get("/api/account/funding")).status).toBe(
         401,
       );
       const summary = await request(app)
-        .get("/api/workspace/funding")
+        .get("/api/account/funding")
         .set("Authorization", "Bearer test-funding-token");
       expect(summary.body.network.chainId).toBe(84532);
       expect(summary.body.testnet).toBe(true);
@@ -233,7 +233,7 @@ describe("funding HTTP boundary", () => {
       expect(
         (
           await request(app)
-            .post("/api/workspace/funding/deposits")
+            .post("/api/account/funding/deposits")
             .set("Authorization", "Bearer test-funding-token")
             .send({ ...input(), chainId: 8453 })
         ).status,
@@ -241,7 +241,7 @@ describe("funding HTTP boundary", () => {
       expect(
         (
           await request(app)
-            .post("/api/workspace/funding/deposits")
+            .post("/api/account/funding/deposits")
             .set("Authorization", "Bearer test-funding-token")
             .send(input())
         ).status,
@@ -249,7 +249,7 @@ describe("funding HTTP boundary", () => {
       expect(
         (
           await request(app)
-            .post("/api/workspace/funding/deposits")
+            .post("/api/account/funding/deposits")
             .set("Authorization", "Bearer test-funding-token")
             .set("Origin", "https://evil.example")
             .send(input())

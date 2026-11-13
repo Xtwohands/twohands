@@ -1,4 +1,4 @@
-import { AllowanceError } from "./workspace-allowance.js";
+import { AllowanceError } from "./account-allowance.js";
 import type { Express, Request, Response } from "express";
 import { z } from "zod";
 import { randomUUID } from "node:crypto";

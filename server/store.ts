@@ -1,4 +1,4 @@
-import { WorkspaceAllowance } from "./workspace-allowance.js";
+import { AccountAllowance } from "./account-allowance.js";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { randomUUID } from "node:crypto";
 import { type Database, PostgresDatabase, SqliteDatabase } from "./database.js";
@@ -12,7 +12,7 @@ export class StorageConflict extends Error {
 }
 export class Store {
   db: Database;
-  readonly allowance = new WorkspaceAllowance(this);
+  readonly allowance = new AccountAllowance(this);
   readonly scope = new AsyncLocalStorage<string>();
   readonly actorScope = new AsyncLocalStorage<{
     kind: "account" | "api_key";

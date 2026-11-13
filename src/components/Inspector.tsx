@@ -181,7 +181,7 @@ export function Inspector({
       </div>
       {recordingError && (
         <div className="info-strip">
-          {recordingError}. Current workspace traces remain available.
+          {recordingError}. Current research traces remain available.
         </div>
       )}
       {recording && (
@@ -193,7 +193,7 @@ export function Inspector({
               Captured{" "}
               {new Date(recording.metadata.capturedAt).toLocaleString()}.
               Sanitized real execution, not a new live call or current provider
-              benchmark. This recording does not populate workspace results or
+              benchmark. This recording does not populate research results or
               provider analytics.
             </p>
           </div>

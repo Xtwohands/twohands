@@ -21,7 +21,7 @@ Set `DEPOSITS_TESTNET_ENABLED=false` and restart to disable creation and verific
 1. Open Credits and choose Add test credits.
 2. Enter 1–1,000 test USDC, with up to six decimal places, and the public sending wallet address.
 3. Create the deposit request. The server records its exact amount, sender, recipient, network, token, and a 30-minute transfer window.
-4. In a separate wallet, send the exact test USDC amount on Base Sepolia to the displayed receiving address. The wallet requires test ETH for gas. octolab does not sign or send this transfer.
+4. In a separate wallet, send the exact test USDC amount on Base Sepolia to the displayed receiving address. The wallet requires test ETH for gas. Two Hands does not sign or send this transfer.
 5. Submit the transaction hash and choose Verify transaction.
 6. A matching transfer remains pending until its block is finalized. Use Check transaction again to recheck; checks are limited to one per request per ten seconds.
 
@@ -54,10 +54,10 @@ All routes enforce [workspace access](AUTH.md) and same-origin write protection.
 
 | Method | Route                                        | Behavior                                                                                                                                                                                                |
 | ------ | -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| GET    | `/api/workspace/funding`                     | Both method statuses, public network/address details, combined test balance, per-method counts, latest 100 receipts per method, and latest 100 ledger entries. Never returns RPC or Stripe credentials. |
-| POST   | `/api/workspace/funding/deposits`            | Create or replay `{requestKey, amount, sender}`. Amount is a decimal string.                                                                                                                            |
-| GET    | `/api/workspace/funding/deposits/:id`        | Read one saved request.                                                                                                                                                                                 |
-| POST   | `/api/workspace/funding/deposits/:id/verify` | Verify `{transactionHash}` using read-only JSON-RPC calls.                                                                                                                                              |
+| GET    | `/api/account/funding`                     | Both method statuses, public network/address details, combined test balance, per-method counts, latest 100 receipts per method, and latest 100 ledger entries. Never returns RPC or Stripe credentials. |
+| POST   | `/api/account/funding/deposits`            | Create or replay `{requestKey, amount, sender}`. Amount is a decimal string.                                                                                                                            |
+| GET    | `/api/account/funding/deposits/:id`        | Read one saved request.                                                                                                                                                                                 |
+| POST   | `/api/account/funding/deposits/:id/verify` | Verify `{transactionHash}` using read-only JSON-RPC calls.                                                                                                                                              |
 
 Each workspace supports at most 1,000 on-chain requests, separately from the Stripe intent limit. The receiver is configured server-wide, while PostgreSQL receipt ownership and test balances are workspace-scoped. Transaction proof remains globally unique across workspaces. This is a test integration, not production customer payment accounting.
 

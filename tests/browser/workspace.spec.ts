@@ -9,6 +9,18 @@ test("saves explicit intent, persists it, inspects trace, and shows empty analyt
   await expect(
     page.getByRole("heading", { name: "Research, with a clear trail." }),
   ).toBeVisible();
+  await expect(page.locator(".legacy-root")).toHaveCSS(
+    "background-color",
+    "rgb(248, 248, 248)",
+  );
+  await expect(page.locator(".legacy-root .sidebar")).toHaveCSS(
+    "background-color",
+    "rgb(243, 243, 243)",
+  );
+  await expect(page.getByRole("button", { name: "Save intent" })).toHaveCSS(
+    "color",
+    "rgb(255, 255, 255)",
+  );
   await expect(page.getByText("0 providers configured")).toBeVisible();
   const audit = await new AxeBuilder({ page })
     .withTags(["wcag2a", "wcag2aa"])
@@ -64,7 +76,7 @@ test("displays server-only key setup and memory-only access token", async ({
   await page.getByRole("button", { name: "Manage connections" }).click();
   await expect(page.getByRole("dialog")).toBeVisible();
   await expect(page.getByText("EXA_API_KEY", { exact: true })).toBeVisible();
-  await expect(page.getByLabel("Workspace access token")).toHaveAttribute(
+  await expect(page.getByLabel("Account access token")).toHaveAttribute(
     "type",
     "password",
   );
@@ -82,7 +94,7 @@ test("settings dialog supports keyboard closing and restores focus", async ({
   ).toBeFocused();
   await page.keyboard.press("Shift+Tab");
   await expect(
-    page.getByRole("button", { name: "Connect to workspace" }),
+    page.getByRole("button", { name: "Connect to Two Hands" }),
   ).toBeFocused();
   await page.keyboard.press("Escape");
   await expect(page.getByRole("dialog")).toHaveCount(0);

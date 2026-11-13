@@ -99,7 +99,7 @@ export class CompanyTeam {
         if (target.rowCount !== 1)
           throw new AccountError(
             400,
-            "Ask this person to create and confirm their octolab account first.",
+            "Ask this person to create and confirm their Two Hands account first.",
           );
         userId = target.rows[0].id;
         const count = await client.query(

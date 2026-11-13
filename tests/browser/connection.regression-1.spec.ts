@@ -6,9 +6,9 @@ async function connect(page: Page, token: string) {
   await page
     .getByRole("button", { name: "Connections and settings", exact: true })
     .click();
-  await page.getByLabel("Workspace access token").fill(token);
+  await page.getByLabel("Account access token").fill(token);
   await page
-    .getByRole("button", { name: "Connect to workspace", exact: true })
+    .getByRole("button", { name: "Connect to Two Hands", exact: true })
     .click();
 }
 

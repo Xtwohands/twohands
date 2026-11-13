@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import type { OperatorAllowance } from "../server/workspace-allowance";
+import type { OperatorAllowance } from "../server/account-allowance";
 import { api, ApiError, money } from "./api";
 import { useAccount } from "./AccountGate";
 import { Panel, InlineError, Field } from "./observation-ui";
@@ -7,12 +7,12 @@ import { Button } from "./components/ui/button";
 import { Input } from "./components/ui/input";
 import { Textarea } from "./components/ui/textarea";
 import "./tool-access.css";
-type Workspace = {
-  workspaceId: string;
+type AllowanceAccount = {
+  accountId: string;
   name: string;
   operatorAllowance: OperatorAllowance;
 };
-type WorkspacePage = { items: Workspace[]; nextCursor: string | null };
+type AccountPage = { items: AllowanceAccount[]; nextCursor: string | null };
 const labels: Record<OperatorAllowance["state"], string> = {
   unconfigured: "Not enabled",
   paused: "Paused",
@@ -27,7 +27,7 @@ export function OperatorAllowanceNotice() {
   useEffect(() => {
     let active = true;
     const refresh = () =>
-      api<OperatorAllowance>("/workspace/operator-allowance")
+      api<OperatorAllowance>("/account/operator-allowance")
         .then((result) => {
           if (active) {
             setValue(result);
@@ -46,7 +46,7 @@ export function OperatorAllowanceNotice() {
       active = false;
       clearInterval(timer);
     };
-  }, [account.workspaceId]);
+  }, [account.profile?.user.id]);
   if (error)
     return (
       <p className="tool-access-notice" role="status">
@@ -54,24 +54,19 @@ export function OperatorAllowanceNotice() {
         server authorization.
       </p>
     );
-  if (!value?.enforced) return null;
+  if (value?.state !== "paused" && value?.state !== "exhausted") return null;
   return (
     <p className="tool-access-notice" role="status">
-      {value.state === "available"
-        ? `Estimated tool allowance remaining: ${money(value.remainingMicros!)}.`
-        : value.state === "unconfigured"
-          ? "Tool access has not been enabled for your account."
-          : value.state === "paused"
-            ? "Tool access is paused for your account."
-            : "Your account has reached its tool spending limit."}{" "}
-      Estimates are separate from payment balances.
+      {value.state === "paused"
+        ? "Tool access is paused for your account."
+        : "Your account has reached its tool spending limit."}
     </p>
   );
 }
 export function ToolAccessView() {
-  const [items, setItems] = useState<Workspace[]>([]),
+  const [items, setItems] = useState<AllowanceAccount[]>([]),
     [cursor, setCursor] = useState<string | null>(null),
-    [selected, setSelected] = useState<Workspace>();
+    [selected, setSelected] = useState<AllowanceAccount>();
   const [loading, setLoading] = useState(false),
     [saving, setSaving] = useState(false),
     [error, setError] = useState(""),
@@ -87,8 +82,8 @@ export function ToolAccessView() {
     setLoading(true);
     setError("");
     try {
-      const page = await api<WorkspacePage>(
-        "/admin/workspace-allowances" +
+      const page = await api<AccountPage>(
+        "/admin/account-allowances" +
           (after ? "?after=" + encodeURIComponent(after) : ""),
       );
       if (!alive.current || current !== generation.current) return;
@@ -114,10 +109,10 @@ export function ToolAccessView() {
       generation.current++;
     };
   }, []);
-  const choose = (workspace: Workspace) => {
-    setSelected(workspace);
-    setLimit(String(workspace.operatorAllowance.limitMicros / 1e6));
-    setPaused(workspace.operatorAllowance.state === "paused");
+  const choose = (account: AllowanceAccount) => {
+    setSelected(account);
+    setLimit(String(account.operatorAllowance.limitMicros / 1e6));
+    setPaused(account.operatorAllowance.state === "paused");
     setReason("");
     requestKey.current = null;
     setError("");
@@ -158,7 +153,7 @@ export function ToolAccessView() {
       const result = await api<{
         operatorAllowance: OperatorAllowance;
         replayed: boolean;
-      }>(`/admin/workspace-allowances/${selected.workspaceId}`, {
+      }>(`/admin/account-allowances/${selected.accountId}`, {
         requestKey: requestKey.current,
         revision: selected.operatorAllowance.revision,
         limitMicros: amount,
@@ -172,7 +167,7 @@ export function ToolAccessView() {
       };
       setItems((old) =>
         old.map((item) =>
-          item.workspaceId === updated.workspaceId ? updated : item,
+          item.accountId === updated.accountId ? updated : item,
         ),
       );
       choose(updated);
@@ -234,8 +229,8 @@ export function ToolAccessView() {
               {items.map((item) => (
                 <button
                   type="button"
-                  key={item.workspaceId}
-                  aria-pressed={selected?.workspaceId === item.workspaceId}
+                  key={item.accountId}
+                  aria-pressed={selected?.accountId === item.accountId}
                   disabled={saving}
                   onClick={() => choose(item)}
                 >

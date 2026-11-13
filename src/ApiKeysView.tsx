@@ -1,15 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ArrowRight,
+  ArrowUpRight,
   Eye,
   EyeOff,
-  Key01,
   Plus,
   RefreshCw01,
+  SearchMd,
+  TerminalSquare,
 } from "@untitledui/icons";
 import { Button } from "./components/ui/button";
+import { Card, CardTitle } from "./components/ui/card";
 import { Input } from "./components/ui/input";
-import { Badge } from "./components/ui/badge";
 import {
   Dialog,
   DialogContent,
@@ -17,16 +19,24 @@ import {
   DialogHeader,
   DialogTitle,
 } from "./components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "./components/ui/select";
 import { CopyButton, Empty, InlineError, date } from "./observation-ui";
 import { api, ApiError } from "./api";
-import { AgentEnvironment } from "./components/AgentEnvironment";
 import {
   API_KEY_SCOPES,
   API_KEY_TOOLS,
   type ApiKeyScope,
-  type WorkspaceApiKey,
+  type ScopedApiKey,
   type ApiKeyEvent,
 } from "../server/api-key-types";
+import "./api-keys.css";
+
 const labels: Record<ApiKeyScope, [string, string]> = {
   "tools:discover": [
     "Discover tools",
@@ -55,6 +65,14 @@ const statusLabel = {
   expired: "Expired",
   revoked: "Revoked",
 };
+const dateOnly = new Intl.DateTimeFormat(undefined, {
+  month: "short",
+  day: "numeric",
+  year: "numeric",
+});
+const keyEnvironment = "APILAYER_API_KEY=<your scoped key>";
+const canEdit = (key: ScopedApiKey) =>
+  key.status === "active" || key.status === "at_limit";
 const money = (micros: number) =>
   new Intl.NumberFormat("en-US", {
     style: "currency",
@@ -63,7 +81,7 @@ const money = (micros: number) =>
     maximumFractionDigits: 6,
   }).format(micros / 1e6);
 export function ApiKeysView() {
-  const [keys, setKeys] = useState<WorkspaceApiKey[]>([]);
+  const [keys, setKeys] = useState<ScopedApiKey[]>([]);
   const [enabled, setEnabled] = useState(false);
   const [unavailable, setUnavailable] = useState("");
   const [loading, setLoading] = useState(true);
@@ -73,7 +91,7 @@ export function ApiKeysView() {
   const [mode, setMode] = useState<
     "create" | "edit" | "secret" | "revoke" | null
   >(null);
-  const [selected, setSelected] = useState<WorkspaceApiKey>();
+  const [selected, setSelected] = useState<ScopedApiKey>();
   const [name, setName] = useState("");
   const [scopes, setScopes] = useState<ApiKeyScope[]>([...API_KEY_SCOPES]);
   const [tools, setTools] = useState<string[]>([...API_KEY_TOOLS]);
@@ -85,6 +103,9 @@ export function ApiKeysView() {
   const [formError, setFormError] = useState("");
   const [notice, setNotice] = useState("");
   const [events, setEvents] = useState<ApiKeyEvent[]>([]);
+  const createTrigger = useRef<HTMLButtonElement>(null);
+  const dialogTrigger = useRef<HTMLButtonElement>(null);
+  const searchInput = useRef<HTMLInputElement>(null);
   const key = useRef(crypto.randomUUID());
   const generation = useRef(0);
   const accessEpoch = useRef(0);
@@ -125,10 +146,10 @@ export function ApiKeysView() {
     const current = ++generation.current;
     try {
       const data = await ownerApi<{
-        keys: WorkspaceApiKey[];
+        keys: ScopedApiKey[];
         enabled: boolean;
         unavailableReason: string | null;
-      }>("/workspace/api-keys");
+      }>("/account/api-keys");
       if (current === generation.current) {
         setKeys(data.keys);
         setEnabled(data.enabled);
@@ -160,15 +181,15 @@ export function ApiKeysView() {
   const changed = () => {
     key.current = crypto.randomUUID();
   };
-  async function manage(item: WorkspaceApiKey) {
+  async function manage(item: ScopedApiKey) {
     setBusy(true);
     setError("");
     setNotice("");
     try {
       const data = await ownerApi<{
-        key: WorkspaceApiKey;
+        key: ScopedApiKey;
         events: ApiKeyEvent[];
-      }>(`/workspace/api-keys/${item.id}`);
+      }>(`/account/api-keys/${item.id}`);
       setSelected(data.key);
       setName(data.key.name);
       setScopes(data.key.scopes);
@@ -187,62 +208,24 @@ export function ApiKeysView() {
   const matching = keys.filter(
     (k) =>
       (filter === "all" || k.status === filter) &&
-      `${k.name} ${k.prefix}`.toLowerCase().includes(search.toLowerCase()),
+      `${k.name} ${k.prefix}`
+        .toLowerCase()
+        .includes(search.trim().toLowerCase()),
   );
+  const selectedIsReadOnly = !!selected && !canEdit(selected);
+
   return (
     <div className="ws-api-keys">
-      <InlineError message={error} />
-      {!loading && !enabled && (
-        <p className="ws-panel-note">
-          {unavailable || "Owner access is required to manage API keys."}
-        </p>
-      )}
-      {notice && (
-        <p role="status" className="ws-panel-note">
-          {notice}
-        </p>
-      )}
-      <div className="ws-funding-notice">
-        <Key01 size={18} />
-        <p>
-          Give each agent its own key. Limits apply to configured provider-cost
-          estimates across all sessions using that key. Actual provider invoices
-          can differ.
-        </p>
-      </div>
-      <div className="ws-dispute-controls">
-        <Input
-          aria-label="Search API keys"
-          placeholder="Search name or key prefix…"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-        />
-        <label>
-          <span className="sr-only">Key status</span>
-          <select
-            aria-label="Key status"
-            value={filter}
-            onChange={(e) => setFilter(e.target.value)}
-          >
-            <option value="all">All keys</option>
-            {Object.entries(statusLabel).map(([value, label]) => (
-              <option value={value} key={value}>
-                {label}
-              </option>
-            ))}
-          </select>
-        </label>
+      <header className="api-keys-heading">
+        <h1>API keys</h1>
         <Button
-          variant="outline"
-          size="icon"
-          aria-label="Refresh API keys"
-          onClick={() => void refresh()}
-        >
-          <RefreshCw01 />
-        </Button>
-        <Button
+          className="api-keys-create"
+          variant="brand"
+          size="sm"
+          ref={createTrigger}
           disabled={!enabled || busy}
-          onClick={() => {
+          onClick={(event) => {
+            dialogTrigger.current = event.currentTarget;
             setSelected(undefined);
             setName("");
             setScopes([...API_KEY_SCOPES]);
@@ -260,116 +243,236 @@ export function ApiKeysView() {
           <Plus />
           Create API key
         </Button>
+      </header>
+      {error && (
+        <div className="api-keys-error">
+          <InlineError message={error} />
+          <Button variant="outline" size="sm" onClick={() => void refresh()}>
+            <RefreshCw01 />
+            Refresh API keys
+          </Button>
+        </div>
+      )}
+      {!loading && !enabled && (
+        <p className="ws-panel-note">
+          {unavailable || "Owner access is required to manage API keys."}
+        </p>
+      )}
+      {notice && (
+        <p role="status" className="ws-panel-note">
+          {notice}
+        </p>
+      )}
+      <div className="api-keys-toolbar">
+        <label className="api-keys-search">
+          <SearchMd size={16} aria-hidden />
+          <Input
+            ref={searchInput}
+            aria-label="Search API keys"
+            placeholder="Search name or key prefix"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </label>
+        <Select value={filter} onValueChange={setFilter}>
+          <SelectTrigger aria-label="Key status" className="api-keys-filter">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent position="popper" align="end">
+            <SelectItem value="all">All statuses</SelectItem>
+            {Object.entries(statusLabel).map(([value, label]) => (
+              <SelectItem value={value} key={value}>
+                {label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
-      <section className="ws-panel">
+      <Card className="api-keys-library">
         <header>
-          <div>
-            <h2>Your API keys</h2>
-            <p>
-              {
-                keys.filter(
-                  (k) => k.status === "active" || k.status === "at_limit",
-                ).length
-              }{" "}
-              active credentials · Secrets are shown only when created
-            </p>
-          </div>
-          <Badge variant="outline">Owner managed</Badge>
+          <CardTitle>Your keys</CardTitle>
+          {!loading && (
+            <span aria-live="polite">
+              {matching.length} {matching.length === 1 ? "key" : "keys"}
+            </span>
+          )}
         </header>
         {loading ? (
           <p role="status" className="ws-panel-note">
             Loading API keys…
           </p>
         ) : matching.length ? (
-          <div
-            className="ws-table-scroll"
-            tabIndex={0}
-            role="region"
-            aria-label="API keys"
-          >
-            <table className="ws-table">
-              <thead>
-                <tr>
-                  <th>Key</th>
-                  <th>Status</th>
-                  <th>Estimated spend</th>
-                  <th>Limit</th>
-                  <th>Expires</th>
-                  <th>Last used</th>
+          <div role="region" aria-label="API keys">
+            <table
+              className="api-keys-table"
+              role="table"
+              aria-label="Your API keys"
+            >
+              <thead role="rowgroup">
+                <tr role="row">
+                  <th scope="col" role="columnheader">
+                    Name
+                  </th>
+                  <th scope="col" role="columnheader">
+                    Spend
+                  </th>
+                  <th scope="col" role="columnheader">
+                    Expires
+                  </th>
+                  <th scope="col" role="columnheader">
+                    Last used
+                  </th>
+                  <th scope="col" role="columnheader">
+                    <span className="sr-only">Actions</span>
+                  </th>
                 </tr>
               </thead>
-              <tbody>
-                {matching.map((k) => (
-                  <tr key={k.id}>
-                    <td>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        disabled={busy}
-                        aria-label={`Manage ${k.name}`}
-                        onClick={() => void manage(k)}
+              <tbody role="rowgroup">
+                {matching.map((k) => {
+                  const action = canEdit(k) ? "Manage" : "View";
+                  return (
+                    <tr key={k.id} role="row">
+                      <th
+                        scope="row"
+                        role="rowheader"
+                        className="api-key-identity"
                       >
-                        {k.name}
-                        <ArrowRight />
-                      </Button>
-                      <small className="ws-dispute-subline">
+                        <strong>{k.name}</strong>
                         <code>{k.prefix}</code>
-                      </small>
-                    </td>
-                    <td>{statusLabel[k.status]}</td>
-                    <td>
-                      {money(k.spentMicros)}
-                      <small className="ws-dispute-subline">
-                        {money(k.reservedMicros)} reserved
-                      </small>
-                    </td>
-                    <td>{money(k.limitMicros)} total</td>
-                    <td>{date(k.expiresAt)}</td>
-                    <td>{k.lastUsedAt ? date(k.lastUsedAt) : "Never"}</td>
-                  </tr>
-                ))}
+                      </th>
+                      <td role="cell">
+                        <span
+                          className="api-key-mobile-label"
+                          aria-hidden="true"
+                        >
+                          Spend
+                        </span>
+                        {money(k.spentMicros)}
+                      </td>
+                      <td role="cell">
+                        <span
+                          className="api-key-mobile-label"
+                          aria-hidden="true"
+                        >
+                          Expires
+                        </span>
+                        <time dateTime={k.expiresAt} title={date(k.expiresAt)}>
+                          {dateOnly.format(new Date(k.expiresAt))}
+                        </time>
+                      </td>
+                      <td role="cell">
+                        <span
+                          className="api-key-mobile-label"
+                          aria-hidden="true"
+                        >
+                          Last used
+                        </span>
+                        {k.lastUsedAt ? (
+                          <time
+                            dateTime={k.lastUsedAt}
+                            title={date(k.lastUsedAt)}
+                          >
+                            {dateOnly.format(new Date(k.lastUsedAt))}
+                          </time>
+                        ) : (
+                          "Never"
+                        )}
+                      </td>
+                      <td role="cell">
+                        <Button
+                          className="api-key-action"
+                          variant="secondary"
+                          size="xs"
+                          disabled={busy}
+                          aria-label={`${action} ${k.name}`}
+                          onClick={(event) => {
+                            dialogTrigger.current = event.currentTarget;
+                            void manage(k);
+                          }}
+                        >
+                          {action}
+                          <ArrowUpRight />
+                        </Button>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
         ) : (
-          <Empty title={keys.length ? "No matching keys" : "No API keys yet"}>
-            Create a scoped credential for an agent or application. Provider
-            credentials remain on the server.
+          <Empty
+            title={keys.length ? "No matching keys" : "No API keys yet"}
+            action={
+              keys.length > 0 && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    setSearch("");
+                    setFilter("all");
+                    searchInput.current?.focus();
+                  }}
+                >
+                  Clear filters
+                </Button>
+              )
+            }
+          >
+            {keys.length
+              ? "Try another name or status."
+              : "Create a key for an agent or application."}
           </Empty>
         )}
-      </section>
-      <section className="ws-panel">
-        <header>
+      </Card>
+      <Card className="api-key-connection">
+        <div className="api-key-connection-intro">
+          <span className="api-key-connection-icon">
+            <TerminalSquare size={18} aria-hidden />
+          </span>
           <div>
-            <h2>Connect an agent</h2>
-            <p>Use a scoped credential with the local MCP bridge.</p>
+            <CardTitle>Connect an agent</CardTitle>
+            <p>
+              Set the key in your MCP bridge’s private environment, then restart
+              the client.
+            </p>
           </div>
-        </header>
-        <div className="ws-key-instructions">
-          <p>
-            Add these settings to the bridge project’s private .env file.
-            Replace the placeholder with your saved API key, then restart your
-            MCP client. Never use a provider credential here.
-          </p>
-          <AgentEnvironment />
-          <p>
-            Each key is tied to your account and limited to the permissions and
-            tools you allow. Manage or revoke it here without changing other
-            agents’ keys.
-          </p>
-          <a className="ws-text-link" href="#dashboard/connections">
-            MCP connection setup
-            <ArrowRight size={14} />
-          </a>
         </div>
-      </section>
+        <div className="api-key-connection-actions">
+          <div className="api-key-command">
+            <code>{keyEnvironment}</code>
+            <CopyButton text={keyEnvironment} />
+          </div>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="api-key-connection-setup"
+            asChild
+          >
+            <a href="#dashboard/connections">
+              Connection setup
+              <ArrowUpRight />
+            </a>
+          </Button>
+        </div>
+      </Card>
       <Dialog
         open={!!mode}
         onOpenChange={(value) => {
           if (!value && !busy) close();
         }}
       >
-        <DialogContent className="ws-detail-dialog translate-x-0 translate-y-0">
+        <DialogContent
+          className="ws-detail-dialog translate-x-0 translate-y-0"
+          onCloseAutoFocus={(event) => {
+            event.preventDefault();
+            const trigger = dialogTrigger.current;
+            if (trigger?.isConnected && !trigger.disabled) trigger.focus();
+            else if (createTrigger.current && !createTrigger.current.disabled)
+              createTrigger.current.focus();
+            else searchInput.current?.focus();
+          }}
+        >
           <DialogHeader>
             <DialogTitle>
               {mode === "create"
@@ -378,14 +481,18 @@ export function ApiKeysView() {
                   ? "Save your API key"
                   : mode === "revoke"
                     ? "Revoke API key"
-                    : "Manage API key"}
+                    : selectedIsReadOnly
+                      ? "View API key"
+                      : "Manage API key"}
             </DialogTitle>
             <DialogDescription>
               {mode === "secret"
                 ? "Copy this credential now. Its full value cannot be retrieved again."
                 : mode === "revoke"
                   ? "New requests stop immediately. Already admitted provider calls can finish and settle their reserved estimates."
-                  : "Set permissions, allowed tools, and a total estimated-spend limit."}
+                  : selectedIsReadOnly
+                    ? "Review this key’s permissions, allowed tools, and spend."
+                    : "Set permissions, allowed tools, and a total estimated-spend limit."}
             </DialogDescription>
           </DialogHeader>
           <InlineError message={formError} />
@@ -454,12 +561,9 @@ export function ApiKeysView() {
                   setBusy(true);
                   setFormError("");
                   try {
-                    await ownerApi(
-                      `/workspace/api-keys/${selected.id}/revoke`,
-                      {
-                        revision: selected.revision,
-                      },
-                    );
+                    await ownerApi(`/account/api-keys/${selected.id}/revoke`, {
+                      revision: selected.revision,
+                    });
                     setNotice(`${selected.name} revoked.`);
                     close();
                     await refresh();
@@ -485,6 +589,7 @@ export function ApiKeysView() {
               className="ws-deposit-form"
               onSubmit={async (e) => {
                 e.preventDefault();
+                if (selectedIsReadOnly) return;
                 setBusy(true);
                 setFormError("");
                 try {
@@ -496,9 +601,9 @@ export function ApiKeysView() {
                   };
                   if (mode === "create") {
                     const result = await ownerApi<{
-                      key: WorkspaceApiKey;
+                      key: ScopedApiKey;
                       secret: string | null;
-                    }>("/workspace/api-keys", {
+                    }>("/account/api-keys", {
                       ...body,
                       requestKey: key.current,
                       expiresInDays: Number(days),
@@ -508,8 +613,8 @@ export function ApiKeysView() {
                     setRevealed(false);
                     setMode("secret");
                   } else if (selected) {
-                    const result = await ownerApi<WorkspaceApiKey>(
-                      `/workspace/api-keys/${selected.id}`,
+                    const result = await ownerApi<ScopedApiKey>(
+                      `/account/api-keys/${selected.id}`,
                       { ...body, revision: selected.revision },
                     );
                     setSelected(result);
@@ -517,7 +622,7 @@ export function ApiKeysView() {
                     setEvents(
                       (
                         await ownerApi<{ events: ApiKeyEvent[] }>(
-                          `/workspace/api-keys/${selected.id}`,
+                          `/account/api-keys/${selected.id}`,
                         )
                       ).events,
                     );
@@ -537,7 +642,7 @@ export function ApiKeysView() {
                   value={name}
                   maxLength={80}
                   required
-                  disabled={busy || !!selected?.revokedAt}
+                  disabled={busy || selectedIsReadOnly}
                   onChange={(e) => {
                     setName(e.target.value);
                     changed();
@@ -549,7 +654,7 @@ export function ApiKeysView() {
                 <span>Permission preset</span>
                 <select
                   aria-label="Permission preset"
-                  disabled={busy || !!selected?.revokedAt}
+                  disabled={busy || selectedIsReadOnly}
                   value={
                     scopes.length === API_KEY_SCOPES.length
                       ? "agent"
@@ -584,7 +689,7 @@ export function ApiKeysView() {
                     <input
                       type="checkbox"
                       checked={scopes.includes(scope)}
-                      disabled={busy || !!selected?.revokedAt}
+                      disabled={busy || selectedIsReadOnly}
                       onChange={(e) => {
                         setScopes((v) =>
                           e.target.checked
@@ -608,7 +713,7 @@ export function ApiKeysView() {
                     <input
                       type="checkbox"
                       checked={tools.includes(tool)}
-                      disabled={busy || !!selected?.revokedAt}
+                      disabled={busy || selectedIsReadOnly}
                       onChange={(e) => {
                         setTools((v) =>
                           e.target.checked
@@ -631,7 +736,7 @@ export function ApiKeysView() {
                   inputMode="decimal"
                   value={limit}
                   required
-                  disabled={busy || !!selected?.revokedAt}
+                  disabled={busy || selectedIsReadOnly}
                   onChange={(e) => {
                     setLimit(e.target.value);
                     changed();
@@ -686,21 +791,18 @@ export function ApiKeysView() {
                   </div>
                 )
               )}
-              <Button
-                type="submit"
-                disabled={
-                  busy ||
-                  !!selected?.revokedAt ||
-                  scopes.length === 0 ||
-                  tools.length === 0
-                }
-              >
-                {busy
-                  ? "Saving…"
-                  : mode === "create"
-                    ? "Create key"
-                    : "Save key settings"}
-              </Button>
+              {!selectedIsReadOnly && (
+                <Button
+                  type="submit"
+                  disabled={busy || scopes.length === 0 || tools.length === 0}
+                >
+                  {busy
+                    ? "Saving…"
+                    : mode === "create"
+                      ? "Create key"
+                      : "Save key settings"}
+                </Button>
+              )}
               {selected && (
                 <>
                   <Button

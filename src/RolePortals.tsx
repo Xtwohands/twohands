@@ -7,12 +7,26 @@ import {
   companyDashboardSection,
 } from "./CompanyDashboard";
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { ArrowRight, Menu01, XClose } from "@untitledui/icons";
+import {
+  ArrowLeft,
+  ArrowRight,
+  Building07,
+  Menu01,
+  Plus,
+  XClose,
+} from "@untitledui/icons";
 import { useAccount, AccountControls } from "./AccountGate";
 import { api } from "./api";
 import { Button } from "./components/ui/button";
 import { Input } from "./components/ui/input";
 import { Textarea } from "./components/ui/textarea";
+import {
+  Dialog,
+  DialogContent,
+  DialogTitle,
+  DialogDescription,
+  DialogClose,
+} from "./components/ui/dialog";
 import { Panel, InlineError, date } from "./observation-ui";
 import type {
   ToolCompany,
@@ -30,13 +44,18 @@ export function PortalShell({
 }: {
   area: "company" | "admin" | "settings";
   title: string;
-  links: { href: string; label: string; selected: boolean }[];
+  links: {
+    href: string;
+    label: string;
+    selected: boolean;
+    icon?: typeof ArrowRight;
+  }[];
   children: ReactNode;
   adminPage?: string;
 }) {
   const [open, setOpen] = useState(false);
+  const navigationTrigger = useRef<HTMLButtonElement>(null);
   useEffect(() => {
-    if (area !== "admin") return;
     const close = () => setOpen(false);
     window.addEventListener("hashchange", close);
     window.addEventListener("popstate", close);
@@ -48,8 +67,7 @@ export function PortalShell({
   const nav = (
     <>
       <a href="#home" className="obs-brand">
-        <img src="/octolab.svg" width="32" height="32" alt="" />
-        octolab
+        <img src="/two-hands.svg" width="147" height="32" alt="Two Hands" />
       </a>
       <nav
         aria-label={
@@ -71,18 +89,19 @@ export function PortalShell({
               className={link.selected ? "selected" : ""}
               aria-current={link.selected ? "page" : undefined}
             >
+              {link.icon && <link.icon aria-hidden="true" />}
               {link.label}
             </a>
           ))
         )}
       </nav>
       <div className="sidebar-bottom">
-        <AccountControls showWorkspace={false} />
+        <AccountControls />
       </div>
     </>
   );
   return (
-    <div className="observation-shell dark role-portal">
+    <div className={`observation-shell role-portal portal-${area}`}>
       <a
         className="skip-link"
         href="#portal-content"
@@ -96,19 +115,47 @@ export function PortalShell({
       <aside className="obs-sidebar">{nav}</aside>
       <div className="obs-body">
         <header className="obs-topbar">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="mobile-nav-button"
-            aria-label={open ? "Close navigation" : "Open navigation"}
-            aria-expanded={open}
-            onClick={() => setOpen(!open)}
-          >
-            {open ? <XClose /> : <Menu01 />}
-          </Button>
-          <span>{title}</span>
+          <div>
+            <Button
+              ref={navigationTrigger}
+              variant="ghost"
+              size="icon"
+              className="mobile-nav-button"
+              aria-label={open ? "Close navigation" : "Open navigation"}
+              aria-expanded={open}
+              onClick={() => setOpen(!open)}
+            >
+              <Menu01 />
+            </Button>
+            <span>{title}</span>
+          </div>
         </header>
-        {open && <div className="portal-mobile-nav">{nav}</div>}
+        <Dialog open={open} onOpenChange={setOpen}>
+          <DialogContent
+            className="mobile-navigation translate-x-0 translate-y-0"
+            showCloseButton={false}
+            onCloseAutoFocus={(event) => {
+              event.preventDefault();
+              navigationTrigger.current?.focus();
+            }}
+          >
+            <DialogTitle className="sr-only">Navigation</DialogTitle>
+            <DialogDescription className="sr-only">
+              Navigate your {area === "admin" ? "administration" : area} pages.
+            </DialogDescription>
+            <DialogClose asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="portal-navigation-close"
+                aria-label="Close navigation"
+              >
+                <XClose />
+              </Button>
+            </DialogClose>
+            <div className="mobile-sidebar-content">{nav}</div>
+          </DialogContent>
+        </Dialog>
         <main className="obs-main" id="portal-content" tabIndex={-1}>
           {children}
         </main>
@@ -290,7 +337,14 @@ function RegisteredCompanyPortal({
     };
   }, [selected?.id, registering, tab]);
   const links = registering
-    ? [{ href: "#company/new", label: "Register company", selected: true }]
+    ? [
+        {
+          href: "#company/new",
+          label: "Register company",
+          selected: true,
+          icon: Building07,
+        },
+      ]
     : [
         ...companyDashboardLinks(
           selected!.id,
@@ -304,6 +358,7 @@ function RegisteredCompanyPortal({
                 href: "#company/new",
                 label: "Register another company",
                 selected: false,
+                icon: Plus,
               },
             ]
           : []),
@@ -322,7 +377,7 @@ function RegisteredCompanyPortal({
             {registering
               ? editing
                 ? "Update company details"
-                : "Bring your tool to octolab"
+                : "Bring your tool to Two Hands"
               : tab === "team"
                 ? "Company team"
                 : (company?.name ?? "Company overview")}
@@ -552,7 +607,6 @@ function RegisteredCompanyPortal({
   );
 }
 export function AdminCompanyReview() {
-  const account = useAccount();
   const [items, setItems] = useState<CompanyReviewItem[]>([]),
     [selected, setSelected] = useState<CompanyReviewItem>();
   const [error, setError] = useState(""),
@@ -643,14 +697,6 @@ export function AdminCompanyReview() {
         <p role="status" className="notice">
           {notice}
         </p>
-      )}
-      {!account.profile?.workspaces.length && (
-        <Panel title="Customer accounts">
-          <p>
-            There are no customer accounts yet. Customer activity and disputes
-            will appear after customers sign up and use octolab.
-          </p>
-        </Panel>
       )}
       <label className="portal-company-select">
         Review status
@@ -869,6 +915,7 @@ export function AccountSettings() {
                 ? "administration"
                 : "dashboard"),
           selected: false,
+          icon: ArrowLeft,
         },
       ]}
     >
@@ -880,6 +927,7 @@ export function AccountSettings() {
       </div>
       {canPreview && (
         <Panel
+          className="settings-section"
           title="Preview as"
           description="Preview a company’s owner experience or your user experience. Your admin identity stays intact; other administrator actions are disabled during preview."
         >
@@ -967,7 +1015,27 @@ export function AccountSettings() {
           )}
         </Panel>
       )}
-      <Panel title="Account" description={account.profile?.user.email}>
+      <Panel
+        className="settings-section"
+        title="Account"
+        description="Your identity and access to Two Hands."
+      >
+        <dl className="settings-identity">
+          <div>
+            <dt>Email address</dt>
+            <dd>{account.profile?.user.email}</dd>
+          </div>
+          <div>
+            <dt>Experience</dt>
+            <dd>
+              {current === "admin"
+                ? "Administrator"
+                : current === "company"
+                  ? "Tool company"
+                  : "Personal account"}
+            </dd>
+          </div>
+        </dl>
         <div className="settings-account-links">
           {account.previewRole !== "company" && (
             <a href="#dashboard">
@@ -978,10 +1046,6 @@ export function AccountSettings() {
             My tool company <ArrowRight size={16} />
           </a>
         </div>
-        <AccountControls
-          showIdentity={false}
-          showWorkspace={account.previewRole !== "company"}
-        />
       </Panel>
     </PortalShell>
   );

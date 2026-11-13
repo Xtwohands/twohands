@@ -52,7 +52,7 @@ export function AccountMenu({
         </Popover.Trigger>
         <Popover.Portal>
           <Popover.Content
-            className="account-menu-popover dark"
+            className="account-menu-popover"
             side="top"
             align="start"
             sideOffset={10}
@@ -110,7 +110,7 @@ export function AccountMenu({
       </Popover.Root>
       <Dialog open={helpOpen} onOpenChange={setHelpOpen}>
         <DialogContent
-          className="account-help-dialog dark"
+          className="account-help-dialog"
           onCloseAutoFocus={(event) => {
             event.preventDefault();
             trigger.current?.focus();
@@ -119,7 +119,7 @@ export function AccountMenu({
           <DialogHeader>
             <DialogTitle>Help and documentation</DialogTitle>
             <DialogDescription>
-              Use octolab tools in the agent you already work with.
+              Use Two Hands tools in the agent you already work with.
             </DialogDescription>
           </DialogHeader>
           <div className="account-help-topics">

@@ -140,7 +140,7 @@ export async function providerActivity(
     hosts: [...hosts.values()].sort((a, b) => b.calls - a.calls),
     errors: [...errors].map(([label, count]) => ({ label, count })),
     limitations:
-      "Only calls through octolab are observed. Hosts are caller-reported, not verified identities. Co-usage means tools were called in the same recorded session, not a causal workflow or a customer relationship. Small private workspace samples are not commercial exports. Controlled runs and replays are excluded.",
+      "Only calls through Two Hands are observed. Hosts are caller-reported, not verified identities. Co-usage means tools were called in the same recorded session, not a causal workflow or a customer relationship. Small private account samples are not commercial exports. Controlled runs and replays are excluded.",
   };
 }
 export type ProviderActivity = Awaited<ReturnType<typeof providerActivity>>;

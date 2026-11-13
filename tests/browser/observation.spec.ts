@@ -289,7 +289,7 @@ test("new output versions require a fresh review and preserve the old evaluation
   expect(full.evaluations).toHaveLength(1);
 });
 
-test("sharing is enabled by workspace policy, summary export omits content, and deletion removes the record", async ({
+test("sharing is enabled by account policy, summary export omits content, and deletion removes the record", async ({
   page,
   request,
 }) => {
@@ -300,7 +300,7 @@ test("sharing is enabled by workspace policy, summary export omits content, and 
     .getByRole("tab", { name: "Record & controls", exact: true })
     .click();
   await expect(
-    page.getByText("Included by workspace policy", { exact: true }),
+    page.getByText("Included by account policy", { exact: true }),
   ).toBeVisible();
   await expect(
     page.getByRole("switch", { name: "Include in commercial aggregates" }),
@@ -327,9 +327,10 @@ test("sharing is enabled by workspace policy, summary export omits content, and 
   expect((await request.get(`/api/observations/${s.id}`)).status()).toBe(404);
 });
 
-test("connection page and create-intent dialog are accessible and use the dark Geist theme", async ({
+test("connection page and create-intent dialog use the accessible light Geist theme", async ({
   page,
 }) => {
+  await page.emulateMedia({ colorScheme: "dark" });
   await page.goto("/#settings");
   await expect(
     page.getByRole("heading", { name: "Connections & settings", exact: true }),
@@ -337,18 +338,21 @@ test("connection page and create-intent dialog are accessible and use the dark G
   expect(
     await page.locator("body").evaluate((e) => getComputedStyle(e).fontFamily),
   ).toContain("Geist");
-  expect(
-    await page
-      .locator("body")
-      .evaluate((e) => getComputedStyle(e).backgroundColor),
-  ).toBe("rgb(24, 24, 24)");
+  await expect(page.locator("html")).toHaveCSS("color-scheme", "light");
+  await expect(page.locator("body")).toHaveCSS(
+    "background-color",
+    "rgb(248, 248, 248)",
+  );
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
   await page.goto("/#sessions");
   await page
     .getByRole("button", { name: "Record intent", exact: true })
     .first()
     .click();
-  await expect(page.getByRole("dialog")).toBeVisible();
+  await expect(page.getByRole("dialog")).toHaveCSS(
+    "background-color",
+    "rgb(255, 255, 255)",
+  );
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
   await page.keyboard.press("Escape");
   await expect(page.getByRole("dialog")).toHaveCount(0);
@@ -413,7 +417,7 @@ test("workspace authentication clears old data and recovers without navigation",
   await nav(page, "Sessions");
   await page.goto("/#settings");
   await page
-    .getByRole("button", { name: "Workspace access token", exact: true })
+    .getByRole("button", { name: "Account access token", exact: true })
     .click();
   await page.getByLabel("Access token", { exact: true }).fill("incorrect");
   await page.getByRole("button", { name: "Connect", exact: true }).click();

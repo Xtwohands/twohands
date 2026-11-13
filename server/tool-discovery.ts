@@ -67,7 +67,7 @@ export const discoveryInput = z
       .max(20)
       .optional()
       .describe(
-        "Preferred: provider-neutral operations. Octolab discovers compatible tools and prices each alternative; do not preselect a provider.",
+        "Preferred: provider-neutral operations. Two Hands discovers compatible tools and prices each alternative; do not preselect a provider.",
       ),
     requests: z
       .array(costRequest)
@@ -75,7 +75,7 @@ export const discoveryInput = z
       .max(20)
       .optional()
       .describe(
-        "Legacy provider-specific requests. Octolab also discovers compatible alternatives. Prefer operations for new callers.",
+        "Legacy provider-specific requests. Two Hands also discovers compatible alternatives. Prefer operations for new callers.",
       ),
   })
   .strict();

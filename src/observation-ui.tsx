@@ -83,7 +83,7 @@ export function Panel({
   className?: string;
 }) {
   return (
-    <Card className={className}>
+    <Card className={`product-panel ${className}`}>
       <CardHeader className="panel-heading">
         <div>
           <CardTitle>{title}</CardTitle>
@@ -470,7 +470,7 @@ export function EvaluationForm({
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="unspecified">Workspace review</SelectItem>
+            <SelectItem value="unspecified">Account review</SelectItem>
             <SelectItem value="human_reported">
               Human review (self-reported)
             </SelectItem>
@@ -632,7 +632,7 @@ export function EvaluationForm({
       <InlineError message={error} />
       <div className="form-footer">
         <span className="subtle">
-          Saved as a workspace review, with its own timestamp.
+          Saved as an account review, with its own timestamp.
         </span>
         {previous && (
           <Button
@@ -680,7 +680,7 @@ export function EvaluationStats({ evaluation }: { evaluation: Evaluation }) {
             ? "Assistant review"
             : evaluation.reviewer?.kind === "human_reported"
               ? "Human review (self-reported)"
-              : "Workspace review"}
+              : "Account review"}
           {evaluation.reviewer?.label ? ` · ${evaluation.reviewer.label}` : ""}
         </small>
       </div>

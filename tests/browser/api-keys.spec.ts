@@ -20,7 +20,7 @@ async function login(page: Page) {
     page.getByRole("button", { name: "Create API key", exact: true }),
   ).toBeEnabled();
   await expect(
-    page.getByRole("heading", { name: "Your API keys", exact: true }),
+    page.getByRole("heading", { name: "Your keys", exact: true }),
   ).toBeVisible();
 }
 async function create(page: Page, name: string, limit = "0.008") {
@@ -101,11 +101,8 @@ test("create, use, limit, edit, and revoke a scoped key without revealing it aga
     ).status(),
   ).toBe(409);
   expect(
-    (await request.get(`${base}/api/workspace/api-keys`, { headers })).status(),
+    (await request.get(`${base}/api/account/api-keys`, { headers })).status(),
   ).toBe(403);
-  await page
-    .getByRole("button", { name: "Refresh API keys", exact: true })
-    .click();
   await page
     .getByRole("button", { name: `Manage ${name}`, exact: true })
     .click();
@@ -142,9 +139,24 @@ test("create, use, limit, edit, and revoke a scoped key without revealing it aga
     ).status(),
   ).toBe(401);
   await page.getByRole("textbox", { name: "Search API keys" }).fill(name);
+  await page.getByRole("combobox", { name: "Key status" }).click();
+  await page.getByRole("option", { name: "Revoked", exact: true }).click();
+  const keys = page.getByRole("region", { name: "API keys", exact: true });
+  await expect(keys.getByRole("columnheader")).toHaveText([
+    "Name",
+    "Spend",
+    "Expires",
+    "Last used",
+    "Actions",
+  ]);
+  const view = keys.getByRole("button", { name: `View ${name}`, exact: true });
+  await expect(view).toBeVisible();
+  await view.click();
+  await expect(page.getByRole("dialog")).toContainText("Revoked");
   await expect(
-    page.getByRole("region", { name: "API keys", exact: true }),
-  ).toContainText("Revoked");
+    page.getByRole("button", { name: "Save key settings" }),
+  ).toHaveCount(0);
+  await page.keyboard.press("Escape");
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
   expect(
     await page.evaluate(
@@ -213,7 +225,7 @@ test("owner rejection clears the one-time secret and the key list", async ({
   await expect(
     page.getByLabel("New API key secret", { exact: true }),
   ).toBeVisible();
-  await page.route("**/api/workspace/api-keys", async (route) => {
+  await page.route("**/api/account/api-keys", async (route) => {
     if (route.request().method() === "GET")
       await route.fulfill({
         status: 401,
@@ -248,7 +260,7 @@ test("late creation responses cannot restore a secret after owner access is reje
   const entered = new Promise<void>((r) => {
     started = r;
   });
-  await page.route("**/api/workspace/api-keys", async (route) => {
+  await page.route("**/api/account/api-keys", async (route) => {
     if (route.request().method() === "POST") {
       const response = await route.fetch();
       started();
@@ -266,7 +278,7 @@ test("late creation responses cannot restore a secret after owner access is reje
   await expect(page.getByRole("dialog")).toHaveCount(0);
   const finished = page.waitForResponse(
     (r) =>
-      r.url().endsWith("/api/workspace/api-keys") &&
+      r.url().endsWith("/api/account/api-keys") &&
       r.request().method() === "POST",
   );
   release();

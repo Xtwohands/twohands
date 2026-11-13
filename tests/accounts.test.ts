@@ -139,52 +139,33 @@ suite("authenticated account and tenant boundaries", () => {
       .get("/api/auth/me")
       .set(headers("fixture-a"));
     expect(profile.status).toBe(200);
-    expect(profile.body.workspaces).toEqual([]);
+    expect(profile.body.hasPersonalAccount).toBe(false);
+    expect(profile.body).not.toHaveProperty("workspaces");
     expect(profile.body.isAdmin).toBe(false);
   });
-  it("creates explicitly owned workspaces idempotently without claiming historical data", async () => {
-    const input = { name: "Workspace A", requestKey: randomUUID() };
-    const [a, b] = await Promise.all([
-      request(app)
-        .post("/api/auth/workspaces")
-        .set(headers("fixture-a"))
-        .send(input),
-      request(app)
-        .post("/api/auth/workspaces")
-        .set(headers("fixture-a"))
-        .send(input),
-    ]);
-    expect(a.status).toBe(201);
-    expect(b.status).toBe(201);
-    expect(a.body.id).toBe(b.body.id);
-    aWorkspace = a.body.id;
-    expect(aWorkspace).not.toBe(ids.legacy);
-    expect(
-      (
-        await request(app)
-          .post("/api/auth/workspaces")
-          .set(headers("fixture-a"))
-          .send({ ...input, name: "Changed" })
-      ).status,
-    ).toBe(409);
-    const other = await request(app)
-      .post("/api/auth/workspaces")
-      .set(headers("fixture-b"))
-      .send({ name: "Workspace B", requestKey: randomUUID() });
-    expect(other.status).toBe(201);
-    bWorkspace = other.body.id;
-    expect(
-      (
-        await request(app)
-          .post("/api/auth/workspaces")
-          .set({ ...headers("fixture-a"), Origin: "https://unrelated.invalid" })
-          .send({ name: "Bad origin", requestKey: randomUUID() })
-      ).status,
-    ).toBe(403);
+  it("starts with separate personal accounts and retires explicit creation", async () => {
+    for (const token of ["fixture-a", "fixture-b"]) {
+      expect(
+        (await request(app).get("/api/account/usage").set(headers(token)))
+          .status,
+      ).toBe(200);
+    }
+    aWorkspace = await accounts.personalAccountScope(
+      identities.get("fixture-a")!,
+    );
+    bWorkspace = await accounts.personalAccountScope(
+      identities.get("fixture-b")!,
+    );
+    expect(new Set([aWorkspace, bWorkspace, ids.legacy]).size).toBe(3);
+    for (const path of ["/api/auth/setup", "/api/auth/workspaces"])
+      expect(
+        (await request(app).post(path).set(headers("fixture-a")).send({}))
+          .status,
+      ).toBe(404);
   });
   it("grants operator access after sign-in and keeps user preview scoped to real memberships", async () => {
     const personal = headers("fixture-admin", ids.legacy);
-    for (const path of ["/api/workspace/usage", "/api/observations/catalog"]) {
+    for (const path of ["/api/account/usage", "/api/observations/catalog"]) {
       expect((await request(app).get(path).set(personal)).status).toBe(200);
       expect(
         (
@@ -202,22 +183,10 @@ suite("authenticated account and tenant boundaries", () => {
       });
     expect(profile.status).toBe(200);
     expect(profile.body.isAdmin).toBe(false);
-    expect(
-      profile.body.workspaces.map((item: { id: string }) => item.id),
-    ).toEqual([ids.legacy]);
-    expect(
-      (
-        await request(app)
-          .get("/api/workspace/usage")
-          .set({
-            ...headers("fixture-admin", bWorkspace),
-            "X-Octolab-Preview": "user",
-          })
-      ).status,
-    ).toBe(403);
+    expect(profile.body.hasPersonalAccount).toBe(true);
     for (const path of [
-      "/api/admin/workspace-allowances",
-      "/api/provider-lab/runs",
+      "/api/admin/account-allowances",
+      "/api/provider-lab",
       "/api/auth/preview-targets",
     ]) {
       const response = await request(app).get(path).set(personal);
@@ -257,18 +226,27 @@ suite("authenticated account and tenant boundaries", () => {
       identity.sessionId,
       identity.userId,
     ]);
+    const listing = await request(app)
+      .get("/api/admin/account-allowances")
+      .set(headers("fixture-admin"));
+    expect(listing.body.items).toContainEqual(
+      expect.objectContaining({
+        accountId: identity.userId,
+        name: identity.email,
+      }),
+    );
+    expect(
+      listing.body.items.some(
+        (item: { accountId: string }) => item.accountId === ids.legacy,
+      ),
+    ).toBe(false);
     const responses = await Promise.all(
       Array.from({ length: 4 }, () =>
-        request(app)
-          .post("/api/auth/setup")
-          .set(headers("fixture-setup"))
-          .send({}),
+        request(app).get("/api/account/usage").set(headers("fixture-setup")),
       ),
     );
     for (const response of responses) expect(response.status).toBe(200);
-    const created = responses[0].body;
-    expect(new Set(responses.map((response) => response.body.id)).size).toBe(1);
-    expect(created).toMatchObject({ name: "Personal account", role: "owner" });
+    const created = { id: await accounts.personalAccountScope(identity) };
     expect([ids.legacy, aWorkspace, bWorkspace]).not.toContain(created.id);
     const memberships = await db.pool.query(
       "SELECT workspace_id,role FROM octolab.workspace_memberships WHERE user_id=$1",
@@ -278,7 +256,7 @@ suite("authenticated account and tenant boundaries", () => {
       { workspace_id: created.id, role: "owner" },
     ]);
     const audit = await db.pool.query(
-      "SELECT id FROM octolab.account_audit_events WHERE workspace_id=$1 AND actor_user_id=$2 AND type='workspace_created'",
+      "SELECT id FROM octolab.account_audit_events WHERE workspace_id=$1 AND actor_user_id=$2 AND type='personal_account_created'",
       [created.id, identity.userId],
     );
     expect(audit.rowCount).toBe(1);
@@ -294,121 +272,33 @@ suite("authenticated account and tenant boundaries", () => {
       remainingMicros: 0,
       limitMicros: 0,
     });
-    const repeated = await request(app)
-      .post("/api/auth/setup")
-      .set(headers("fixture-setup"))
-      .send({});
-    expect(repeated.body.id).toBe(created.id);
-    const existing = await request(app)
-      .post("/api/auth/setup")
-      .set(headers("fixture-a"))
-      .send({});
-    expect(existing.body.id).toBe(aWorkspace);
-    expect(
-      (
-        await request(app)
-          .get("/api/observations")
-          .set(headers("fixture-b", created.id))
-      ).status,
-    ).toBe(403);
-    expect((await request(app).post("/api/auth/setup").send({})).status).toBe(
-      401,
-    );
-    expect(
-      (
-        await request(app)
-          .post("/api/auth/setup")
-          .set(headers("fixture-setup"))
-          .send({ userId: ids.b })
-      ).status,
-    ).toBe(400);
-    expect(
-      (
-        await request(app)
-          .post("/api/auth/setup")
-          .set({
-            ...headers("fixture-setup"),
-            Origin: "https://unrelated.invalid",
-          })
-          .send({})
-      ).status,
-    ).toBe(403);
-    expect(
-      (
-        await request(app)
-          .post("/api/auth/setup")
-          .set(headers("fixture-setup"))
-          .type("text/plain")
-          .send("{}")
-      ).status,
-    ).toBe(415);
-    expect(
-      (
-        await request(app)
-          .post("/api/auth/setup")
-          .set({ ...headers("fixture-admin"), "X-Octolab-Preview": "user" })
-          .send({})
-      ).status,
-    ).toBe(403);
   });
-  it("denies cross-tenant IDs and checks membership/roles from the database on every request", async () => {
+  it("derives personal data access from identity and ignores legacy selectors and memberships", async () => {
     const created = await request(app)
       .post("/api/observations/agent-sessions")
-      .set(headers("fixture-a", aWorkspace))
+      .set(headers("fixture-a"))
       .send(intent);
     expect(created.status).toBe(201);
-    const sessionId = created.body.id;
+    const path = "/api/observations/" + created.body.id;
     expect(
-      (
-        await request(app)
-          .get("/api/observations/" + sessionId)
-          .set(headers("fixture-b", bWorkspace))
-      ).status,
+      (await request(app).get(path).set(headers("fixture-a", bWorkspace)))
+        .status,
+    ).toBe(200);
+    await db.pool.query(
+      "INSERT INTO octolab.workspace_memberships VALUES($1,$2,'member')",
+      [aWorkspace, ids.b],
+    );
+    expect(
+      (await request(app).get(path).set(headers("fixture-b", aWorkspace)))
+        .status,
     ).toBe(404);
     expect(
       (
         await request(app)
           .get("/api/observations")
           .set(headers("fixture-b", aWorkspace))
-      ).status,
-    ).toBe(403);
-    await db.pool.query(
-      "INSERT INTO octolab.workspace_memberships VALUES($1,$2,'member')",
-      [aWorkspace, ids.b],
-    );
-    expect(
-      (
-        await request(app)
-          .get("/api/observations/" + sessionId)
-          .set(headers("fixture-b", aWorkspace))
-      ).status,
-    ).toBe(200);
-    expect(
-      (
-        await request(app)
-          .post("/api/workspace/routing")
-          .set(headers("fixture-b", aWorkspace))
-          .send({ revision: 0, disabledTools: [] })
-      ).status,
-    ).toBe(403);
-    expect(
-      (
-        await request(app)
-          .get("/api/workspace/api-keys")
-          .set(headers("fixture-b", aWorkspace))
-      ).status,
-    ).toBe(403);
-    await db.pool.query(
-      "DELETE FROM octolab.workspace_memberships WHERE workspace_id=$1 AND user_id=$2",
-      [aWorkspace, ids.b],
-    );
-    expect(
-      (
-        await request(app)
-          .get("/api/observations/" + sessionId)
-          .set(headers("fixture-b", aWorkspace))
-      ).status,
-    ).toBe(403);
+      ).body,
+    ).toEqual([]);
   });
   it("normalizes Express case, trailing-slash and encoded-path variants before role checks", async () => {
     for (const path of [
@@ -438,23 +328,10 @@ suite("authenticated account and tenant boundaries", () => {
             .send({})
         ).status,
       ).toBe(403);
-    await db.pool.query(
-      "INSERT INTO octolab.workspace_memberships VALUES($1,$2,'member')",
-      [aWorkspace, ids.b],
-    );
-    for (const path of ["/api/Workspace/API-Keys", "/api/Workspace/Funding/"])
-      expect(
-        (await request(app).get(path).set(headers("fixture-b", aWorkspace)))
-          .status,
-      ).toBe(403);
-    await db.pool.query(
-      "DELETE FROM octolab.workspace_memberships WHERE workspace_id=$1 AND user_id=$2",
-      [aWorkspace, ids.b],
-    );
   });
   it("issues keys with account attribution and routes scoped MCP access to the key's workspace", async () => {
     const result = await request(app)
-      .post("/api/workspace/api-keys")
+      .post("/api/account/api-keys")
       .set(headers("fixture-a", aWorkspace))
       .send({
         name: "Account key",
@@ -483,7 +360,7 @@ suite("authenticated account and tenant boundaries", () => {
     const secret = result.body.secret,
       key = result.body.key;
     const events = await request(app)
-      .get("/api/workspace/api-keys/" + key.id)
+      .get("/api/account/api-keys/" + key.id)
       .set(headers("fixture-a", aWorkspace));
     expect(events.body.events[0]).toMatchObject({
       actor: "authenticated_account",
@@ -503,7 +380,7 @@ suite("authenticated account and tenant boundaries", () => {
       ).status,
     ).toBe(401);
     expect(
-      (await request(app).get("/api/workspace/funding").set(headers(secret)))
+      (await request(app).get("/api/account/funding").set(headers(secret)))
         .status,
     ).toBe(403);
   });
@@ -554,6 +431,14 @@ suite("authenticated account and tenant boundaries", () => {
           .set(headers(config.adminToken, bWorkspace))
       ).status,
     ).toBe(401);
+    const queue = await request(app)
+      .get("/api/admin/funding/disputes")
+      .set(headers("fixture-admin"));
+    expect(queue.body.items).toContainEqual(
+      expect.objectContaining({
+        payment: expect.objectContaining({ id: payment.id }),
+      }),
+    );
     const detail = await request(app)
       .get("/api/admin/funding/disputes/" + payment.id)
       .set(headers("fixture-admin", bWorkspace));
@@ -707,9 +592,7 @@ suite("authenticated account and tenant boundaries", () => {
       .get("/api/auth/me")
       .set(headers("fixture-a"));
     expect(companyProfile.body.companies[0].id).toBe(id);
-    expect(
-      companyProfile.body.workspaces.some((w: any) => w.id === aWorkspace),
-    ).toBe(true);
+    expect(companyProfile.body.hasPersonalAccount).toBe(true);
     expect(
       (
         await request(app)
@@ -1180,7 +1063,7 @@ suite("authenticated account and tenant boundaries", () => {
       user: { id: ids.admin },
       isAdmin: false,
       canPreview: true,
-      workspaces: [],
+      hasPersonalAccount: false,
       companyPreview: { target, status: "pending" },
     });
     expect(profile.body.companies).toHaveLength(1);
@@ -1198,7 +1081,7 @@ suite("authenticated account and tenant boundaries", () => {
       `/api/companies/${otherId}/members`,
       "/api/admin/companies",
       "/api/observations",
-      "/api/workspace/api-keys",
+      "/api/account/api-keys",
       "/api/auth/preview-insights",
     ]) {
       expect((await request(app).get(path).set(preview)).status, path).toBe(
@@ -1290,7 +1173,7 @@ suite("authenticated account and tenant boundaries", () => {
       .get("/api/auth/me")
       .set(headers("fixture-admin"));
     expect(normal.body.isAdmin).toBe(true);
-    expect(normal.body.workspaces.length).toBeGreaterThan(1);
+    expect(normal.body.hasPersonalAccount).toBe(true);
     const deletedId = randomUUID();
     await db.pool.query(
       "INSERT INTO octolab.tool_companies(id,owner_user_id,request_key,name,website,tool_name,description) SELECT $1,owner_user_id,$2,name,website,tool_name,description FROM octolab.tool_companies WHERE id=$3",
@@ -1345,7 +1228,7 @@ suite("authenticated account and tenant boundaries", () => {
     const profile = await request(app).get("/api/auth/me").set(preview);
     expect(profile.body).toMatchObject({
       isAdmin: false,
-      workspaces: [],
+      hasPersonalAccount: false,
       companies: [],
       companyPreview: { target: "provider:firecrawl", kind: "provider" },
     });

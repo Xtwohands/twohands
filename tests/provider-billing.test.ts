@@ -164,36 +164,34 @@ describe("provider billing reconciliation", () => {
       "PRIVATE",
     );
   });
-  it("honors verified owner/member roles without requiring a legacy owner token", async () => {
+  it("allows signed-in account management and denies machine keys", async () => {
     config.token = "";
-    let role = "member";
+    let machineKey = true;
     const app = express();
     app.use(express.json());
     app.use((_req, res, next) => {
       res.locals.account = { userId: "00000000-0000-4000-8000-000000000001" };
-      res.locals.workspaceRole = role;
+      if (machineKey) res.locals.apiKeyId = "fixture-key";
       next();
     });
     providerManagementRoutes(app, obs);
     expect(
-      (await request(app).get("/api/workspace/provider-billing")).status,
+      (await request(app).get("/api/account/provider-billing")).status,
     ).toBe(403);
     expect(
       (
         await request(app)
-          .post("/api/workspace/provider-billing/imports")
+          .post("/api/account/provider-billing/imports")
           .send(input())
       ).status,
     ).toBe(403);
-    role = "owner";
+    machineKey = false;
     const imported = await request(app)
-      .post("/api/workspace/provider-billing/imports")
+      .post("/api/account/provider-billing/imports")
       .send(input());
     expect(imported.status).toBe(201);
     const reviewed = await request(app)
-      .post(
-        `/api/workspace/provider-billing/imports/${imported.body.id}/review`,
-      )
+      .post(`/api/account/provider-billing/imports/${imported.body.id}/review`)
       .send({
         requestKey: crypto.randomUUID(),
         decision: "approved",
@@ -469,12 +467,12 @@ describe("provider billing reconciliation", () => {
       expect(
         (
           await request(app)
-            .get(`/api/workspace/${path}`)
+            .get(`/api/account/${path}`)
             .set("Authorization", `Bearer ${secret}`)
         ).status,
       ).toBe(403);
     const response = await request(app)
-      .get("/api/workspace/provider-billing/export")
+      .get("/api/account/provider-billing/export")
       .set("Authorization", `Bearer ${config.token}`);
     expect(response.status).toBe(200);
     expect(response.body.batches[0].lines[0].reconciledMicros).toBe(9000);
@@ -482,7 +480,7 @@ describe("provider billing reconciliation", () => {
       /PRIVATE|fixture-key|credentialFingerprint|statedReason|inputHash|review.*note/,
     );
     expect(
-      (await request(app).get("/api/workspace/provider-billing")).status,
+      (await request(app).get("/api/account/provider-billing")).status,
     ).toBe(401);
   });
   it("binds a billing reference to the current key and requires a new reference after rotation", async () => {
@@ -507,7 +505,7 @@ describe("provider billing reconciliation", () => {
     const exported = JSON.stringify(
       (
         await request(createApp(store, undefined, obs))
-          .get("/api/workspace/provider-adapters")
+          .get("/api/account/provider-adapters")
           .set("Authorization", `Bearer ${config.token}`)
       ).body,
     );

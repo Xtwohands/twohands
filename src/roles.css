@@ -1,6 +1,6 @@
 .portal-area {
   padding: 0 16px 14px;
-  color: #aaaab3;
+  color: var(--muted-foreground);
   font-size: 13px;
   font-weight: 500;
 }
@@ -14,15 +14,15 @@
   display: grid;
   gap: 8px;
   font-size: 13px;
-  color: #b5b5bd;
+  color: var(--muted-foreground);
 }
 .portal-form input,
 .portal-form textarea,
 .portal-form select,
 .portal-company-select select {
-  background: #19191c;
-  border: 1px solid #343438;
-  color: #eee;
+  background: var(--card);
+  border: 1px solid var(--border);
+  color: var(--foreground);
   border-radius: 7px;
   padding: 10px 12px;
   max-width: 100%;
@@ -63,14 +63,14 @@
   margin-bottom: 24px;
 }
 .portal-details dt {
-  color: #92929c;
+  color: var(--muted-foreground);
 }
 .portal-details dd {
   margin: 0;
   overflow-wrap: anywhere;
 }
 .portal-details a {
-  color: #d5d5db;
+  color: var(--foreground);
   text-decoration: underline;
 }
 .portal-company-select {
@@ -78,11 +78,11 @@
   margin-bottom: 20px;
 }
 .portal-status {
-  border: 1px solid #3b3b40;
+  border: 1px solid var(--border);
   border-radius: 6px;
   padding: 5px 9px;
   font-size: 12px;
-  color: #c6c6cd;
+  color: var(--foreground);
 }
 .portal-steps {
   padding-left: 22px;
@@ -97,7 +97,7 @@
 }
 .portal-steps p {
   margin: 6px 0 0;
-  color: #9999a4;
+  color: var(--muted-foreground);
   font-size: 13px;
 }
 .portal-review-grid {
@@ -115,35 +115,35 @@
   gap: 7px;
   text-align: left;
   padding: 14px;
-  background: #19191c;
-  border: 1px solid #303035;
+  background: var(--card);
+  border: 1px solid var(--border);
   border-radius: 8px;
-  color: #ddd;
+  color: var(--foreground);
   cursor: pointer;
 }
 .portal-company-list button[aria-pressed="true"] {
-  border-color: #555;
-  background: #242426;
+  border-color: var(--border-strong);
+  background: var(--muted);
 }
 .portal-company-list span {
   font-size: 12px;
-  color: #9c9ca7;
+  color: var(--muted-foreground);
 }
 .portal-audit {
   margin-top: 28px;
-  color: #9999a4;
+  color: var(--muted-foreground);
   font-size: 12px;
 }
 .portal-audit summary {
   cursor: pointer;
-  color: #ccc;
+  color: var(--foreground);
 }
 .portal-audit > div {
-  border-bottom: 1px solid #2e2e33;
+  border-bottom: 1px solid var(--border);
   padding: 14px 0;
 }
 .account-purpose {
-  border: 1px solid #303035;
+  border: 1px solid var(--border);
   border-radius: 8px;
   padding: 14px;
   margin: 18px 0;
@@ -151,17 +151,22 @@
 .account-purpose p {
   font-size: 13px;
   line-height: 1.6;
-  color: #aaaab4;
+  color: var(--muted-foreground);
 }
 .account-purpose p:first-child {
   margin-top: 0;
-  color: #eee;
+  color: var(--foreground);
 }
 .account-purpose p:last-child {
   margin-bottom: 0;
 }
 .portal-mobile-nav {
   display: none;
+}
+.portal-navigation-close {
+  position: absolute;
+  top: 14px;
+  right: 8px;
 }
 .role-portal .obs-main > .panel {
   margin-bottom: 24px;
@@ -173,8 +178,8 @@
   .portal-mobile-nav {
     display: flex;
     flex-direction: column;
-    background: #151517;
-    border-bottom: 1px solid #333;
+    background: var(--sidebar);
+    border-bottom: 1px solid var(--border);
     padding: 18px;
   }
   .portal-mobile-nav nav {
@@ -184,11 +189,11 @@
   .portal-mobile-nav nav a {
     padding: 9px;
     border-radius: 6px;
-    color: #bbb;
+    color: var(--muted-foreground);
   }
   .portal-mobile-nav nav a.selected {
-    background: #29292d;
-    color: #eee;
+    background: var(--secondary);
+    color: var(--foreground);
   }
   .portal-mobile-nav .sidebar-bottom {
     margin-top: 16px;
@@ -214,15 +219,15 @@
   gap: 8px;
   max-width: 320px;
   font-size: 13px;
-  color: #aaa;
+  color: var(--muted-foreground);
 }
 .settings-preview-field select {
   min-height: 40px;
-  background-color: #202020;
-  border: 1px solid #3b3b3b;
+  background-color: var(--card);
+  border: 1px solid var(--input);
   border-radius: 7px;
   padding: 8px 12px;
-  color: #eee;
+  color: var(--foreground);
   font: inherit;
 }
 .settings-account-links {
@@ -235,9 +240,34 @@
   gap: 8px;
   align-items: center;
   font-size: 13px;
-  color: #ccc;
+  color: var(--foreground);
   text-decoration: none;
   padding-block: 8px;
+}
+.settings-identity {
+  margin: 0;
+  display: grid;
+}
+.settings-identity > div {
+  display: grid;
+  grid-template-columns: minmax(110px, 0.6fr) minmax(0, 1fr);
+  gap: 16px;
+  padding-block: 14px;
+  font-size: 13px;
+  border-bottom: 1px solid var(--border);
+}
+.settings-identity > div:first-child {
+  padding-top: 0;
+}
+.settings-identity dt {
+  color: var(--muted-foreground);
+}
+.settings-identity dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.settings-identity + .settings-account-links {
+  padding-top: 12px;
 }
 .preview-notice {
   position: fixed;
@@ -250,13 +280,13 @@
   justify-content: space-between;
   gap: 12px;
   max-width: calc(100vw - 32px);
-  border: 1px solid #414141;
+  border: 1px solid var(--border);
   border-radius: 8px;
-  background: #242424;
+  background: var(--popover);
   padding: 8px 10px 8px 14px;
-  color: #ccc;
+  color: var(--foreground);
   font-size: 12px;
-  box-shadow: 0 4px 16px #0004;
+  box-shadow: var(--shadow-lg);
 }
 
 .role-portal .obs-main .account-controls {
@@ -268,12 +298,12 @@
   justify-content: space-between;
   gap: 14px;
   padding: 16px 0;
-  border-bottom: 1px solid #303035;
+  border-bottom: 1px solid var(--border);
   font-size: 13px;
 }
 .portal-team-member p {
   margin: 5px 0 0;
-  color: #9999a4;
+  color: var(--muted-foreground);
   font-size: 12px;
 }
 .portal-team-member strong {
@@ -293,11 +323,11 @@
   appearance: none;
   max-width: 210px;
   min-width: 0;
-  border: 1px solid #414141;
+  border: 1px solid var(--input);
   border-radius: 6px;
-  background: #202020 url("/icons/chevron-down.svg?v=1") no-repeat right 8px
+  background: var(--card) url("/icons/chevron-down.svg?v=1") no-repeat right 8px
     center / 14px 14px;
-  color: #ddd;
+  color: var(--foreground);
   font: inherit;
   padding: 6px 28px 6px 10px;
   text-overflow: ellipsis;

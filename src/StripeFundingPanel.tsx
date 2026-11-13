@@ -63,7 +63,7 @@ export function StripeFundingPanel({
     setOpen(true);
     setBusy(true);
     // A return URL only opens a saved receipt. It never proves payment or adds credits.
-    void api<StripeDeposit>(`/workspace/funding/stripe/${id}`)
+    void api<StripeDeposit>(`/account/funding/stripe/${id}`)
       .then(setSelected)
       .catch((e: Error) => setError(e.message))
       .finally(() => setBusy(false));
@@ -79,7 +79,7 @@ export function StripeFundingPanel({
     setBusy(true);
     setError("");
     try {
-      const result = await api<StripeDeposit>("/workspace/funding/stripe", {
+      const result = await api<StripeDeposit>("/account/funding/stripe", {
         requestKey: retry?.requestKey ?? key.current,
         amount: retry ? (retry.amountCents / 100).toFixed(2) : amount,
       });
@@ -288,7 +288,7 @@ export function StripeFundingPanel({
                     try {
                       setSelected(
                         await api<StripeDeposit>(
-                          `/workspace/funding/stripe/${selected.id}/reconcile`,
+                          `/account/funding/stripe/${selected.id}/reconcile`,
                           {},
                         ),
                       );
@@ -336,7 +336,7 @@ export function StripeFundingPanel({
                 <small>$5–$1,000 · Up to two decimal places</small>
               </label>
               <p>
-                Enter card details on Stripe. octolab never receives your card
+                Enter card details on Stripe. Two Hands never receives your card
                 number.
               </p>
               <Button

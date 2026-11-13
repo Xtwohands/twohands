@@ -3,7 +3,7 @@ import { z } from "zod";
 import { FundingError, FundingService } from "./funding.js";
 import { StripeFundingService } from "./stripe-funding.js";
 export function stripeWebhookRoute(app: Express, stripe: StripeFundingService) {
-  // This exact endpoint uses Stripe signatures instead of the workspace token.
+  // This exact endpoint uses Stripe signatures instead of the account credential.
   // It must precede all JSON parsing so signature verification receives original bytes.
   app.post(
     "/api/webhooks/stripe",
@@ -57,7 +57,7 @@ export function fundingRoutes(
       }
     };
   app.get(
-    "/api/workspace/funding",
+    "/api/account/funding",
     route(async (_req, res) => {
       const summary = await service.summary();
       const stripeDeposits = Number(
@@ -76,38 +76,38 @@ export function fundingRoutes(
     }),
   );
   app.post(
-    "/api/workspace/funding/deposits",
+    "/api/account/funding/deposits",
     route(async (req, res) =>
       res.status(201).json(await service.create(req.body)),
     ),
   );
   app.post(
-    "/api/workspace/funding/stripe",
+    "/api/account/funding/stripe",
     route(async (req, res) =>
       res.status(201).json(await stripe.create(req.body)),
     ),
   );
   app.get(
-    "/api/workspace/funding/stripe/:id",
+    "/api/account/funding/stripe/:id",
     route(async (req, res) =>
       res.json(await stripe.get(z.uuid().parse(req.params.id))),
     ),
   );
   app.post(
-    "/api/workspace/funding/stripe/:id/reconcile",
+    "/api/account/funding/stripe/:id/reconcile",
     route(async (req, res) => {
       z.object({}).strict().parse(req.body);
       res.json(await stripe.reconcile(z.uuid().parse(req.params.id), true));
     }),
   );
   app.get(
-    "/api/workspace/funding/deposits/:id",
+    "/api/account/funding/deposits/:id",
     route(async (req, res) =>
       res.json(await service.get(z.uuid().parse(req.params.id))),
     ),
   );
   app.post(
-    "/api/workspace/funding/deposits/:id/verify",
+    "/api/account/funding/deposits/:id/verify",
     route(async (req, res) =>
       res.json(await service.verify(z.uuid().parse(req.params.id), req.body)),
     ),

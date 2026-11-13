@@ -30,6 +30,13 @@ import {
 import { Button } from "./components/ui/button";
 import { Badge } from "./components/ui/badge";
 import { Input } from "./components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "./components/ui/select";
 import { Switch } from "./components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./components/ui/tabs";
 import {
@@ -52,10 +59,10 @@ import type {
   ActivityItem,
   ActivityPage,
   RoutingPolicy,
-  WorkspaceUsage,
-} from "../server/workspace-types";
+  AccountUsage,
+} from "../server/account-data-types";
 import type { Observatory } from "../server/observation";
-import "./workspace.css";
+import "./user-dashboard.css";
 import { ApiKeysView } from "./ApiKeysView";
 import { FundingView } from "./FundingView";
 import { AgentEnvironment } from "./components/AgentEnvironment";
@@ -241,15 +248,8 @@ export function UserDashboardView({
   refreshCatalog: () => Promise<unknown>;
   connectionRevision: number;
 }) {
-  const account = useAccount();
-  const canManage =
-    !account.enabled ||
-    account.profile?.isAdmin ||
-    account.profile?.workspaces.some(
-      (w) => w.id === account.workspaceId && w.role === "owner",
-    );
   const [days, setDays] = useState("7");
-  const [usage, setUsage] = useState<WorkspaceUsage>();
+  const [usage, setUsage] = useState<AccountUsage>();
   const [policy, setPolicy] = useState<RoutingPolicy>();
   const [connection, setConnection] = useState<Connection>();
   const [activity, setActivity] = useState<ActivityPage>();
@@ -275,9 +275,9 @@ export function UserDashboardView({
     const id = ++generation.current;
     try {
       const [u, p, c] = await Promise.all([
-        api<WorkspaceUsage>(`/workspace/usage?days=${days}`),
-        api<RoutingPolicy>("/workspace/routing"),
-        api<Connection>("/workspace/connection"),
+        api<AccountUsage>(`/account/usage?days=${days}`),
+        api<RoutingPolicy>("/account/routing"),
+        api<Connection>("/account/connection"),
       ]);
       if (generation.current !== id) return;
       setUsage(u);
@@ -322,7 +322,7 @@ export function UserDashboardView({
           status: section === "activity" ? status : "all",
           page: section === "activity" ? String(page) : "1",
         });
-        const data = await api<ActivityPage>(`/workspace/activity?${params}`);
+        const data = await api<ActivityPage>(`/account/activity?${params}`);
         if (
           id === activityGeneration.current &&
           key === currentRequest.current
@@ -361,12 +361,12 @@ export function UserDashboardView({
     refreshTick,
   ]);
   async function toggle(tool: ToolName, enabled: boolean) {
-    if (!policy || saving || !canManage) return;
+    if (!policy || saving) return;
     setSaving(true);
     setNotice("");
     setError("");
     try {
-      const next = await api<RoutingPolicy>("/workspace/routing", {
+      const next = await api<RoutingPolicy>("/account/routing", {
         revision: policy.revision,
         disabledTools: enabled
           ? policy.disabledTools.filter((t) => t !== tool)
@@ -380,7 +380,7 @@ export function UserDashboardView({
     } catch (e) {
       setError((e as Error).message);
       if (e instanceof ApiError && e.status === 409) {
-        const latest = await api<RoutingPolicy>("/workspace/routing").catch(
+        const latest = await api<RoutingPolicy>("/account/routing").catch(
           () => undefined,
         );
         if (latest) setPolicy(latest);
@@ -395,6 +395,13 @@ export function UserDashboardView({
   const enabled = (tool: ToolName) => !policy?.disabledTools.includes(tool);
   const showPeriod = ["overview", "activity", "usage"].includes(section);
   const completed = usage ? usage.succeeded + usage.failed : 0;
+  if (section === "keys") {
+    return (
+      <div className="tool-workspace">
+        <ApiKeysView key={connectionRevision} />
+      </div>
+    );
+  }
   return (
     <div className="tool-workspace">
       <div className="page-heading ws-page-heading">
@@ -404,19 +411,22 @@ export function UserDashboardView({
         </div>
         <div className="ws-heading-actions">
           {showPeriod && (
-            <NativeSelect
-              label="Date range"
+            <Select
               value={days}
-              onChange={(v) => {
-                setDays(v);
+              onValueChange={(value) => {
+                setDays(value);
                 setPage(1);
               }}
-              options={[
-                ["7", "Last 7 days"],
-                ["30", "Last 30 days"],
-                ["90", "Last 90 days"],
-              ]}
-            />
+            >
+              <SelectTrigger size="sm" aria-label="Date range">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent position="popper" align="end">
+                <SelectItem value="7">Last 7 days</SelectItem>
+                <SelectItem value="30">Last 30 days</SelectItem>
+                <SelectItem value="90">Last 90 days</SelectItem>
+              </SelectContent>
+            </Select>
           )}
           <Button
             variant="outline"
@@ -447,7 +457,7 @@ export function UserDashboardView({
             </Button>
           )}
           {section === "overview" && (
-            <Button size="sm" asChild>
+            <Button variant="brand" size="sm" asChild>
               <a href="#dashboard/connections">
                 <TerminalSquare />
                 Connect agent
@@ -767,7 +777,7 @@ export function UserDashboardView({
                     Your agent chooses from the tools enabled on your account.
                   </strong>
                   <p>
-                    octolab matches tools to a request and returns compatible
+                    Two Hands matches tools to a request and returns compatible
                     options with estimates. The agent explicitly selects a tool
                     and supplies its reason. Paused tools are excluded from
                     eligible choices and blocked from new calls.
@@ -802,7 +812,7 @@ export function UserDashboardView({
                       <Switch
                         aria-label={`${enabled(t.tool) ? "Pause" : "Enable"} ${t.tool}`}
                         checked={enabled(t.tool)}
-                        disabled={!policy || saving || !canManage}
+                        disabled={!policy || saving}
                         onCheckedChange={(value) => void toggle(t.tool, value)}
                       />
                     </div>
@@ -845,15 +855,14 @@ export function UserDashboardView({
               </Section>
             </>
           )}
-          {section === "usage" && canManage && (
+          {section === "usage" && (
             <ProviderBillingView key={connectionRevision} days={days} />
           )}
-          {section === "keys" && <ApiKeysView key={connectionRevision} />}
           {section === "credits" && <FundingView key={connectionRevision} />}
           {section === "connections" && (
             <>
               <ConnectionView connection={connection} catalog={catalog} />
-              {canManage && <ProviderAdaptersView key={connectionRevision} />}
+              <ProviderAdaptersView key={connectionRevision} />
             </>
           )}
         </>
@@ -881,7 +890,7 @@ export function UserDashboardView({
               }
               enabled={enabled(selectedTool.tool)}
               onToggle={(v) => void toggle(selectedTool.tool, v)}
-              saving={saving || !policy || !canManage}
+              saving={saving || !policy}
             />
           )}
         </DialogContent>
@@ -926,7 +935,7 @@ function Metric({
     </a>
   );
 }
-function UsageChart({ usage }: { usage: WorkspaceUsage }) {
+function UsageChart({ usage }: { usage: AccountUsage }) {
   const maximum = Math.max(2, ...usage.series.map((d) => d.requests));
   return (
     <div
@@ -978,7 +987,7 @@ function UsageChart({ usage }: { usage: WorkspaceUsage }) {
     </div>
   );
 }
-function ProviderBreakdown({ usage }: { usage?: WorkspaceUsage }) {
+function ProviderBreakdown({ usage }: { usage?: AccountUsage }) {
   return (
     <div className="ws-provider-breakdown">
       {usage?.providers.map((p) => (
@@ -1041,7 +1050,7 @@ function ActivityTable({
       >
         {filtered
           ? "Try another search, provider, status, or date range."
-          : "Use octolab tools in your agent. Each call will appear here with its cost estimate and result."}
+          : "Use Two Hands tools in your agent. Each call will appear here with its cost estimate and result."}
       </Empty>
     );
   return (
@@ -1391,7 +1400,7 @@ function RoutingPreview({ revision }: { revision?: number }) {
           setBusy(true);
           setError("");
           try {
-            const data = await api<Preview>("/workspace/preview", {
+            const data = await api<Preview>("/account/preview", {
               need: value,
               operations: [
                 {
@@ -1633,13 +1642,6 @@ function ConnectionView({
 }) {
   const account = useAccount();
   const [client, setClient] = useState("codex");
-  const canManageKeys =
-    !account.enabled ||
-    account.profile?.isAdmin ||
-    account.profile?.workspaces.some(
-      (workspace) =>
-        workspace.id === account.workspaceId && workspace.role === "owner",
-    );
   const command =
     client === "other"
       ? "npm run mcp:install -- project"
@@ -1649,7 +1651,7 @@ function ConnectionView({
       <div className="ws-connection-grid">
         <Section
           title="Connect your agent"
-          description="Use octolab inside your existing conversations."
+          description="Use Two Hands inside your existing conversations."
         >
           <div
             className="ws-client-picker"
@@ -1672,17 +1674,11 @@ function ConnectionView({
             ))}
           </div>
           <p className="ws-panel-note">
-            {canManageKeys ? (
-              <>
-                Use a separate scoped credential for each agent.{" "}
-                <a href="#dashboard/keys" className="ws-text-link">
-                  Manage API keys
-                </a>{" "}
-                before starting the bridge.
-              </>
-            ) : (
-              "Ask your account owner for a scoped API key before starting the bridge."
-            )}
+            Use a separate scoped credential for each agent.{" "}
+            <a href="#dashboard/keys" className="ws-text-link">
+              Manage API keys
+            </a>{" "}
+            before starting the bridge.
           </p>
           <ol className="ws-setup-steps">
             <li>
@@ -1690,8 +1686,8 @@ function ConnectionView({
               <div>
                 <strong>Build the local MCP bridge</strong>
                 <p>
-                  Run this in the octolab project folder. If you run the server
-                  locally, keep it running in a separate terminal.
+                  Run this in the Two Hands project folder. If you run the
+                  server locally, keep it running in a separate terminal.
                 </p>
                 <div className="command-box">
                   <code>npm run build</code>
@@ -1706,7 +1702,7 @@ function ConnectionView({
                 <p>
                   Save these in the bridge project’s private .env file. Replace
                   the placeholder with your API key. The address points to this
-                  octolab server, including its port.
+                  Two Hands server, including its port.
                 </p>
                 <AgentEnvironment />
               </div>
@@ -1735,8 +1731,9 @@ function ConnectionView({
               <div>
                 <strong>Restart your client and ask your agent</strong>
                 <p>
-                  “Use octolab to find evidence for my next task.” Your agent
-                  records intent and chooses tools under the backend policy.
+                  “Use the connected apilayer tools to find evidence for my next
+                  task.” Your agent records intent and chooses tools under the
+                  backend policy.
                 </p>
               </div>
             </li>
@@ -1757,7 +1754,7 @@ function ConnectionView({
             </h3>
             <p>
               {connection?.clients.length
-                ? "These clients have sent requests to octolab. Last seen is not a live heartbeat."
+                ? "These clients have sent requests to Two Hands. Last seen is not a live heartbeat."
                 : "Connect an MCP client. It will appear here after its first request."}
             </p>
           </div>
@@ -1802,7 +1799,7 @@ function ConnectionView({
         </div>
         <div className="ws-panel-note">
           {account.enabled && !account.profile?.isAdmin
-            ? "Octolab manages provider availability. Your API keys connect agents to this account."
+            ? "Two Hands manages provider availability. Your API keys connect agents to this account."
             : "Missing a provider? Set its API key in the server environment, then restart the server."}
           <Go section="tools">Open tool catalog</Go>
         </div>
@@ -1843,7 +1840,7 @@ function ExportActivity({
               export: "true",
             });
             const result = await api<ActivityPage>(
-              `/workspace/activity?${params}`,
+              `/account/activity?${params}`,
             );
             const items = result.items;
             const cell = (value: unknown) => {
@@ -1867,7 +1864,7 @@ function ExportActivity({
               columns.join(","),
               ...items.map((i) => columns.map((c) => cell(i[c])).join(",")),
             ].join("\r\n");
-            download(`octolab-activity-${days}d.csv`, csv, "text/csv");
+            download(`two-hands-activity-${days}d.csv`, csv, "text/csv");
           } catch (e) {
             setError((e as Error).message);
           } finally {

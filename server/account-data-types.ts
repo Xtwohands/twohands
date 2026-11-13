@@ -12,7 +12,7 @@ export interface ActivityItem extends Omit<ObservedCall, "result"> {
   reportedUsd: number | null;
   reportedCredits: number | null;
 }
-export interface WorkspaceUsage {
+export interface AccountUsage {
   days: number;
   since: string;
   requests: number;

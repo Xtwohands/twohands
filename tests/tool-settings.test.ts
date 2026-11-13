@@ -94,12 +94,7 @@ suite("platform tool settings security and persistence", () => {
       },
       verifier,
     );
-    workspace = (
-      await accounts.createWorkspace(identities.get("owner")!, {
-        name: "Fixture workspace",
-        requestKey: randomUUID(),
-      })
-    ).id;
+    workspace = await accounts.personalAccountScope(identities.get("owner")!);
   });
   beforeEach(async () => {
     Object.assign(config, structuredClone(originals));
@@ -166,14 +161,10 @@ suite("platform tool settings security and persistence", () => {
     }
     const profile = await accounts.profile(identities.get("admin")!);
     expect(profile.isAdmin).toBe(true);
-    expect(profile.workspaces).toContainEqual({
-      id: workspace,
-      name: "Fixture workspace",
-      role: "platform_admin",
-    });
+    expect(profile.hasPersonalAccount).toBe(false);
     for (const path of [
       "/api/admin/tool-settings",
-      "/api/admin/workspace-allowances",
+      "/api/admin/account-allowances",
       "/api/admin/companies",
       "/api/observations",
       "/api/auth/preview-targets",

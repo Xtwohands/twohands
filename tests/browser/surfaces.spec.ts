@@ -14,6 +14,10 @@ test("public site, user dashboard, and operator console are separate surfaces", 
   await expect(page.locator(".landing-table")).toBeVisible({
     timeout: 10000,
   });
+  const dashboardLink = page
+    .getByRole("link", { name: "Open dashboard" })
+    .first();
+  await expect(dashboardLink).toBeInViewport({ ratio: 1 });
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
 
   await page.goto("/#dashboard");

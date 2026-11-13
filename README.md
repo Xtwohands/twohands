@@ -1,8 +1,8 @@
-# octolab
+# Two Hands
 
-A general-purpose tool router and observation layer for **Claude, Codex, and other MCP hosts**. People bring their own tasks and continue a free-flowing conversation with their AI. octolab supplies provider tools and records intent, tool choices, evidence, and outcomes; it does not prescribe a task category or a fixed research workflow. Its user workspace provides tool discovery, routing controls, request activity, and usage. Operator evaluation and review remain separate.
+A general-purpose tool router and observation layer for **Claude, Codex, and other MCP hosts**. People bring their own tasks and continue a free-flowing conversation with their AI. Two Hands supplies provider tools and records intent, tool choices, evidence, and outcomes; it does not prescribe a task category or a fixed research workflow. Its user dashboard provides tool discovery, routing controls, request activity, and usage. Operator evaluation and review remain separate.
 
-The vector brand mark lives in [`public/octolab.svg`](public/octolab.svg) and is shared by the app logo and favicon. Existing MCP registrations and technical identifiers remain `apilayer` for compatibility.
+The app uses the black [Two Hands logo](public/two-hands.svg) and the [standalone mark](public/two-hands-mark.svg) for its favicon and compact placements. Existing MCP registrations and technical identifiers remain `apilayer` for compatibility.
 
 The interface uses dark neutral surfaces with restrained `#FF6A00` selection indicators and `#A8B4CF` logo, focus, and small state accents.
 
@@ -10,7 +10,7 @@ The local MCP server works with Claude desktop and Codex CLI. Both have complete
 
 The [product direction](docs/PRODUCT_DIRECTION.md) connects this evidence to future model evaluation, refund review, and aggregate tool-company feedback, and identifies what still needs to be established for each.
 
-PostgreSQL accounts have separate **User workspace**, **Tool company**, and **Administration** areas. Users connect agents and manage their usage; tool company owners register for review, manage analyst access, and see only approved aggregate insights; allowlisted administrators review companies and operate the service. See [role journeys and company access](docs/ROLE_JOURNEYS.md). The illustrative company demo and controlled [provider lab](docs/PROVIDER_LAB.md) remain operator tooling, separate from the company-owner portal.
+PostgreSQL accounts have separate **User dashboard**, **Tool company**, and **Administration** areas. Users connect agents and manage their usage; tool company owners register for review, manage analyst access, and see only approved aggregate insights; allowlisted administrators review companies and operate the service. See [role journeys and company access](docs/ROLE_JOURNEYS.md). The illustrative company demo and controlled [provider lab](docs/PROVIDER_LAB.md) remain operator tooling, separate from the company-owner portal.
 
 ## Run locally
 
@@ -28,21 +28,21 @@ Open [the user dashboard](http://127.0.0.1:3001/#dashboard), or [the operator co
 
 For development, `npm run dev` runs the API on `PORT` (default 3001) and Vite on port 5173. Vite's API proxy follows the same configured `PORT`.
 
-SQLite remains the default local backend. PostgreSQL mode uses [Supabase Auth accounts and workspace membership](docs/AUTH.md), with signup, email confirmation, sign-in, password recovery, automatic private account setup, and sign-out. Customer workspace creation and switching are deferred; internal membership still isolates each account’s data. Follow the [PostgreSQL migration guide](docs/POSTGRES_MIGRATION.md) for schema setup, account bootstrap, explicit legacy-owner assignment, verified import, and rollback. `DATABASE_URL` alone does not switch storage. The PostgreSQL runtime can start for signup before importing history; signup never claims existing records. `API_TOKEN` and `ADMIN_API_TOKEN` apply only to SQLite/local mode.
+SQLite remains the default local backend. PostgreSQL mode uses [Supabase Auth accounts](docs/AUTH.md), with signup, email confirmation, sign-in, password recovery, automatic private account setup, and sign-out. Personal data follows the verified account. Follow the [PostgreSQL migration guide](docs/POSTGRES_MIGRATION.md) for schema setup, account bootstrap, explicit legacy-owner assignment, verified import, and rollback. `DATABASE_URL` alone does not switch storage. The PostgreSQL runtime can start for signup before importing history; signup never claims existing records. `API_TOKEN` and `ADMIN_API_TOKEN` apply only to SQLite/local mode.
 
 The connected Supabase project has eight checked-in schema migrations installed, with checksums verified through the application database connection. Historical SQLite data has been imported and verified with an explicitly assigned confirmed owner; platform-admin access is configured separately. The canonical local account runtime uses port 3008. This is a local integration checkpoint, not a deployed public service; hosted account journeys, email delivery, and the final HTTPS origin still need verification. See the [hosted rollout checkpoint](docs/SUPABASE_ROLLOUT.md).
 
-## Tool workspace
+## User dashboard
 
 The user sidebar groups **Tool catalog**, **Routing**, **Activity**, **Usage**, **Credits**, **API keys**, and **Connections** under `#dashboard`. Tool switches are persisted on the server, affect discovery eligibility, and block new calls to paused tools. Existing receipts can still be read and replayed. A free route preview shows compatible tools and request estimates without starting a session or calling providers.
 
-Activity supports date, provider, status, and text filters, pagination, receipt inspection, and matching CSV exports. Usage separates configured estimates from provider-reported USD or credits. Connection status reports historical requests, not a live heartbeat. PostgreSQL account mode scopes these records to the selected authorized workspace; SQLite retains its shared local workspace. See [interface decisions](research/2026-11-08-tool-routing-workspace.md).
+Activity supports date, provider, status, and text filters, pagination, receipt inspection, and matching CSV exports. Usage separates configured estimates from provider-reported USD or credits. Connection status reports historical requests, not a live heartbeat. PostgreSQL scopes these records to the signed-in account. SQLite uses local storage. See [interface decisions](research/2026-11-08-tool-routing-workspace.md).
 
 **Stripe test payments and Base Sepolia test USDC deposits are disabled by default.** The Credits page offers both methods with one test-credit balance, separate receipts, and an append-only adjustment ledger. Stripe uses hosted Checkout, signed webhooks, server-retrieved payment proof, refund adjustments, and dispute holds. On-chain deposits require finalized matching USDC transfers. Test credits never fund paid provider calls. Live payments, mainnet, wallet custody, and withdrawals are unsupported. See [Stripe setup](docs/STRIPE_DEPOSITS.md) and [on-chain setup](docs/TESTNET_DEPOSITS.md).
 
-The **API keys** page creates one-time scoped credentials with tool restrictions, expiry, revocation, policy audit history, and cumulative estimated-spend limits reserved atomically with tool calls. PostgreSQL issuance requires a workspace owner or platform administrator account. SQLite issuance requires a protected owner token and fails closed if it is later removed. Use a scoped workspace key in `APILAYER_API_KEY` with the MCP bridge. See [API key setup and boundaries](docs/API_KEYS.md).
+The **API keys** page creates one-time scoped credentials with tool restrictions, expiry, revocation, policy audit history, and cumulative estimated-spend limits reserved atomically with tool calls. PostgreSQL issuance requires a signed-in account. SQLite issuance requires a protected owner token and fails closed if it is later removed. Use a scoped API key in `APILAYER_API_KEY` with the MCP bridge. See [API key setup and boundaries](docs/API_KEYS.md).
 
-In PostgreSQL mode, **Tool access** (`#tool-access`) lets a verified platform administrator set or pause a workspace’s lifetime estimated-provider allowance with a reason and revision check. No allowance means provider execution is denied, including for self-issued customer keys. Users see read-only access status; test deposits never grant spending authority. See [operator workspace allowances](docs/WORKSPACE_ALLOWANCES.md).
+In PostgreSQL mode, **Tool access** (`#tool-access`) lets a verified platform administrator set or pause an account’s lifetime estimated-provider allowance with a reason and revision check. No allowance means provider execution is denied, including for self-issued customer keys. Users see read-only access status; test deposits never grant spending authority. See [operator account allowances](docs/WORKSPACE_ALLOWANCES.md).
 
 The operator sidebar also includes **Payment disputes** (`#disputes`): a separately authenticated queue with saved payment evidence, review notes, optimistic conflict checks, and audit history. Review decisions retain credit holds. In PostgreSQL mode, explicitly allowlist platform administrator UUIDs with `SUPABASE_ADMIN_USER_IDS`; SQLite uses a distinct `ADMIN_API_TOKEN`. Workspace ownership alone does not grant operator approval, evaluation, provider-lab, or dispute-review privileges; see [admin dispute review](docs/DISPUTE_REVIEW.md).
 
@@ -58,13 +58,13 @@ The installer merges the project’s `.mcp.json`, Claude desktop’s macOS confi
 
 You can target one client with `npm run mcp:install -- claude`, `-- codex`, or `-- project`. See [MCP setup and troubleshooting](docs/MCP.md), including custom ports and noninteractive tests.
 
-1. Ask the external agent a normal question and tell it to use APILayer.
+1. Ask the external agent a normal question and tell it to use Two Hands through the connected `apilayer` tools.
 2. The agent records intent internally. The backend starts the session automatically under its configured spending policy; the consumer does not approve sessions or choose a research budget.
-3. The agent sends the immediate need and provider-neutral request parameters. Octolab discovers relevant options with costs and evidence; the agent chooses explicitly, explains the choice, inspects results, and submits its final output.
+3. The agent sends the immediate need and provider-neutral request parameters. Two Hands discovers relevant options with costs and evidence; the agent chooses explicitly, explains the choice, inspects results, and submits its final output.
 4. Review the output against each criterion. Pass, fail, and unknown are separate; link supporting calls and explain judgments.
 5. If needed, open a review case against a particular evaluation. Earlier outputs and retrospective reviews stay attached to their own versions.
 
-Set `AGENT_SESSION_BUDGET_MICROS` on the backend to control the per-session research cap (default 100000 = $0.10; 0 blocks positive-estimate calls). This is separate from any shopping budget in a user's request. `record_intent` exposes no budget input or approval link. Backend authorization is recorded as an observed policy event, not human approval. The operator console remains the inspection and review surface. Its manual intent flow remains available for operator-created sessions. APILayer’s MCP tool catalog contains no approval, evaluation, consent, payment, or refund tool.
+Set `AGENT_SESSION_BUDGET_MICROS` on the backend to control the per-session research cap (default 100000 = $0.10; 0 blocks positive-estimate calls). This is separate from any shopping budget in a user's request. `record_intent` exposes no budget input or approval link. Backend authorization is recorded as an observed policy event, not human approval. The operator console remains the inspection and review surface. Its manual intent flow remains available for operator-created sessions. The `apilayer` MCP tool catalog contains no approval, evaluation, consent, payment, or refund tool.
 
 ## What gets recorded
 
@@ -79,7 +79,7 @@ Set `AGENT_SESSION_BUDGET_MICROS` on the backend to control the per-session rese
 | Evaluation         | Criterion judgments, evidence links, review source, score, coverage, and the exact output version      |
 | Review case        | A documented shortfall and its resolution, linked to an evaluation                                     |
 
-MCP exposes actions and supplied explanations, **not private internal reasoning or the entire host conversation**. Calls made outside APILayer are not observed. Client and model names are reported identities, not independent attestations.
+MCP exposes actions and supplied explanations, **not private internal reasoning or the entire host conversation**. Calls made outside Two Hands are not observed. Client and model names are reported identities, not independent attestations.
 
 ## Evaluation and commercial boundaries
 
@@ -87,7 +87,7 @@ MCP exposes actions and supplied explanations, **not private internal reasoning 
 - Model summaries use one latest, fully reviewed output per session and withhold aggregate scores until five eligible sessions. Unknown model identities stay unscored. These are local review summaries across the recorded tasks, not controlled general-accuracy benchmarks.
 - Human-reported and assistant-reported reviews are labeled. Reviewer identity is not independently verified. An assistant’s evaluation is not converted into a human assessment.
 - Review cases do not issue money, promise insurance coverage, determine eligibility, or create a payment entitlement.
-- Commercial aggregate sharing is enabled for all existing and new observation sessions by workspace policy. Historical consent events are preserved; policy changes append audit events. Company usage and aggregate exports are available from the first eligible recorded activity, without a minimum workspace or session count. They omit raw intent, answers, queries, URLs, and explanations. Independent model-review minimum samples remain unchanged. Nothing is automatically sent or sold to vendors.
+- Commercial aggregate sharing is enabled for all existing and new observation sessions by account policy. Historical consent events are preserved; policy changes append audit events. Company usage and aggregate exports are available from the first eligible recorded activity, without a minimum account or session count. They omit raw intent, answers, queries, URLs, and explanations. Independent model-review minimum samples remain unchanged. Nothing is automatically sent or sold to vendors.
 - Summary export omits research text and free-form model labels. Private evidence export intentionally contains the complete local record. Local hash-chain consistency is not third-party attestation or protection against an operator rewriting the database.
 
 ## Reliability and operations
@@ -96,7 +96,7 @@ Calls reserve integer USD micro-units transactionally against configured estimat
 
 SQLite is single-user and local by default; set a long `API_TOKEN` before binding it beyond loopback. PostgreSQL requires configured Supabase Auth and live session/membership checks instead. Use HTTPS and trusted deployment access controls for remote use; hosted login, email delivery, and cutover still require validation in the target project. The MCP bridge defaults to loopback HTTP and also supports an explicitly configured HTTPS service using a scoped `APILAYER_API_KEY`; it never forwards the local owner token remotely. See [MCP setup](docs/MCP.md#hosted-stdio-bridge). Run one API server per database with either storage backend; PostgreSQL uses a session advisory ownership lock and requires a direct connection or session pooler. See [privacy and operations](docs/OPERATIONS.md).
 
-Retention previews counts by default and requires `--apply` to delete. PostgreSQL cleanup requires an explicit registered workspace, uses the API's backend selection and runtime lock, and preserves active or linked evidence. Follow the [backup and retention procedure](docs/OPERATIONS.md#retention) before running maintenance.
+Retention previews counts by default and requires `--apply` to delete. PostgreSQL cleanup requires an explicit storage partition, uses the API's backend selection and runtime lock, and preserves active or linked evidence. Follow the [backup and retention procedure](docs/OPERATIONS.md#retention) before running maintenance.
 
 Earlier deterministic routing runs remain available at [Research tools](http://127.0.0.1:3001/research/#workspace). Their original data and workflows are preserved and explicitly distinguished from external-agent decisions. See [the earlier research workflow](docs/RESEARCH_WORKFLOW.md).
 
@@ -147,7 +147,7 @@ This offline check compares the intent fingerprint, audit chain, captured calls,
 
 ## Request costs and reported usage
 
-Before choosing a provider, call `discover_tools` with the immediate `need`, provider-neutral `operations`, and relevant `context`. The recorded intent and constraints are included automatically. Octolab discovers compatible alternatives; the caller does not need to name every provider. Discovery makes no provider calls and consumes no provider budget.
+Before choosing a provider, call `discover_tools` with the immediate `need`, provider-neutral `operations`, and relevant `context`. The recorded intent and constraints are included automatically. Two Hands discovers compatible alternatives; the caller does not need to name every provider. Discovery makes no provider calls and consumes no provider budget.
 
 ```json
 {

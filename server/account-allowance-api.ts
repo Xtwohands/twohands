@@ -1,11 +1,12 @@
+import { PostgresDatabase } from "./database.js";
 import express, { type Express } from "express";
 import { z } from "zod";
 import { type Accounts, AccountError } from "./accounts.js";
 import { accountFailure, sameOriginWrite } from "./account-api.js";
-import { AllowanceError } from "./workspace-allowance.js";
+import { AllowanceError } from "./account-allowance.js";
 import type { Store } from "./store.js";
-/** Global operator administration, independent of a customer workspace or preview role. */
-export function workspaceAllowanceAdminRoutes(
+/** Global operator administration, independent of a customer account or preview role. */
+export function accountAllowanceAdminRoutes(
   app: Express,
   store: Store,
   accounts?: Accounts,
@@ -51,7 +52,7 @@ export function workspaceAllowanceAdminRoutes(
         else
           res.status(503).json({
             error:
-              "Workspace allowance could not be verified. No automatic retry was made.",
+              "Account allowance could not be verified. No automatic retry was made.",
           });
       }
     };
@@ -70,14 +71,24 @@ export function workspaceAllowanceAdminRoutes(
   router.post(
     "/:id",
     handle(async (req, res) => {
+      const accountId = z.uuid().parse(req.params.id);
+      if (!accounts || !(store.db instanceof PostgresDatabase))
+        throw new AllowanceError(503, "Hosted account access is required.");
+      const result = await store.db.pool.query<{ id: string }>(
+        `SELECT id FROM auth.users
+         WHERE id=$1 AND deleted_at IS NULL AND email_confirmed_at IS NOT NULL
+           AND (banned_until IS NULL OR banned_until<=now())`,
+        [accountId],
+      );
+      if (!result.rows[0]) throw new AllowanceError(404, "Account not found.");
       res.json(
         await store.allowance.change(
-          String(req.params.id),
+          await accounts.personalAccountScope({ userId: accountId }),
           res.locals.allowanceAdmin,
           req.body,
         ),
       );
     }),
   );
-  app.use("/api/admin/workspace-allowances", router);
+  app.use("/api/admin/account-allowances", router);
 }

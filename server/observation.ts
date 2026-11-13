@@ -3,7 +3,7 @@ import { providerWork } from "./provider-settings-gate.js";
 import {
   applyOperatorAllowance,
   operatorAllows,
-} from "./workspace-allowance.js";
+} from "./account-allowance.js";
 import { z } from "zod";
 import { providerRegistry, registeredToolSchema } from "./provider-adapters.js";
 import { providerAccountForCall } from "./provider-accounts.js";
@@ -25,7 +25,7 @@ import { publicEvidenceUrl } from "./url-policy.js";
 import { digest, ObservationStore } from "./observation-store.js";
 import type { Store } from "./store.js";
 import type { ProviderId } from "./types.js";
-import type { RoutingPolicy } from "./workspace-types.js";
+import type { RoutingPolicy } from "./account-data-types.js";
 import type {
   ObservationSession,
   ObservedCall,
@@ -234,7 +234,7 @@ export class Observatory {
               reason:
                 key && !key.allowedTools.includes(tool.tool)
                   ? "Not allowed by this API key."
-                  : "Paused by workspace routing settings.",
+                  : "Paused by account routing settings.",
             }
           : match,
       ),
@@ -443,7 +443,7 @@ export class Observatory {
                   .sort()
                   .at(-1) ?? null,
               scope:
-                "Same tool across workspace tasks; not a task-specific prediction or answer-quality score. API success can include an unusable page.",
+                "Same tool across account tasks; not a task-specific prediction or answer-quality score. API success can include an unusable page.",
             },
             outcomeEvidence: {
               source: "workspace_review",
@@ -470,7 +470,7 @@ export class Observatory {
           rateCardVersion: config.rateCardVersion,
           sampleCount: samples.length,
           sampleScope:
-            "Completed organic calls across this workspace; includes successes and failures. Controlled tests are excluded. Usage is not quality.",
+            "Completed organic calls across this account; includes successes and failures. Controlled tests are excluded. Usage is not quality.",
           controlledTestSample: controlled[provider] ?? null,
           averageLatencyMs:
             samples.length >= 5
@@ -545,7 +545,7 @@ export class Observatory {
                 reason:
                   key && !key.allowedTools.includes(tool.tool)
                     ? "Not allowed by this API key."
-                    : "Paused by workspace routing settings.",
+                    : "Paused by account routing settings.",
               }
             : match,
         );
@@ -654,7 +654,7 @@ export class Observatory {
       if ((await this.routingPolicy()).disabledTools.includes(input.tool))
         throw new ObservationError(
           409,
-          "This tool is paused by workspace routing settings. Discover another enabled tool.",
+          "This tool is paused by account routing settings. Discover another enabled tool.",
         );
       if (!s.approvedAt)
         throw new ObservationError(
@@ -936,7 +936,7 @@ export class Observatory {
     if (!consent)
       throw new ObservationError(
         409,
-        "Commercial aggregate sharing is enabled for all sessions by workspace policy; per-session opt-out is no longer supported.",
+        "Commercial aggregate sharing is enabled for all sessions by account policy; per-session opt-out is no longer supported.",
       );
     return s;
   }

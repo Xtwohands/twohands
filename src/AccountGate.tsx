@@ -20,8 +20,6 @@ type AccountContext = {
   sessionEpoch?: number;
   enabled: boolean;
   profile?: AccountProfile;
-  workspaceId: string;
-  select: (id: string) => void;
   signOut: () => void;
   refresh: () => Promise<void>;
   previewRole: "user" | "company" | null;
@@ -33,8 +31,6 @@ type AccountContext = {
 };
 const Context = createContext<AccountContext>({
   enabled: false,
-  workspaceId: "",
-  select: () => {},
   signOut: () => {},
   refresh: async () => {},
   previewRole: null,
@@ -45,47 +41,17 @@ const Context = createContext<AccountContext>({
   preview: async () => {},
 });
 export const useAccount = () => useContext(Context);
-export function AccountControls({
-  showWorkspace = true,
-  showIdentity = true,
-}: {
-  showWorkspace?: boolean;
-  showIdentity?: boolean;
-}) {
+export function AccountControls() {
   const account = useAccount();
   if (!account.enabled)
-    return showIdentity ? (
-      <AccountMenu label="Local account" detail="Local mode" />
-    ) : null;
+    return <AccountMenu label="Local account" detail="Local mode" />;
   if (!account.profile) return null;
-  const selector =
-    showWorkspace &&
-    account.profile.isAdmin &&
-    account.profile.workspaces.length > 0 ? (
-      <label className="account-scope-select">
-        <span>Customer account</span>
-        <select
-          aria-label="Customer account"
-          value={account.workspaceId}
-          onChange={(e) => account.select(e.target.value)}
-        >
-          {account.profile.workspaces.map((item) => (
-            <option key={item.id} value={item.id}>
-              {item.name}
-            </option>
-          ))}
-        </select>
-      </label>
-    ) : null;
-  if (!showIdentity) return selector;
   return (
     <AccountMenu
       label={account.profile.user.email}
       detail={account.profile.isAdmin ? "Administrator" : "Personal account"}
       onSignOut={account.signOut}
-    >
-      {selector}
-    </AccountMenu>
+    />
   );
 }
 
@@ -140,7 +106,6 @@ export function AccountGate({ children }: { children: ReactNode }) {
   );
   const [previewTargetError, setPreviewTargetError] = useState("");
   const canPreviewRef = useRef(false);
-  const [workspaceId, setWorkspaceId] = useState("");
   const [ready, setReady] = useState(false),
     [error, setError] = useState(""),
     [notice, setNotice] = useState("");
@@ -156,21 +121,7 @@ export function AccountGate({ children }: { children: ReactNode }) {
     sessionEpoch = useRef(0),
     version = useRef(0);
   const memoryAuthStorage = useRef(new Map<string, string>());
-  const activeWorkspace = useRef("");
   const routedAccount = useRef("");
-  const select = (id: string) => {
-    if (
-      !profile?.workspaces.some((w) => w.id === id) ||
-      !currentSession.current
-    )
-      return;
-    setAccountSession(currentSession.current.access_token, id, profile.user.id);
-    activeWorkspace.current = id;
-    setWorkspaceId(id);
-    try {
-      localStorage.setItem("octolab.workspace." + profile.user.id, id);
-    } catch {}
-  };
   const clear = () => {
     sessionEpoch.current++;
     canPreviewRef.current = false;
@@ -185,12 +136,10 @@ export function AccountGate({ children }: { children: ReactNode }) {
     version.current++;
     routedAccount.current = "";
     currentSession.current = null;
-    activeWorkspace.current = "";
     setMode("signin");
-    setAccountSession("", "", "");
+    setAccountSession("", "");
     setSession(null);
     setProfile(undefined);
-    setWorkspaceId("");
     setPassword("");
   };
   const signOut = () => {
@@ -225,69 +174,24 @@ export function AccountGate({ children }: { children: ReactNode }) {
       if (!response.ok)
         throw new Error(data.error || "Could not load account access.");
       const result = data as AccountProfile;
-      const customerArea =
-        location.hash &&
-        !/^#(?:home|signin|company|admin|settings)/.test(location.hash) &&
-        !location.pathname.startsWith("/research");
-      if (
-        customerArea &&
-        !result.isAdmin &&
-        !result.canPreview &&
-        !result.workspaces.length &&
-        !(location.hash === "#dashboard" && result.companies?.length)
-      ) {
-        const setup = await fetch("/api/auth/setup", {
-          method: "POST",
-          headers: {
-            Authorization: "Bearer " + value.access_token,
-            "Content-Type": "application/json",
-          },
-          body: "{}",
-        });
-        const account = await setup.json();
-        if (
-          request !== version.current ||
-          currentSession.current?.user.id !== value.user.id
-        )
-          return;
-        if (setup.status === 401) {
-          signOut();
-          setError(account.error || "Your session ended. Sign in again.");
-          return;
-        }
-        if (!setup.ok)
-          throw new Error(account.error || "Could not set up your account.");
-        result.workspaces = [account];
-      }
       canPreviewRef.current = !!(result.canPreview || result.isAdmin);
-      let preferred = "";
-      try {
-        preferred =
-          localStorage.getItem("octolab.workspace." + result.user.id) || "";
-      } catch {}
-      const selected =
-        result.workspaces.find((w) => w.id === preferred) ??
-        result.workspaces[0];
       if (routedAccount.current !== result.user.id) {
         routedAccount.current = result.user.id;
         if (location.hash === "#dashboard" || location.hash === "#signin") {
           if (result.isAdmin) location.hash = "admin";
-          else if (!result.workspaces.length && result.companies?.length)
+          else if (!result.hasPersonalAccount && result.companies?.length)
             location.hash = "company";
           else if (location.hash === "#signin") location.hash = "dashboard";
         }
       }
+      setAccountSession(value.access_token, result.user.id);
       setProfile(result);
-      activeWorkspace.current = selected?.id || "";
-      setWorkspaceId(selected?.id || "");
-      setAccountSession(value.access_token, selected?.id || "", result.user.id);
       setError("");
       return result;
     } catch (e) {
       if (request === version.current) {
         setProfile(undefined);
-        setWorkspaceId("");
-        setAccountSession(value.access_token, "", value.user.id);
+        setAccountSession(value.access_token, value.user.id);
         setError((e as Error).message);
       }
     } finally {
@@ -393,16 +297,10 @@ export function AccountGate({ children }: { children: ReactNode }) {
           if (changed) {
             version.current++;
             setProfile(undefined);
-            setWorkspaceId("");
           }
           currentSession.current = value;
           setSession(value);
-          if (changed || !value) activeWorkspace.current = "";
-          setAccountSession(
-            value?.access_token || "",
-            activeWorkspace.current,
-            value?.user.id || "",
-          );
+          setAccountSession(value?.access_token || "", value?.user.id || "");
           if (!value) setReady(true);
         };
         const { data } = supabase.auth.onAuthStateChange((event, value) => {
@@ -432,16 +330,6 @@ export function AccountGate({ children }: { children: ReactNode }) {
     if (session) void loadProfile(session);
   }, [session?.access_token]);
   useEffect(() => {
-    if (
-      session &&
-      profile &&
-      !profile.workspaces.length &&
-      !profile.isAdmin &&
-      !profile.canPreview
-    )
-      void loadProfile(session);
-  }, [route]);
-  useEffect(() => {
     const invalid = () => {
       if (config?.enabled && currentSession.current) {
         clear();
@@ -470,7 +358,6 @@ export function AccountGate({ children }: { children: ReactNode }) {
     sessionEpoch: sessionEpoch.current,
     enabled: !!config?.enabled,
     profile,
-    workspaceId,
     previewRole,
     previewTarget,
     previewTargets,
@@ -504,7 +391,6 @@ export function AccountGate({ children }: { children: ReactNode }) {
             ? "dashboard"
             : "admin";
     },
-    select,
     signOut,
     refresh: async () => {
       const started = version.current;
@@ -534,25 +420,14 @@ export function AccountGate({ children }: { children: ReactNode }) {
   if (config && !config.enabled) return <>{children}</>;
   if (publicPage)
     return <Context.Provider value={context}>{children}</Context.Provider>;
-  const independentArea =
-    route.startsWith("#company") ||
-    route.startsWith("#admin") ||
-    route.startsWith("#settings") ||
-    (profile?.isAdmin && !workspaceId);
-  if (profile && (workspaceId || independentArea) && mode !== "recover")
+  const emptyPreview =
+    previewRole === "user" && profile?.hasPersonalAccount === false;
+  if (profile && !emptyPreview && mode !== "recover")
     return (
       <Context.Provider value={context}>
         <div
-          key={
-            profile.user.id +
-            ":" +
-            workspaceId +
-            ":" +
-            previewRole +
-            ":" +
-            previewTarget
-          }
-          className="account-workspace"
+          key={profile.user.id + ":" + previewRole + ":" + previewTarget}
+          className="account-content"
         >
           {children}
           {previewRole === "company" && (
@@ -567,21 +442,19 @@ export function AccountGate({ children }: { children: ReactNode }) {
         </div>
       </Context.Provider>
     );
-  const emptyPreview = !!profile && previewRole === "user" && !workspaceId;
   const title = emptyPreview
-    ? "No customer account available to preview"
+    ? "No personal activity to preview"
     : mode === "signup"
       ? "Create your account"
       : mode === "reset"
         ? "Reset your password"
         : mode === "recover"
           ? "Choose a new password"
-          : "Sign in to octolab";
+          : "Sign in to Two Hands";
   return (
     <main className="account-page">
       <a href="#home" className="account-brand">
-        <img src="/octolab.svg" width="34" height="34" alt="" />
-        octolab
+        <img src="/two-hands.svg" width="156" height="34" alt="Two Hands" />
       </a>
       <section className="account-card">
         {previewRole === "user" && (
@@ -605,7 +478,7 @@ export function AccountGate({ children }: { children: ReactNode }) {
         </h1>
         <p>
           {emptyPreview
-            ? "This preview has no customer account activity yet."
+            ? "This account has no personal activity yet."
             : route.startsWith("#company")
               ? "Sign in to register or manage your tool company."
               : "Sign in to manage your tools and usage."}

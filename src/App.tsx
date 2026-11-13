@@ -225,21 +225,14 @@ export function App() {
   return (
     <div className="app-shell">
       <aside className="sidebar">
-        <a className="brand" href="/" aria-label="octolab home">
-          <img
-            className="brand-icon"
-            src="/octolab.svg"
-            alt=""
-            width="32"
-            height="32"
-          />
-          octolab
+        <a className="brand" href="/">
+          <img src="/two-hands.svg" width="147" height="32" alt="Two Hands" />
         </a>
         <div className="space-label">Research control room</div>
         <nav aria-label="Main navigation">
           {(
             [
-              ["workspace", "Agent workspace", FileSearch],
+              ["workspace", "Research", FileSearch],
               ["inspector", "Routing inspector", GitBranch],
               ["intelligence", "Provider intelligence", BarChart3],
             ] as const
@@ -287,7 +280,7 @@ export function App() {
             <ShieldCheck size={16} />
             <span>
               Server-side credentials
-              <small>Local workspace · SQLite storage</small>
+              <small>Local account · SQLite storage</small>
             </span>
           </div>
           <button
@@ -301,7 +294,7 @@ export function App() {
           <div className="profile">
             <div className="avatar">R</div>
             <span>
-              Research workspace<small>Development environment</small>
+              Research<small>Development environment</small>
             </span>
             <span className="status-dot complete" />
           </div>
@@ -310,7 +303,7 @@ export function App() {
       <div className="main-shell">
         <header className="topbar">
           <div className="breadcrumbs">
-            Workspace
+            Research
             <ChevronRight size={13} />
             <span>
               {screen === "workspace"
@@ -518,7 +511,7 @@ export function App() {
                         <div className="panel-heading">
                           <span>
                             <FileSearch size={17} />
-                            Evidence workspace{" "}
+                            Evidence{" "}
                             <span className="count">{task.sources.length}</span>
                           </span>
                           <button
@@ -741,8 +734,8 @@ export function App() {
           )}
           <footer>
             <span>
-              <img src="/octolab.svg" alt="" width="13" height="13" />
-              octolab{" "}
+              <img src="/two-hands-mark.svg" alt="" width="13" height="13" />
+              Two Hands{" "}
               <span className="muted">/ Intent & tool intelligence</span>
             </span>
             <span>Observed execution. Estimated cost. Evaluated outcomes.</span>
@@ -813,7 +806,7 @@ export function App() {
               </span>
             </div>
             <label>
-              Workspace access token
+              Account access token
               <input
                 type="password"
                 autoComplete="off"
@@ -835,7 +828,7 @@ export function App() {
                 setShowSettings(false);
               }}
             >
-              Connect to workspace
+              Connect to Two Hands
               <ArrowRight size={15} />
             </button>
           </section>

@@ -1,3 +1,4 @@
+import { PERSONAL_ACCOUNT_SCOPE } from "./personal-account.js";
 import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
 import { PostgresDatabase, type Row } from "./database.js";
@@ -55,6 +56,13 @@ export function operatorAllows(value: OperatorAllowance, amount: number) {
     (value.state === "available" && amount <= value.remainingMicros!)
   );
 }
+function deniedMessage(allowance: OperatorAllowance) {
+  if (allowance.state === "unconfigured")
+    return "Paid tool access is currently unavailable for this account.";
+  if (allowance.state === "paused")
+    return "Tool access is paused for this account.";
+  return "This tool exceeds the account's remaining allowance.";
+}
 const changeInput = z
   .object({
     requestKey: z.uuid(),
@@ -65,7 +73,7 @@ const changeInput = z
   })
   .strict();
 /** Platform authority is separate from customer key/session limits and payment balances. */
-export class WorkspaceAllowance {
+export class AccountAllowance {
   constructor(private store: Store) {}
   async status() {
     if (this.store.db.dialect !== "postgres") return status(undefined, false);
@@ -80,7 +88,7 @@ export class WorkspaceAllowance {
     if (!operatorAllows(current, amount))
       throw new AllowanceError(
         403,
-        "This account cannot run the tool because tool access is inactive or the remaining allowance is too low.",
+        deniedMessage(current),
         current,
       );
     return current;
@@ -158,15 +166,21 @@ export class WorkspaceAllowance {
     return this.store.db;
   }
   async list(after?: string) {
-    const cursor = after ? z.uuid().parse(after) : "";
+    const cursor = after ? z.uuid().parse(after) : null;
     const rows = await this.database().pool.query(
-      "SELECT w.id,w.name,a.limit_micros,a.spent_micros,a.reserved_micros,a.paused,a.revision FROM octolab.workspaces w LEFT JOIN octolab.workspace_allowances a ON a.workspace_id=w.id WHERE w.id>$1 ORDER BY w.id LIMIT 51",
+      `SELECT u.id,u.email,a.limit_micros,a.spent_micros,a.reserved_micros,a.paused,a.revision
+       FROM auth.users u
+       LEFT JOIN LATERAL (${PERSONAL_ACCOUNT_SCOPE("u.id")}) scope ON true
+       LEFT JOIN octolab.workspace_allowances a ON a.workspace_id=scope.id
+       WHERE ($1::uuid IS NULL OR u.id>$1) AND u.deleted_at IS NULL AND u.email_confirmed_at IS NOT NULL
+         AND (u.banned_until IS NULL OR u.banned_until<=now())
+       ORDER BY u.id LIMIT 51`,
       [cursor],
     );
     return {
       items: rows.rows.slice(0, 50).map((r) => ({
-        workspaceId: r.id,
-        name: r.name,
+        accountId: r.id,
+        name: r.email || "Personal account",
         operatorAllowance: status(r.limit_micros === null ? undefined : r),
       })),
       nextCursor: rows.rows.length > 50 ? rows.rows[49].id : null,
@@ -287,8 +301,7 @@ export function applyOperatorAllowance<
         (match.status === "eligible" || match.status === "over_budget")
       ) {
         match.status = "disabled";
-        match.reason =
-          "This account cannot run the tool because tool access is inactive or the remaining allowance is too low.";
+        match.reason = deniedMessage(allowance);
       }
     }
   }

@@ -106,8 +106,8 @@ try {
     assert.equal((await fetch(`${origin}/healthz`)).status, 200);
     for (const path of [
       "/api/observations",
-      "/api/workspace/usage",
-      "/api/workspace/provider-billing",
+      "/api/account/usage",
+      "/api/account/provider-billing",
     ])
       assert.equal((await fetch(origin + path)).status, 401);
     const auth = await (await fetch(`${origin}/api/auth/config`)).json();

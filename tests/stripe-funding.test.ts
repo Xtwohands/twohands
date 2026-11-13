@@ -439,7 +439,7 @@ describe("Stripe sandbox funding integrity", () => {
         stripe,
       );
       expect(
-        (await request(app).post("/api/workspace/funding/stripe").send(input()))
+        (await request(app).post("/api/account/funding/stripe").send(input()))
           .status,
       ).toBe(401);
       expect(
@@ -451,7 +451,7 @@ describe("Stripe sandbox funding integrity", () => {
       expect(
         (
           await request(app)
-            .post("/api/workspace/funding/stripe")
+            .post("/api/account/funding/stripe")
             .set("Authorization", "Bearer fixture-token")
             .set("Origin", "https://evil.example")
             .send(input())
@@ -459,7 +459,7 @@ describe("Stripe sandbox funding integrity", () => {
       ).toBe(403);
       const intent = (
         await request(app)
-          .post("/api/workspace/funding/stripe")
+          .post("/api/account/funding/stripe")
           .set("Authorization", "Bearer fixture-token")
           .send(input())
       ).body;

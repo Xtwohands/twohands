@@ -6,6 +6,7 @@
   "description": "Observe agent intent, explicit tool choices, evidence, and evaluated outcomes over MCP",
   "scripts": {
     "dev": "concurrently -k -n api,web \"node --use-env-proxy --env-file-if-exists=.env --import tsx --watch server/index.ts\" \"vite --host 127.0.0.1\"",
+    "demo:dashboard": "vite --config prototypes/dashboard/vite.config.ts",
     "build": "tsc --noEmit && vite build && tsc -p tsconfig.server.json && node scripts/build-release-manifest.mjs",
     "start": "node --use-env-proxy --env-file-if-exists=.env build/index.js",
     "test": "vitest run",
@@ -64,6 +65,7 @@
     "@types/react-dom": "^19.3.0",
     "@types/supertest": "^7.2.1",
     "@vitejs/plugin-react": "^6.1.2",
+    "agentation": "^3.1.2",
     "concurrently": "^10.0.6",
     "prettier": "^3.9.10",
     "supertest": "^7.3.1",

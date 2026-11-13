@@ -417,7 +417,7 @@ describe("outcome versions, review coverage, and case evidence", () => {
     expect(JSON.stringify(aggregate)).not.toContain("fixture research");
     await expect(
       (async () => await obs.consent(ids[0], false))(),
-    ).rejects.toThrow(/workspace policy/);
+    ).rejects.toThrow(/account policy/);
     expect((await obs.commercialAggregate()).available).toBe(true);
   });
 });

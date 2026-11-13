@@ -142,7 +142,7 @@ export function ToolSettingsView() {
       <div className="page-heading">
         <div>
           <h1>Tool settings</h1>
-          <p>Manage the integrations and limits used across octolab.</p>
+          <p>Manage the integrations and limits used across Two Hands.</p>
         </div>
         <Button variant="outline" disabled={busy} onClick={() => void reload()}>
           Reload settings
@@ -167,7 +167,7 @@ export function ToolSettingsView() {
             <fieldset disabled={busy} className="platform-settings-controls">
               <Panel
                 title="Available tools"
-                description="These controls apply to every workspace; workspace routing and key restrictions still apply."
+                description="These controls apply to every account. Account routing and key restrictions still apply."
               >
                 <div className="platform-provider-grid">
                   {providers.map((id) => (
@@ -312,7 +312,7 @@ export function ToolSettingsView() {
                 </div>
                 <p>
                   <a href="#tool-access">
-                    Manage workspace spending allowances
+                    Manage account spending allowances
                   </a>
                 </p>
               </Panel>

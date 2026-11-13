@@ -3,7 +3,7 @@ import {
   providerIds,
   searchProviderIds,
 } from "./provider-catalog.js";
-import { workspaceAllowanceAdminRoutes } from "./workspace-allowance-api.js";
+import { accountAllowanceAdminRoutes } from "./account-allowance-api.js";
 import { ToolSettings } from "./tool-settings.js";
 import { toolSettingsRoutes } from "./tool-settings-api.js";
 import { PostgresDatabase } from "./database.js";
@@ -26,7 +26,7 @@ import { disputeReviewRoutes } from "./dispute-review-api.js";
 import { FundingService } from "./funding.js";
 import { fundingRoutes, stripeWebhookRoute } from "./funding-api.js";
 import { StripeFundingService } from "./stripe-funding.js";
-import { workspaceRoutes } from "./workspace-api.js";
+import { accountDataRoutes } from "./account-data-api.js";
 import { sanitizedEventData } from "./sanitized.js";
 import { analytics } from "./analytics.js";
 import { randomUUID, timingSafeEqual, createHash } from "node:crypto";
@@ -110,6 +110,11 @@ export function createApp(
     });
     next();
   });
+  // Existing agents can keep calling the previously published account endpoints.
+  app.use("/api", (req, _res, next) => {
+    req.url = req.url.replace(/^\/workspace(?=\/)/i, "/account");
+    next();
+  });
   app.get("/healthz", async (_req, res) => {
     await toolSettings.ready;
     await store.db.prepare("SELECT 1").get();
@@ -135,11 +140,11 @@ export function createApp(
   if (accounts) app.use("/api", accountPreviewAccess(accounts));
   accountRoutes(app, accounts);
   companyAccountRoutes(app, accounts);
-  workspaceAllowanceAdminRoutes(app, store, accounts);
+  accountAllowanceAdminRoutes(app, store, accounts);
   toolSettingsRoutes(app, toolSettings, accounts);
   if (accounts)
-    stripeFunding.workspaceForWebhook = (identity) =>
-      accounts.paymentWorkspace(identity);
+    stripeFunding.accountScopeForWebhook = (identity) =>
+      accounts.paymentAccountScope(identity);
   stripeWebhookRoute(app, stripeFunding);
   disputeReviewRoutes(
     app,
@@ -166,7 +171,7 @@ export function createApp(
       ) {
         res.status(503).json({
           error:
-            "Scoped key access requires a workspace owner token of at least 24 characters. Restore owner access before using this workspace.",
+            "Scoped key access requires a local owner token of at least 24 characters. Restore owner access before using this account.",
         });
         return;
       }
@@ -230,13 +235,13 @@ export function createApp(
   app.use("/api/observations", express.json({ limit: "160kb" }));
   app.use("/api/provider-lab/suites", express.json({ limit: "256kb" }));
   app.use(
-    "/api/workspace/provider-billing/imports",
+    "/api/account/provider-billing/imports",
     express.json({ limit: "256kb" }),
   );
   app.use(express.json({ limit: "24kb" }));
   apiKeyRoutes(app, observatory.db.apiKeys, !!accounts);
   observationRoutes(app, observatory);
-  workspaceRoutes(app, observatory);
+  accountDataRoutes(app, observatory);
   fundingRoutes(app, funding, stripeFunding);
   providerLabRoutes(app, providerLab);
   app.get("/api/provider-activity/:provider", async (req, res) => {
@@ -258,7 +263,7 @@ export function createApp(
       .enum(["demo", "local"])
       .safeParse(req.query.source ?? "demo");
     const scope = z
-      .enum(["aggregate", "workspace"])
+      .enum(["aggregate", "account", "workspace"])
       .safeParse(req.query.scope ?? "aggregate");
     if (!p.success || !source.success || !scope.success) {
       res
@@ -272,7 +277,7 @@ export function createApp(
         source.data,
         observatory,
         providerLab,
-        scope.data === "workspace",
+        scope.data !== "aggregate",
       ),
     );
   });

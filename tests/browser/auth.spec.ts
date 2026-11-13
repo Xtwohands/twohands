@@ -6,8 +6,7 @@ const authBrowserUrl =
 test.use({ baseURL: authBrowserUrl });
 const authOrigin = "https://octolab-fixture.supabase.co";
 const userId = "00000000-0000-4000-8000-000000000011";
-const first = "00000000-0000-4000-8000-000000000021",
-  second = "00000000-0000-4000-8000-000000000022";
+const first = "00000000-0000-4000-8000-000000000021";
 const encode = (value: unknown) =>
   Buffer.from(JSON.stringify(value)).toString("base64url");
 const jwt = (id = userId) =>
@@ -48,22 +47,10 @@ async function mockAuth(
         createdAt: new Date().toISOString(),
       },
     ],
-    workspaces:
-      empty || role !== "user"
-        ? []
-        : [
-            { id: first, name: "Workspace A", role: "owner" },
-            { id: second, name: "Workspace B", role: "owner" },
-          ],
+    hasPersonalAccount: !empty && role === "user",
     setupCalls: 0,
     revoked: false,
-    pause: false,
-    waiting: 0,
-    release: () => {},
   };
-  const gate = new Promise<void>((resolve) => {
-    state.release = resolve;
-  });
   await page.route(
     (url) => url.origin === authBrowserUrl && url.pathname === "/",
     async (route) => {
@@ -192,7 +179,7 @@ async function mockAuth(
         ? { error: "This session ended." }
         : {
             user: { id: state.actorId, email: "account@fixture.invalid" },
-            workspaces: target ? [] : state.workspaces,
+            hasPersonalAccount: !target && state.hasPersonalAccount,
             isAdmin: state.role === "admin" && !headers["x-octolab-preview"],
             canPreview: state.role === "admin",
             companyPreview: target,
@@ -204,21 +191,11 @@ async function mockAuth(
           },
     });
   });
-  await page.route("**/api/auth/setup", async (route) => {
+  await page.route(/\/api\/auth\/(?:setup|workspaces)$/, async (route) => {
     state.setupCalls++;
-    if (!state.workspaces.length)
-      state.workspaces = [
-        { id: first, name: "Personal account", role: "owner" },
-      ];
-    await route.fulfill({ json: state.workspaces[0] });
+    await route.fulfill({ status: 404, json: { error: "Route not found." } });
   });
-  await page.route("**/api/auth/workspaces", async (route) => {
-    const body = route.request().postDataJSON(),
-      workspace = { id: first, name: body.name, role: "owner" };
-    state.workspaces = [workspace];
-    await route.fulfill({ status: 201, json: workspace });
-  });
-  await page.route("**/api/workspace/activity?**", async (route) => {
+  await page.route("**/api/account/activity?**", async (route) => {
     if (state.revoked) {
       await route.fulfill({
         status: 401,
@@ -226,12 +203,8 @@ async function mockAuth(
       });
       return;
     }
-    const workspace = route.request().headers()["x-octolab-workspace"],
-      marker = workspace === second ? "Private B receipt" : "Private A receipt";
-    if (state.pause && workspace === first) {
-      state.waiting++;
-      await gate;
-    }
+    const marker =
+      state.actorId === userId ? "Private A receipt" : "Private B receipt";
     await route.fulfill({
       json: {
         items: [
@@ -375,7 +348,7 @@ async function mockAuth(
 async function login(page: Page, destination = "/#dashboard/activity") {
   await page.goto(destination);
   await expect(
-    page.getByRole("heading", { name: "Sign in to octolab" }),
+    page.getByRole("heading", { name: "Sign in to Two Hands" }),
   ).toBeVisible();
   await page
     .getByLabel("Email", { exact: true })
@@ -427,42 +400,10 @@ test("email sign-in, persisted session, and sign-out clear the private workspace
     .last()
     .click();
   await expect(
-    page.getByRole("heading", { name: "Sign in to octolab" }),
+    page.getByRole("heading", { name: "Sign in to Two Hands" }),
   ).toBeVisible();
   await expect(page.getByText("Private A receipt")).toHaveCount(0);
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
-});
-test("admin account selection discards late responses from the previous account", async ({
-  page,
-}) => {
-  const state = await mockAuth(page, false, "admin");
-  state.workspaces = [
-    { id: first, name: "Account A", role: "platform_admin" },
-    { id: second, name: "Account B", role: "platform_admin" },
-  ];
-  await login(page);
-  await expect(page.locator(".ws-activity-table")).toContainText(
-    "Private A receipt",
-  );
-  state.pause = true;
-  await page.getByRole("button", { name: "Refresh account" }).click();
-  await expect.poll(() => state.waiting).toBeGreaterThan(0);
-  await openNav(page);
-  await openSettings(page);
-  await openAccountMenu(page);
-  await page
-    .getByRole("combobox", { name: "Customer account" })
-    .selectOption(second);
-  state.release();
-  await page.goto("/#dashboard/activity");
-  await expect(page.locator(".ws-activity-table")).toContainText(
-    "Private B receipt",
-  );
-  await expect(page.getByText("Private A receipt")).toHaveCount(0);
-  await page.reload();
-  await expect(page.locator(".ws-activity-table")).toContainText(
-    "Private B receipt",
-  );
 });
 test("new accounts start automatically and expired access removes private content", async ({
   page,
@@ -476,16 +417,16 @@ test("new accounts start automatically and expired access removes private conten
   await expect(page.locator(".ws-activity-table")).toContainText(
     "Private A receipt",
   );
-  expect(state.setupCalls).toBe(1);
+  expect(state.setupCalls).toBe(0);
   await page.reload();
   await expect(page.locator(".ws-activity-table")).toContainText(
     "Private A receipt",
   );
-  expect(state.setupCalls).toBe(1);
+  expect(state.setupCalls).toBe(0);
   state.revoked = true;
   await page.getByRole("button", { name: "Refresh account" }).click();
   await expect(
-    page.getByRole("heading", { name: "Sign in to octolab" }),
+    page.getByRole("heading", { name: "Sign in to Two Hands" }),
   ).toBeVisible();
   await expect(page.getByText("Private A receipt")).toHaveCount(0);
   await captureJourney(page, "expired-session");
@@ -505,63 +446,25 @@ test("direct sign-in starts a new customer account without workspace onboarding"
   ).toBeAttached();
   await expect(page.getByLabel("Workspace name")).toHaveCount(0);
   await expect(page.getByLabel("Current workspace")).toHaveCount(0);
-  expect(state.setupCalls).toBe(1);
+  expect(state.setupCalls).toBe(0);
 });
 
-test("existing accounts keep their remembered scope without a customer picker", async ({
+test("the account menu provides settings and help without a customer picker", async ({
   page,
 }) => {
-  const state = await mockAuth(page);
-  await page.addInitScript(
-    ({ id, scope }) => localStorage.setItem("octolab.workspace." + id, scope),
-    { id: userId, scope: second },
-  );
+  await mockAuth(page);
   await login(page);
-  await expect(page.locator(".ws-activity-table")).toContainText(
-    "Private B receipt",
-  );
   await openAccountMenu(page);
   await expect(page.getByLabel("Customer account")).toHaveCount(0);
-  await expect(page.getByLabel("Current workspace")).toHaveCount(0);
   await expect(
     page.getByRole("link", { name: "Settings", exact: true }),
   ).toBeVisible();
   await expect(
     page.getByRole("button", { name: "Help and documentation", exact: true }),
   ).toBeVisible();
-  expect(state.setupCalls).toBe(0);
 });
 
-test("account setup failures offer a retry without workspace management", async ({
-  page,
-}) => {
-  const state = await mockAuth(page, true);
-  let attempts = 0;
-  await page.route("**/api/auth/setup", async (route) => {
-    attempts++;
-    if (attempts === 1)
-      return route.fulfill({
-        status: 503,
-        json: { error: "Account setup is temporarily unavailable." },
-      });
-    state.workspaces = [{ id: first, name: "Personal account", role: "owner" }];
-    return route.fulfill({ json: state.workspaces[0] });
-  });
-  await login(page);
-  await expect(
-    page.getByText("Account setup is temporarily unavailable."),
-  ).toBeVisible();
-  await expect(page.getByLabel("Workspace name")).toHaveCount(0);
-  await page
-    .getByRole("button", { name: "Retry account access", exact: true })
-    .click();
-  await expect(page.locator(".ws-activity-table")).toContainText(
-    "Private A receipt",
-  );
-  expect(attempts).toBe(2);
-});
-
-test("a delayed setup response cannot restore the previous account after sign-out", async ({
+test("a delayed profile response cannot restore the previous account after sign-out", async ({
   page,
 }) => {
   const state = await mockAuth(page, true);
@@ -569,11 +472,16 @@ test("a delayed setup response cannot restore the previous account after sign-ou
     waiting = false,
     finished = false;
   const gate = new Promise<void>((resolve) => (release = resolve));
-  await page.route("**/api/auth/setup", async (route) => {
+  await page.route("**/api/auth/me", async (route) => {
+    if (state.actorId !== userId) return route.fallback();
     waiting = true;
     await gate;
     await route.fulfill({
-      json: { id: first, name: "Previous account", role: "owner" },
+      json: {
+        user: { id: userId, email: "previous@fixture.invalid" },
+        hasPersonalAccount: true,
+        companies: [],
+      },
     });
     finished = true;
   });
@@ -583,10 +491,9 @@ test("a delayed setup response cannot restore the previous account after sign-ou
     window.dispatchEvent(new Event("octolab-session-invalid")),
   );
   await expect(
-    page.getByRole("heading", { name: "Sign in to octolab", exact: true }),
+    page.getByRole("heading", { name: "Sign in to Two Hands", exact: true }),
   ).toBeVisible();
   state.actorId = "00000000-0000-4000-8000-000000000099";
-  state.workspaces = [{ id: second, name: "Next account", role: "owner" }];
   await page
     .getByLabel("Email", { exact: true })
     .fill("second@fixture.invalid");
@@ -612,11 +519,11 @@ test("confirmation, recovery, invalid credentials, and public landing stay usabl
   await mockAuth(page);
   await page.goto("/#home");
   await expect(
-    page.getByRole("heading", { name: "Sign in to octolab" }),
+    page.getByRole("heading", { name: "Sign in to Two Hands" }),
   ).toHaveCount(0);
   await page.goto("/#dashboard");
   await expect(
-    page.getByRole("heading", { name: "Sign in to octolab" }),
+    page.getByRole("heading", { name: "Sign in to Two Hands" }),
   ).toBeVisible();
   await page
     .getByLabel("Email", { exact: true })
@@ -661,7 +568,7 @@ test("tool company registration never forces a customer workspace or exposes the
     .fill("fixture-password-123");
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
   await expect(
-    page.getByRole("heading", { name: "Bring your tool to octolab" }),
+    page.getByRole("heading", { name: "Bring your tool to Two Hands" }),
   ).toBeVisible();
   await expect(page.getByLabel("Workspace name")).toHaveCount(0);
   expect(state.setupCalls).toBe(0);
@@ -825,7 +732,7 @@ test("administrator previews standard roles from settings and can always return"
   await page.getByLabel("Preview as").selectOption("user");
   await expect(
     page.getByRole("heading", {
-      name: "No customer account available to preview",
+      name: "No personal activity to preview",
     }),
   ).toBeVisible();
   await page
@@ -840,7 +747,7 @@ test("user preview has no floating bar and can return through account settings",
   page,
 }) => {
   const state = await mockAuth(page, false, "admin");
-  state.workspaces = [{ id: first, name: "Personal account", role: "owner" }];
+  state.hasPersonalAccount = true;
   await login(page, "/#admin");
   await openSettings(page);
   await page.getByLabel("Preview as").selectOption("user");
@@ -966,35 +873,14 @@ test("admin switches selected companies, drops late reports, and retains return 
   );
 });
 
-test("workspace members get usable connection guidance without owner-only key controls", async ({
-  page,
-}) => {
-  const state = await mockAuth(page);
-  state.workspaces[0].role = "member";
-  await login(page);
-  await page.goto("/#dashboard/connections");
-  await expect(
-    page.getByText(
-      "Ask your workspace owner for a scoped API key before starting the bridge.",
-    ),
-  ).toBeVisible();
-  await expect(
-    page.getByRole("link", { name: "Manage API keys", exact: true }),
-  ).toHaveCount(0);
-  await expect(page.locator(".ws-agent-environment")).toContainText(
-    "APILAYER_URL=" + new URL("/api", authBrowserUrl).href,
-  );
-  await captureJourney(page, "member-connection-setup");
-});
-
-test("signed-in workspace owner can create the first key and proceed to agent setup", async ({
+test("signed-in account owner can create the first key and proceed to agent setup", async ({
   page,
 }) => {
   await mockAuth(page);
   const secret = "oct_key_" + "launch_fixture_secret".padEnd(43, "x");
   let created: any = null;
   let sentHeaders: Record<string, string> = {};
-  await page.route("**/api/workspace/api-keys", async (route) => {
+  await page.route("**/api/account/api-keys", async (route) => {
     if (route.request().method() === "POST") {
       sentHeaders = route.request().headers();
       const body = route.request().postDataJSON();
@@ -1040,7 +926,7 @@ test("signed-in workspace owner can create the first key and proceed to agent se
     page.getByLabel("New API key secret", { exact: true }),
   ).toHaveAttribute("type", "password");
   expect(sentHeaders.authorization).toMatch(/^Bearer /);
-  expect(sentHeaders["x-octolab-workspace"]).toBe(first);
+  expect(sentHeaders["x-octolab-workspace"]).toBeUndefined();
   await captureJourney(page, "first-api-key");
   await page
     .getByRole("link", { name: "Agent connection setup", exact: true })
@@ -1055,13 +941,10 @@ test("signed-in workspace owner can create the first key and proceed to agent se
   await captureJourney(page, "owner-agent-setup");
 });
 
-test("admin navigation persists across company reviews and workspace operations", async ({
+test("admin navigation persists across company reviews and account activity", async ({
   page,
 }, testInfo) => {
-  const state = await mockAuth(page, false, "admin");
-  state.workspaces = [
-    { id: first, name: "Admin workspace fixture", role: "platform_admin" },
-  ];
+  await mockAuth(page, false, "admin");
   await login(page);
   await page.goto("/#admin");
   await expect(
@@ -1074,7 +957,7 @@ test("admin navigation persists across company reviews and workspace operations"
     .getByRole("link")
     .allTextContents();
   await page
-    .getByRole("link", { name: "Workspace operations", exact: true })
+    .getByRole("link", { name: "Account activity", exact: true })
     .click();
   await expect(
     page.getByRole("heading", { name: "Sessions", exact: true }),
@@ -1097,45 +980,26 @@ test("admin navigation persists across company reviews and workspace operations"
   ).toBeVisible();
 });
 
-test("admin direct workspace route never silently renders company reviews without a workspace", async ({
+test("admin opens account activity directly without a customer picker", async ({
   page,
-}, testInfo) => {
+}) => {
   await mockAuth(page, true, "admin");
-  await login(page);
-  await page.goto("/#sessions");
-  console.log(
-    JSON.stringify({
-      route: new URL(page.url()).hash,
-      headings: await page.getByRole("heading").allTextContents(),
-    }),
-  );
-  await page.screenshot({
-    path: testInfo.outputPath("admin-no-workspace-route.png"),
-    fullPage: true,
-  });
+  await login(page, "/#sessions");
   await expect(
-    page.getByRole("heading", {
-      name: "Select a customer account",
-      exact: true,
-    }),
+    page.getByRole("heading", { name: "Sessions", exact: true }),
   ).toBeVisible();
-  await openNav(page);
-  await expect(
-    page.getByRole("link", { name: "Company reviews", exact: true }),
-  ).toBeVisible();
+  await openAccountMenu(page);
+  await expect(page.getByLabel("Customer account")).toHaveCount(0);
 });
 
 test("admin destinations preserve navigation, active links, refresh, and browser history", async ({
   page,
 }) => {
-  const state = await mockAuth(page, false, "admin");
-  state.workspaces = [
-    { id: first, name: "Admin workspace fixture", role: "platform_admin" },
-  ];
+  await mockAuth(page, false, "admin");
   await login(page);
   await page.goto("/#admin");
   const destinations = [
-    { label: "Workspace operations", hash: "#sessions", heading: "Sessions" },
+    { label: "Account activity", hash: "#sessions", heading: "Sessions" },
     {
       label: "Payment disputes",
       hash: "#disputes",
@@ -1186,42 +1050,6 @@ test("admin destinations preserve navigation, active links, refresh, and browser
   ).toBeVisible();
 });
 
-test("admin without a workspace retains route and navigation without workspace requests", async ({
-  page,
-}) => {
-  await mockAuth(page, true, "admin");
-  let workspaceRequests = 0;
-  page.on("request", (request) => {
-    if (
-      /\/api\/(observations|tasks|provider-lab|admin\/funding)/.test(
-        new URL(request.url()).pathname,
-      )
-    )
-      workspaceRequests++;
-  });
-  await login(page);
-  for (const hash of [
-    "#sessions",
-    "#sessions/00000000-0000-4000-8000-000000000099",
-    "#disputes",
-    "#lab",
-  ]) {
-    await page.goto("/" + hash);
-    await expect(
-      page.getByRole("heading", {
-        name: "Select a customer account",
-        exact: true,
-      }),
-    ).toBeVisible();
-    await expect(page).toHaveURL(new RegExp(hash + "$"));
-    await openNav(page);
-    await expect(
-      page.getByRole("link", { name: "Company reviews", exact: true }),
-    ).toBeVisible();
-  }
-  expect(workspaceRequests).toBe(0);
-});
-
 test("admin tool access requires an explicit audited save, preserves retry key, and pauses without resetting spend", async ({
   page,
 }) => {
@@ -1238,13 +1066,13 @@ test("admin tool access requires an explicit audited save, preserves retry key, 
   };
   let value = { ...allowance };
   const writes: any[] = [];
-  await page.route("**/api/admin/workspace-allowances", (route) =>
+  await page.route("**/api/admin/account-allowances", (route) =>
     route.fulfill({
       json: {
         items: [
           {
-            workspaceId: first,
-            name: "Beta workspace",
+            accountId: first,
+            name: "beta@fixture.invalid",
             operatorAllowance: value,
           },
         ],
@@ -1252,7 +1080,7 @@ test("admin tool access requires an explicit audited save, preserves retry key, 
       },
     }),
   );
-  await page.route("**/api/admin/workspace-allowances/*", async (route) => {
+  await page.route("**/api/admin/account-allowances/*", async (route) => {
     const body = route.request().postDataJSON();
     writes.push(body);
     value = {
@@ -1282,7 +1110,7 @@ test("admin tool access requires an explicit audited save, preserves retry key, 
     page.getByRole("heading", { name: "Tool access", exact: true }),
   ).toBeVisible();
   expect(writes).toHaveLength(0);
-  await page.getByRole("button", { name: /Beta workspace/ }).click();
+  await page.getByRole("button", { name: /beta@fixture.invalid/ }).click();
   await page
     .getByLabel("Estimated lifetime limit (USD)", { exact: true })
     .fill("0.014");
@@ -1336,11 +1164,11 @@ test("admin tool access requires an explicit audited save, preserves retry key, 
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
 });
 
-test("ordinary accounts cannot open admin tool access and see honest workspace access status", async ({
+test("ordinary accounts see no activation notice and cannot open admin tool access", async ({
   page,
 }) => {
   await mockAuth(page);
-  await page.route("**/api/workspace/operator-allowance", (route) =>
+  await page.route("**/api/account/operator-allowance", (route) =>
     route.fulfill({
       json: {
         enforced: true,
@@ -1354,12 +1182,10 @@ test("ordinary accounts cannot open admin tool access and see honest workspace a
       },
     }),
   );
+  const allowance = page.waitForResponse("**/api/account/operator-allowance");
   await login(page);
-  await expect(
-    page.getByRole("status").filter({
-      hasText: "Tool access has not been enabled",
-    }),
-  ).toBeVisible();
+  await allowance;
+  await expect(page.locator(".tool-access-notice")).toHaveCount(0);
   await page.goto("/#tool-access");
   await expect(
     page.getByRole("heading", { name: "Administrator access required" }),
@@ -1492,7 +1318,7 @@ test("a previous settings response cannot overwrite the next signed-in admin's c
     .last()
     .click();
   await expect(
-    page.getByRole("heading", { name: "Sign in to octolab" }),
+    page.getByRole("heading", { name: "Sign in to Two Hands" }),
   ).toBeVisible();
   state.actorId = "00000000-0000-4000-8000-000000000099";
   await page

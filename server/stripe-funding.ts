@@ -139,7 +139,7 @@ export interface WebhookIdentity {
   chargeId: string;
 }
 export class StripeFundingService {
-  workspaceForWebhook?: (
+  accountScopeForWebhook?: (
     identity: WebhookIdentity,
   ) => Promise<string | undefined>;
   readonly active = new Map<string, Promise<StripeDeposit>>();
@@ -526,7 +526,7 @@ export class StripeFundingService {
     }
     if (event.livemode || !event.id.startsWith("evt_"))
       throw new FundingError(400, "Only Stripe test-mode events are accepted.");
-    if (this.workspaceForWebhook) {
+    if (this.accountScopeForWebhook) {
       if (!EVENTS.has(event.type)) return { received: true, ignored: true };
       const object = event.data.object as unknown as Record<string, unknown>;
       const identity: WebhookIdentity = {
@@ -550,7 +550,7 @@ export class StripeFundingService {
               ? object.id
               : "",
       };
-      let workspace = await this.workspaceForWebhook(identity);
+      let workspace = await this.accountScopeForWebhook(identity);
       if (
         !workspace &&
         event.type.startsWith("charge.") &&
@@ -565,7 +565,7 @@ export class StripeFundingService {
             "Stripe returned a different payment identity.",
           );
         identity.depositId = payment.metadata?.octolab_deposit_id || "";
-        workspace = await this.workspaceForWebhook(identity);
+        workspace = await this.accountScopeForWebhook(identity);
       }
       if (!workspace) return { received: true, ignored: true };
       return this.funding.store.scope.run(workspace, () =>

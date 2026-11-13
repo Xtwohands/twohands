@@ -6,7 +6,7 @@ test("admin dispute queue records reviews, retains holds, reopens changed eviden
   request,
 }) => {
   const payment = await (
-    await request.post(`${base}/api/workspace/funding/stripe`, {
+    await request.post(`${base}/api/account/funding/stripe`, {
       data: { requestKey: crypto.randomUUID(), amount: "15" },
     })
   ).json();
@@ -72,7 +72,7 @@ test("admin dispute queue records reviews, retains holds, reopens changed eviden
   await expect(row).toContainText("Evidence changed");
   await expect(row).toContainText("Needs review");
   const receipt = await (
-    await request.get(`${base}/api/workspace/funding/stripe/${payment.id}`)
+    await request.get(`${base}/api/account/funding/stripe/${payment.id}`)
   ).json();
   expect(receipt.netCreditUnits).toBe(0);
   expect(receipt.status).toBe("disputed");
@@ -94,7 +94,7 @@ test("admin review rejects a concurrent stale decision without replacing the dra
   request,
 }) => {
   const payment = await (
-    await request.post(`${base}/api/workspace/funding/stripe`, {
+    await request.post(`${base}/api/account/funding/stripe`, {
       data: { requestKey: crypto.randomUUID(), amount: "6" },
     })
   ).json();
@@ -188,7 +188,7 @@ test("rejected admin credentials clear open evidence and drafts", async ({
   request,
 }) => {
   const payment = await (
-    await request.post(`${base}/api/workspace/funding/stripe`, {
+    await request.post(`${base}/api/account/funding/stripe`, {
       data: { requestKey: crypto.randomUUID(), amount: "7" },
     })
   ).json();

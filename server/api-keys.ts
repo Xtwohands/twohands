@@ -6,7 +6,7 @@ import {
   API_KEY_TOOLS,
   type ApiKeyEvent,
   type ApiKeyScope,
-  type WorkspaceApiKey,
+  type ScopedApiKey,
 } from "./api-key-types.js";
 const hash = (value: string) =>
   createHash("sha256").update(value).digest("hex");
@@ -56,7 +56,7 @@ const updateInput = settings.extend({
   revision: z.number().int().nonnegative(),
 });
 type KeyBody = Omit<
-  WorkspaceApiKey,
+  ScopedApiKey,
   "spentMicros" | "reservedMicros" | "remainingMicros" | "status"
 >;
 export class ApiKeyService {
@@ -72,7 +72,7 @@ export class ApiKeyService {
       .prepare("SELECT 1 FROM workspace_api_keys LIMIT 1")
       .get());
   }
-  async get(id: string): Promise<WorkspaceApiKey> {
+  async get(id: string): Promise<ScopedApiKey> {
     const row = await this.store.db
       .prepare(
         "SELECT body,spent_micros,reserved_micros FROM workspace_api_keys WHERE id=? AND workspace_id=?",
@@ -135,8 +135,8 @@ export class ApiKeyService {
   }
   private async audit(
     type: ApiKeyEvent["type"],
-    previous: WorkspaceApiKey | null,
-    current: WorkspaceApiKey,
+    previous: ScopedApiKey | null,
+    current: ScopedApiKey,
   ) {
     const event: ApiKeyEvent = {
       id: randomUUID(),
@@ -350,14 +350,14 @@ export function requiredApiKeyScope(
 ): ApiKeyScope | null {
   if (method === "GET" && path === "/api/observations/catalog")
     return "tools:discover";
-  if (method === "POST" && path === "/api/workspace/preview")
+  if (method === "POST" && path === "/api/account/preview")
     return "tools:discover";
   if (
     method === "GET" &&
-    ["/api/workspace/usage", "/api/workspace/operator-allowance"].includes(path)
+    ["/api/account/usage", "/api/account/operator-allowance"].includes(path)
   )
     return "usage:read";
-  if (method === "GET" && path === "/api/workspace/activity")
+  if (method === "GET" && path === "/api/account/activity")
     return "research:read";
   if (
     ["GET", "POST"].includes(method) &&

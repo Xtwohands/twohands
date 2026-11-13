@@ -74,7 +74,7 @@ test("history restores the selected task as well as its screen", async ({
   await page.goForward();
   await expect(sessions).toHaveValue(firstId);
   await page
-    .getByRole("button", { name: "Agent workspace", exact: true })
+    .getByRole("button", { name: "Research", exact: true })
     .click();
   await expect(page).toHaveURL(first);
   await expect(page.locator(".session-title")).toContainText(

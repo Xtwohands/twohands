@@ -520,6 +520,7 @@ export function ProviderLabView({
                   {money(data.backendBudgetMicros)} backend cap
                 </span>
                 <Button
+                  variant={mode === "replay" ? "default" : "brand"}
                   disabled={
                     busy ||
                     !selectedSuite ||
@@ -707,7 +708,7 @@ export function ProviderLabView({
                   );
                   const a = document.createElement("a");
                   a.href = url;
-                  a.download = `octolab-private-run-${run.id}.json`;
+                  a.download = `two-hands-private-run-${run.id}.json`;
                   a.click();
                   setTimeout(() => URL.revokeObjectURL(url), 1000);
                 }}
@@ -1191,7 +1192,7 @@ function ReceiptContent({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="unspecified">Workspace review</SelectItem>
+                  <SelectItem value="unspecified">Account review</SelectItem>
                   <SelectItem value="human_reported">
                     Human review (self-reported)
                   </SelectItem>
@@ -1252,7 +1253,7 @@ function ReceiptContent({
                   ? "Assistant reported"
                   : review.author === "human_reported"
                     ? "Human reported"
-                    : "Workspace review · identity unspecified"}
+                    : "Account review · identity unspecified"}
               </small>
               <p>{review.note}</p>
             </article>

@@ -1,3 +1,4 @@
+import { PostgresDatabase } from "./database.js";
 import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
 import { FundingError } from "./funding.js";
@@ -70,6 +71,20 @@ export class DisputeReviewService {
     public stripe: StripeFundingService,
     private now = () => new Date().toISOString(),
   ) {}
+  async forPayment<T>(id: string, action: () => Promise<T>): Promise<T> {
+    const store = this.stripe.funding.store;
+    if (!(store.db instanceof PostgresDatabase)) return action();
+    const matches = await store.db.pool.query<{ workspace_id: string }>(
+      "SELECT workspace_id FROM octolab.stripe_deposits WHERE id=$1 LIMIT 2",
+      [id],
+    );
+    if (matches.rows.length !== 1)
+      throw new FundingError(
+        matches.rows.length ? 409 : 404,
+        "Payment could not be uniquely identified.",
+      );
+    return store.scope.run(matches.rows[0].workspace_id, action);
+  }
   async get(id: string): Promise<DisputeReviewCase> {
     const payment = await this.stripe.get(id);
     if (!payment.disputed)
@@ -113,15 +128,31 @@ export class DisputeReviewService {
     query = "",
     page = 1,
   ): Promise<DisputeReviewQueue> {
-    const cases = await Promise.all(
-      (
-        await this.stripe.funding.store.db
-          .prepare(
-            "SELECT id FROM stripe_deposits WHERE json_extract(body,'$.disputed')=1 ORDER BY rowid DESC",
-          )
-          .all()
-      ).map(async (r) => await this.get(String(r.id))),
-    );
+    const store = this.stripe.funding.store;
+    let cases: DisputeReviewCase[];
+    if (store.db instanceof PostgresDatabase) {
+      const rows = await store.db.pool.query<{
+        id: string;
+        workspace_id: string;
+      }>(
+        "SELECT id,workspace_id FROM octolab.stripe_deposits WHERE body::jsonb->'disputed'='true'::jsonb ORDER BY rowid DESC",
+      );
+      cases = [];
+      for (const row of rows.rows)
+        cases.push(
+          await store.scope.run(row.workspace_id, () => this.get(row.id)),
+        );
+    } else {
+      cases = await Promise.all(
+        (
+          await this.stripe.funding.store.db
+            .prepare(
+              "SELECT id FROM stripe_deposits WHERE json_extract(body,'$.disputed')=1 ORDER BY rowid DESC",
+            )
+            .all()
+        ).map(async (r) => await this.get(String(r.id))),
+      );
+    }
     const counts = { needs_review: 0, in_review: 0, reviewed: 0 };
     for (const item of cases) counts[item.reviewStatus]++;
     const q = query.toLowerCase();

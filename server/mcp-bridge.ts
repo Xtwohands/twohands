@@ -53,7 +53,7 @@ export function bridgeClientIdentity(
 }
 function transportFailure(settings: BridgeConfiguration) {
   return new Error(
-    `${settings.https ? "The configured octolab HTTPS server could not be reached or the request timed out. Check APILAYER_URL and server availability." : "The local APILayer server could not be reached or the request timed out. Keep npm start running and check APILAYER_URL."} A submitted operation may still have run: inspect its saved receipt and reuse the same request key and arguments if retrying.`,
+    `${settings.https ? "The configured Two Hands HTTPS server could not be reached or the request timed out. Check APILAYER_URL and server availability." : "The local Two Hands server could not be reached or the request timed out. Keep npm start running and check APILAYER_URL."} A submitted operation may still have run: inspect its saved receipt and reuse the same request key and arguments if retrying.`,
   );
 }
 function statusFailure(status: number) {

@@ -7,14 +7,14 @@ import { config } from "./config.js";
 import { connections } from "./observation-connections.js";
 import { Observatory, ObservationError } from "./observation.js";
 import { discoveryInput } from "./tool-discovery.js";
-import type { ActivityItem, WorkspaceUsage } from "./workspace-types.js";
+import type { ActivityItem, AccountUsage } from "./account-data-types.js";
 const period = z.coerce
   .number()
   .pipe(z.union([z.literal(7), z.literal(30), z.literal(90)]))
   .default(7);
 const nonnegative = (v: unknown): number | null =>
   typeof v === "number" && Number.isFinite(v) && v >= 0 ? v : null;
-export async function workspaceActivity(
+export async function accountActivity(
   obs: Observatory,
   since: string,
 ): Promise<ActivityItem[]> {
@@ -43,11 +43,11 @@ export async function workspaceActivity(
         b.startedAt.localeCompare(a.startedAt) || b.id.localeCompare(a.id),
     );
 }
-export function workspaceUsage(
+export function accountUsage(
   items: ActivityItem[],
   days: number,
   since: string,
-): WorkspaceUsage {
+): AccountUsage {
   const usd = items.filter((i) => i.reportedUsd !== null);
   const timed = items.filter((i) => typeof i.latencyMs === "number");
   return {
@@ -104,7 +104,7 @@ export function workspaceUsage(
     }),
   };
 }
-export function workspaceRoutes(app: Express, obs: Observatory) {
+export function accountDataRoutes(app: Express, obs: Observatory) {
   providerManagementRoutes(app, obs);
   const route =
     (
@@ -136,21 +136,21 @@ export function workspaceRoutes(app: Express, obs: Observatory) {
     return start.toISOString();
   };
   app.get(
-    "/api/workspace/operator-allowance",
+    "/api/account/operator-allowance",
     route(async (_req, res) => res.json(await obs.db.store.allowance.status())),
   );
   app.get(
-    "/api/workspace/routing",
+    "/api/account/routing",
     route(async (_req, res) => res.json(await obs.routingPolicy())),
   );
   app.post(
-    "/api/workspace/routing",
+    "/api/account/routing",
     route(async (req, res) =>
       res.json(await obs.updateRoutingPolicy(req.body)),
     ),
   );
   app.post(
-    "/api/workspace/preview",
+    "/api/account/preview",
     route(async (req, res) =>
       res.json(
         await obs.preview(discoveryInput.parse(req.body), res.locals.apiKeyId),
@@ -158,17 +158,15 @@ export function workspaceRoutes(app: Express, obs: Observatory) {
     ),
   );
   app.get(
-    "/api/workspace/usage",
+    "/api/account/usage",
     route(async (req, res) => {
       const days = period.parse(req.query.days);
       const start = since(days);
-      res.json(
-        workspaceUsage(await workspaceActivity(obs, start), days, start),
-      );
+      res.json(accountUsage(await accountActivity(obs, start), days, start));
     }),
   );
   app.get(
-    "/api/workspace/activity",
+    "/api/account/activity",
     route(async (req, res) => {
       const input = z
         .object({
@@ -183,7 +181,7 @@ export function workspaceRoutes(app: Express, obs: Observatory) {
         })
         .parse(req.query);
       const query = input.q.trim().toLowerCase();
-      const items = (await workspaceActivity(obs, since(input.days))).filter(
+      const items = (await accountActivity(obs, since(input.days))).filter(
         (i) =>
           (input.provider === "all" || i.provider === input.provider) &&
           (input.status === "all" || i.status === input.status) &&
@@ -208,7 +206,7 @@ export function workspaceRoutes(app: Express, obs: Observatory) {
     }),
   );
   app.get(
-    "/api/workspace/connection",
+    "/api/account/connection",
     route(async (_req, res) =>
       res.json({
         clients: await connections(obs.db),

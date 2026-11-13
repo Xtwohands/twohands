@@ -51,7 +51,7 @@ test("imports, reviews, corrects and exports a billing document while unmatched 
   await login(page);
   const beforeCharges = (
     await (
-      await request.get(`${base}/api/workspace/provider-billing`, {
+      await request.get(`${base}/api/account/provider-billing`, {
         headers: { Authorization: `Bearer ${owner}` },
       })
     ).json()
@@ -92,7 +92,7 @@ test("imports, reviews, corrects and exports a billing document while unmatched 
   await expect(dialog).toHaveCount(0);
   await expect(row).toContainText("Approved");
   const afterCharges = await (
-    await request.get(`${base}/api/workspace/provider-billing`, {
+    await request.get(`${base}/api/account/provider-billing`, {
       headers: { Authorization: `Bearer ${owner}` },
     })
   ).json();
@@ -151,7 +151,7 @@ test("matches an invoice to a recorded account and shows the reviewed amount sep
   const headers = { Authorization: `Bearer ${owner}` };
   const account = `matched-${crypto.randomUUID()}`;
   const setup = await (
-    await request.get(`${base}/api/workspace/provider-adapters`, { headers })
+    await request.get(`${base}/api/account/provider-adapters`, { headers })
   ).json();
   const exa = setup.adapters.find(
     (a: { tool: string }) => a.tool === "exa_search",
@@ -159,7 +159,7 @@ test("matches an invoice to a recorded account and shows the reviewed amount sep
   expect(
     (
       await request.post(
-        `${base}/api/workspace/provider-adapters/exa_search/account`,
+        `${base}/api/account/provider-adapters/exa_search/account`,
         {
           headers,
           data: {
@@ -196,7 +196,7 @@ test("matches an invoice to a recorded account and shows the reviewed amount sep
     start = new Date(now);
   start.setUTCHours(0, 0, 0, 0);
   const batch = await (
-    await request.post(`${base}/api/workspace/provider-billing/imports`, {
+    await request.post(`${base}/api/account/provider-billing/imports`, {
       headers,
       data: {
         requestKey: crypto.randomUUID(),
@@ -237,7 +237,7 @@ test("matches an invoice to a recorded account and shows the reviewed amount sep
   await dialog.getByRole("button", { name: "Approve import" }).click();
   await expect(dialog).toHaveCount(0);
   const report = await (
-    await request.get(`${base}/api/workspace/provider-billing`, { headers })
+    await request.get(`${base}/api/account/provider-billing`, { headers })
   ).json();
   expect(
     report.batches.find((b: { id: string }) => b.id === batch.id).lines[0],

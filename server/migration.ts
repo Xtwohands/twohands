@@ -192,7 +192,7 @@ export async function importSqlite(
           );
       }
       await client.query(
-        "INSERT INTO octolab.workspaces(id,name) VALUES($1,'Imported workspace') ON CONFLICT DO NOTHING",
+        "INSERT INTO octolab.workspaces(id,name) VALUES($1,'Imported account') ON CONFLICT DO NOTHING",
         [snapshot.workspaceId],
       );
       const members = await client.query(

@@ -5,6 +5,10 @@ import {
   FileCheck02,
   Link01,
   RefreshCw01,
+  Grid01,
+  Activity,
+  Building07,
+  Users01,
 } from "@untitledui/icons";
 import type { CompanyInsights, ToolCompany } from "../server/company-types";
 import { capabilityData } from "../server/provider-capability-data";
@@ -17,11 +21,11 @@ import { Panel, InlineError } from "./observation-ui";
 import "./company-dashboard.css";
 
 const sections = [
-  ["overview", "Overview"],
-  ["activity", "Live usage"],
-  ["benchmarks", "Controlled tests"],
-  ["plans", "Test plans"],
-  ["integration", "Integration"],
+  ["overview", "Overview", Grid01],
+  ["activity", "Live usage", Activity],
+  ["benchmarks", "Controlled tests", BarChartSquare02],
+  ["plans", "Test plans", FileCheck02],
+  ["integration", "Integration", Link01],
 ] as const;
 export function companyDashboardSection(section: string) {
   return sections.some(([id]) => id === section) ? section : "overview";
@@ -33,10 +37,11 @@ export function companyDashboardLinks(
   canManage: boolean,
 ) {
   return [
-    ...sections.map(([value, label]) => ({
+    ...sections.map(([value, label, icon]) => ({
       href: `#company/${id}/${value}`,
       label,
       selected: section === value,
+      icon,
     })),
     ...(registered
       ? [
@@ -44,6 +49,7 @@ export function companyDashboardLinks(
             href: `#company/${id}/details`,
             label: "Company details",
             selected: section === "details",
+            icon: Building07,
           },
         ]
       : []),
@@ -53,6 +59,7 @@ export function companyDashboardLinks(
             href: `#company/${id}/team`,
             label: "Company team",
             selected: section === "team",
+            icon: Users01,
           },
         ]
       : []),

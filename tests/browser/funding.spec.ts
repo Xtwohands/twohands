@@ -69,7 +69,7 @@ test("fixture test deposit creates, verifies, and credits exactly once", async (
     .getByRole("textbox", { name: "Deposit transaction hash", exact: true })
     .fill(uniqueHash);
   const before = await (
-    await request.get(`${base}/api/workspace/funding`)
+    await request.get(`${base}/api/account/funding`)
   ).json();
   await page
     .getByRole("button", { name: "Verify transaction", exact: true })
@@ -84,7 +84,7 @@ test("fixture test deposit creates, verifies, and credits exactly once", async (
     );
   }
   const after = await (
-    await request.get(`${base}/api/workspace/funding`)
+    await request.get(`${base}/api/account/funding`)
   ).json();
   expect(after.onchainBalanceUnits).toBe(10000000);
   expect(after.onchainDeposits).toBe(1);
@@ -102,11 +102,11 @@ test("turning payments off preserves historical credits and receipts", async ({
 }) => {
   const base = "http://127.0.0.1:3102";
   const before = await (
-    await request.get(base + "/api/workspace/funding")
+    await request.get(base + "/api/account/funding")
   ).json();
   if (!before.entries?.length) {
     const created = await request.post(
-      base + "/api/workspace/funding/deposits",
+      base + "/api/account/funding/deposits",
       {
         data: {
           requestKey: crypto.randomUUID(),
@@ -118,14 +118,14 @@ test("turning payments off preserves historical credits and receipts", async ({
     expect(created.status()).toBe(201);
     const deposit = await created.json();
     const verified = await request.post(
-      base + `/api/workspace/funding/deposits/${deposit.id}/verify`,
+      base + `/api/account/funding/deposits/${deposit.id}/verify`,
       {
         data: { transactionHash: `0x${"33".repeat(32)}` },
       },
     );
     expect(verified.status()).toBe(200);
   }
-  await page.route("**/api/workspace/funding", async (route) => {
+  await page.route("**/api/account/funding", async (route) => {
     const response = await route.fetch();
     const data = await response.json();
     await route.fulfill({

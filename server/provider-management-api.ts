@@ -16,14 +16,10 @@ export function providerManagementRoutes(app: Express, obs: Observatory) {
     (fn: (req: Request, res: Response) => Promise<unknown>) =>
     async (req: Request, res: Response) => {
       try {
-        if (
-          res.locals.apiKeyId ||
-          (res.locals.account &&
-            !["owner", "platform_admin"].includes(res.locals.workspaceRole))
-        )
+        if (res.locals.apiKeyId)
           throw new ApiKeyError(
             403,
-            "Only the workspace owner can access provider billing and setup.",
+            "Only the account owner can access provider billing and setup.",
           );
         if (
           req.method !== "GET" &&
@@ -32,7 +28,7 @@ export function providerManagementRoutes(app: Express, obs: Observatory) {
         )
           throw new ObservationError(
             503,
-            "Protect the workspace with owner access before importing or reviewing billing records.",
+            "Protect the account with owner access before importing or reviewing billing records.",
           );
         await fn(req, res);
       } catch (error) {
@@ -53,7 +49,7 @@ export function providerManagementRoutes(app: Express, obs: Observatory) {
       }
     };
   app.get(
-    "/api/workspace/provider-adapters",
+    "/api/account/provider-adapters",
     route(async (_req, res) =>
       res.json({
         adapters: await Promise.all(
@@ -79,7 +75,7 @@ export function providerManagementRoutes(app: Express, obs: Observatory) {
     ),
   );
   app.post(
-    "/api/workspace/provider-adapters/:tool/account",
+    "/api/account/provider-adapters/:tool/account",
     route(async (req, res) =>
       res.json(
         await assignProviderAccount(
@@ -91,7 +87,7 @@ export function providerManagementRoutes(app: Express, obs: Observatory) {
     ),
   );
   app.get(
-    "/api/workspace/provider-billing",
+    "/api/account/provider-billing",
     route(async (req, res) => {
       const days = z.coerce
         .number()
@@ -105,13 +101,13 @@ export function providerManagementRoutes(app: Express, obs: Observatory) {
     }),
   );
   app.post(
-    "/api/workspace/provider-billing/imports",
+    "/api/account/provider-billing/imports",
     route(async (req, res) =>
       res.status(201).json(await billing.import(req.body)),
     ),
   );
   app.post(
-    "/api/workspace/provider-billing/imports/:id/review",
+    "/api/account/provider-billing/imports/:id/review",
     route(async (req, res) =>
       res.json(
         await billing.review(
@@ -123,7 +119,7 @@ export function providerManagementRoutes(app: Express, obs: Observatory) {
     ),
   );
   app.get(
-    "/api/workspace/provider-billing/export",
+    "/api/account/provider-billing/export",
     route(async (_req, res) => {
       const report = await billing.overview();
       // Explicit allowlist: no raw requests, provider outputs, private explanations or secrets.

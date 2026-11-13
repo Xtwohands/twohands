@@ -54,14 +54,13 @@ export function LandingView() {
   const availableCount = catalog.filter((c) => c.available).length;
 
   return (
-    <div className="landing dark">
+    <div className="landing">
       <a className="skip-link" href="#landing-catalog">
         Skip to tool catalog
       </a>
       <header className="landing-nav">
         <a href="#home" className="landing-brand">
-          <img src="/octolab.svg" alt="" width={28} height={28} />
-          <span>octolab</span>
+          <img src="/two-hands.svg" width="128" height="28" alt="Two Hands" />
         </a>
         <div className="landing-nav-actions">
           <Button variant="ghost" size="sm" asChild>
@@ -83,12 +82,12 @@ export function LandingView() {
         <section className="landing-hero">
           <h1>One connection for every tool your agent needs</h1>
           <p>
-            Octolab routes search and extraction through a single local gateway
-            for Claude, Codex, and other MCP hosts. Every call is recorded with
-            estimates and outcomes.
+            Two Hands routes search and extraction through a single local
+            gateway for Claude, Codex, and other MCP hosts. Every call is
+            recorded with estimates and outcomes.
           </p>
           <div className="landing-cta-row">
-            <Button asChild>
+            <Button variant="brand" asChild>
               <a href="#dashboard/connections">Connect with one command</a>
             </Button>
             <Button variant="outline" asChild>

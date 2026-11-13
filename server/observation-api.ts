@@ -1,4 +1,4 @@
-import { AllowanceError } from "./workspace-allowance.js";
+import { AllowanceError } from "./account-allowance.js";
 import { SettingsBusyError } from "./provider-settings-gate.js";
 import { ApiKeyError } from "./api-keys.js";
 import { discoveryInput } from "./tool-discovery.js";

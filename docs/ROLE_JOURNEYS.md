@@ -1,16 +1,16 @@
 # User, admin, and tool company journeys
 
-PostgreSQL account mode separates three areas. One account can have more than one authorized area; moving between areas does not grant permissions. Company ownership is independent of customer workspace membership. Platform administration comes only from the server's explicit UUID allowlist.
+PostgreSQL account mode separates three areas. One account can have more than one authorized area; moving between areas does not grant permissions. Company ownership is independent of personal account access. Platform administration comes only from the server's explicit UUID allowlist.
 
-| Person             | Entry and sidebar                                                                                                            | First task                                                                                                                                 |
-| ------------------ | ---------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| User               | `#dashboard`: tools, routing, activity, usage, connections; owners also see credits and API keys                             | Sign in, create a scoped API key, then connect an external agent; private account setup is automatic                                       |
-| Tool company owner | `#company`: overview, live usage, controlled tests, test plans, integration, company details, and owner-only team management | Register the company and tool for ownership/integration review; no customer workspace is required                                          |
-| Platform admin     | `#admin`: persistent navigation across company reviews, workspace operations, disputes, provider lab, and tool access        | Review company ownership and manage audited tool allowances; company reviews and tool access do not require selecting a customer workspace |
+| Person             | Entry and sidebar                                                                                                            | First task                                                                                           |
+| ------------------ | ---------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| User               | `#dashboard`: tools, routing, activity, usage, connections; owners also see credits and API keys                             | Sign in, create a scoped API key, then connect an external agent; private account setup is automatic |
+| Tool company owner | `#company`: overview, live usage, controlled tests, test plans, integration, company details, and owner-only team management | Register the company and tool for ownership/integration review; independent of personal activity     |
+| Platform admin     | `#admin`: persistent navigation across company reviews, account activity, disputes, provider lab, and tool access            | Review company ownership and manage audited tool allowances; open each destination directly          |
 
 Users keep the conversation and tool choices in Claude, Codex, or another MCP host. The dashboard configures and inspects that infrastructure. It does not turn each consumer task into an operator approval flow.
 
-The admin sidebar also retains Model evaluations, Tool activity, and Review cases across admin destinations. Account-dependent administrator destinations keep their URL and show an explicit customer-account selection gate when none is selected; they do not issue private workspace requests prematurely. Direct links, refresh, browser history, and mobile navigation use the same destinations. **Tool access** manages the separate [operator allowance](WORKSPACE_ALLOWANCES.md); it is not a customer payment flow.
+The admin sidebar includes Model evaluations, Tool activity, and Review cases. Account activity uses the signed-in account, payment disputes span accounts, and Tool access lists confirmed accounts with their [operator allowances](WORKSPACE_ALLOWANCES.md).
 
 ## Register and review a tool company
 
@@ -24,29 +24,29 @@ The portal supports one owner per company registration, up to five registrations
 
 ## Manage company team access
 
-Open **Company team** in the company sidebar. The owner can add an analyst by the email of an existing, confirmed octolab account, then remove that access when needed. A company can have at most 20 members including its owner. The owner cannot be removed or transferred through this screen.
+Open **Company team** in the company sidebar. The owner can add an analyst by the email of an existing, confirmed Two Hands account, then remove that access when needed. A company can have at most 20 members including its owner. The owner cannot be removed or transferred through this screen.
 
 Analysts can read their company's profile and approved aggregate insights. They cannot change a registration, manage team members, read access history, or approve an integration. Membership is checked on subsequent requests, so removal blocks further company reads. Replaying an earlier grant after revocation does not restore access; a deliberate new grant requires a new request key.
 
-The owner-only **Access history** records recent analyst grants, revocations, and aggregate-report access, including when a report was withheld for release. Historical cohort-suppressed access events remain readable. Platform admins can inspect/manage company teams under their explicit permissions. No customer workspace access is granted by a company membership.
+The owner-only **Access history** records recent analyst grants, revocations, and aggregate-report access, including when a report was withheld for release. Historical cohort-suppressed access events remain readable. Platform admins can inspect/manage company teams under their explicit permissions.
 
 ## Switch areas and preview permissions
 
-**Settings** is available in the upward-opening account menu, together with in-app **Help and documentation**. It holds links to the account's user and company areas. Administrators also have **Preview as** options with a visible **Return to admin** control. User preview removes administrator privileges and retains actual workspace memberships. Company preview selects one real registration or an explicitly labeled integrated provider without a registration. It restricts backend requests to that target, uses real eligible aggregate counts without a minimum workspace/session count, and creates no permanent membership or fake company records. Provider-only previews are read-only; registered-company actions retain the actual administrator as their audit actor.
+**Settings** is available in the upward-opening account menu, together with in-app **Help and documentation**. It holds links to the account's user and company areas. Administrators also have **Preview as** options with a visible **Return to admin** control. User preview removes administrator privileges and uses the administrator’s existing personal data. Company preview selects one real registration or an explicitly labeled integrated provider without a registration. It restricts backend requests to that target, uses real eligible aggregate counts without a minimum account/session count, and creates no permanent membership or fake company records. Provider-only previews are read-only; registered-company actions retain the actual administrator as their audit actor.
 
 ## Read company insights
 
-An approved company owner or analyst sees metrics only for the provider bound by an administrator. The backend checks current membership and company status on each request; customer workspace headers cannot change that binding. Company members cannot read another company's record, customer prompts/results, private exports, or the operator lab.
+An approved company owner or analyst sees metrics only for the provider bound by an administrator. The backend checks current membership and company status on each request; personal data access cannot change that binding. Company members cannot read another company's record, customer prompts/results, private exports, or the operator lab.
 
 Reports have four allowlisted counts: eligible offered sessions, sessions using the tool, completed calls, and successful calls. Eligibility follows discovery matches, and counted execution must follow the eligible offer. These are observed session-level counts, not proof that a model considered an option, an exact candidate attribution, an explanation for rejection, or a quality score.
 
 Registered companies and administrator company previews share the same dashboard structure. Overview keeps four cards for selection, request success, selected sessions, and completed requests; Live usage, Controlled tests, Test plans, and Integration remain in the sidebar whether data is available, zero, or withheld. Pending or unbound registrations retain their own company/tool identity. Controlled-test and plan sections currently show truthful empty states, not operator-lab receipts or scheduled experiments. Company details and owner-only Company team remain separate sections.
 
-After explicit insight release, counts are available from the first eligible recorded usage, including one workspace and one session. No usage returns real zero counts; sections stay visible. Pending release still returns `metrics: null`. No raw content, consumer identities, or session IDs are returned. No package is published or delivered automatically.
+After explicit insight release, counts are available from the first eligible recorded usage, including one account and one session. No usage returns real zero counts; sections stay visible. Pending release still returns `metrics: null`. No raw content, consumer identities, or session IDs are returned. No package is published or delivered automatically.
 
 ## Company and review API
 
-All company routes require a verified Supabase account session. They do not require a customer workspace. Machine API keys and editable account metadata do not grant company/admin access. Writes require same-origin JSON. Administrator previews send `X-Octolab-Preview: user` or `company`; company preview additionally requires `X-Octolab-Preview-Target: company:<UUID>` or `provider:<registered-provider-id>`. The backend verifies the original administrator and confines the request to the selected context. Non-admin preview attempts receive `403`. `GET /api/auth/preview-targets` lists available targets; `GET /api/auth/preview-insights` reads the selected provider-only preview with the same aggregate privacy rules.
+All company routes require a verified Supabase account session. Machine API keys and editable account metadata do not grant company/admin access. Writes require same-origin JSON. Administrator previews send `X-Octolab-Preview: user` or `company`; company preview additionally requires `X-Octolab-Preview-Target: company:<UUID>` or `provider:<registered-provider-id>`. The backend verifies the original administrator and confines the request to the selected context. Non-admin preview attempts receive `403`. `GET /api/auth/preview-targets` lists available targets; `GET /api/auth/preview-insights` reads the selected provider-only preview with the same aggregate privacy rules.
 
 | Method | Route                                 | Contract                                                                                                                                                   |
 | ------ | ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -63,6 +63,6 @@ All company routes require a verified Supabase account session. They do not requ
 
 Pass `cursor=<nextCursor>` with the same status to continue the queue. Review writes require the current revision, so a stale review cannot overwrite a newer decision. Company fields are bounded: name/tool name 2–80 characters, website at most 300 characters, description 20–1,500 characters; review feedback is 5–1,500 characters.
 
-The public `GET /api/public/catalog` returns tool descriptions, availability, and configured estimates without private activity. The previous `/api/company-insights/:provider` remains an administrator-only operator preview in PostgreSQL mode, separate from this company-membership-scoped API. SQLite/local mode preserves its existing demo and workspace-token behavior.
+The public `GET /api/public/catalog` returns tool descriptions, availability, and configured estimates without private activity. The previous `/api/company-insights/:provider` remains an administrator-only operator preview in PostgreSQL mode, separate from this company-membership-scoped API. SQLite/local mode preserves its existing demo and local access-token behavior.
 
 See [account configuration](AUTH.md), [provider lab](PROVIDER_LAB.md), and [current hosted rollout status](SUPABASE_ROLLOUT.md).

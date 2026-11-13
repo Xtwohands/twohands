@@ -120,7 +120,7 @@ export function CompanyView({
     const refresh = () =>
       Promise.all([
         api<CompanyReport>(
-          `/company-insights/${provider}?source=${source}&scope=workspace`,
+          `/company-insights/${provider}?source=${source}&scope=account`,
         ),
         source === "local"
           ? api<LabOverview>("/provider-lab")

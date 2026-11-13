@@ -1,8 +1,8 @@
 # Product direction
 
-The product records what a person wanted, what an external agent actually did through APILayer, what it delivered, and how that delivery was evaluated. It should become a reliable evidence layer across agent hosts, rather than another research chat or planning harness.
+The product records what a person wanted, what an external agent actually did through Two Hands, what it delivered, and how that delivery was evaluated. It should become a reliable evidence layer across agent hosts, rather than another research chat or planning harness.
 
-APILayer is infrastructure in the consumer's existing conversation. A consumer asks for snowboard recommendations and receives research; session creation, tool routing, authorization, and research spending policy happen internally. New MCP sessions are authorized automatically by backend policy. The consumer's shopping budget remains a product constraint. The operator dashboard is for inspection and evaluation, not a required checkpoint in the consumer journey.
+Two Hands is infrastructure in the consumer's existing conversation. A consumer asks for snowboard recommendations and receives research; session creation, tool routing, authorization, and research spending policy happen internally. New MCP sessions are authorized automatically by backend policy. The consumer's shopping budget remains a product constraint. The operator dashboard is for inspection and evaluation, not a required checkpoint in the consumer journey.
 
 The useful unit is an **accepted intent and a versioned outcome**, not an HTTP request. A tool can return successfully while the answer misses the goal. An agent can report a setup failure honestly without demonstrating poor factual accuracy. Keep those distinctions in every score, case, and commercial dataset.
 
@@ -18,7 +18,7 @@ These are connected uses, but they should not share one ambiguous success metric
 
 ## Capture boundaries
 
-The external host owns the conversation, planning, and tool decisions. APILayer's MCP server offers named provider tools; it does not silently route, switch providers, run a second planner, or inspect private chain of thought. Brief decision summaries are required for new provider calls and retain agent-reported provenance. Octolab discovers suitable candidates using the immediate operation and relevant context; the external agent chooses.
+The external host owns the conversation, planning, and tool decisions. The `apilayer` MCP server offers named provider tools; it does not silently route, switch providers, run a second planner, or inspect private chain of thought. Brief decision summaries are required for new provider calls and retain agent-reported provenance. Two Hands discovers suitable candidates using the immediate operation and relevant context; the external agent chooses.
 
 An offered tool set records an opportunity to choose. It does not prove attention to every option or establish the counterfactual outcome of a tool not selected. A later vendor dataset should distinguish exposure, selection, execution, and outcome attribution. It should not label every unselected provider as rejected or every successful API call as a fulfilled intent.
 

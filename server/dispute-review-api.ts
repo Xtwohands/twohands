@@ -90,17 +90,17 @@ export function disputeReviewRoutes(
   router.get(
     "/disputes/:id",
     handle(async (req, res) => {
-      res.json(await service.detail(z.uuid().parse(req.params.id)));
+      const id = z.uuid().parse(req.params.id);
+      res.json(await service.forPayment(id, () => service.detail(id)));
     }),
   );
   router.post(
     "/disputes/:id/review",
     handle(async (req, res) => {
+      const id = z.uuid().parse(req.params.id);
       res.json(
-        await service.review(
-          z.uuid().parse(req.params.id),
-          req.body,
-          res.locals.adminActor,
+        await service.forPayment(id, () =>
+          service.review(id, req.body, res.locals.adminActor),
         ),
       );
     }),
@@ -110,9 +110,13 @@ export function disputeReviewRoutes(
     handle(async (req, res) => {
       z.object({}).strict().parse(req.body);
       const id = z.uuid().parse(req.params.id);
-      await service.get(id);
-      await service.stripe.reconcile(id, true);
-      res.json(await service.detail(id));
+      res.json(
+        await service.forPayment(id, async () => {
+          await service.get(id);
+          await service.stripe.reconcile(id, true);
+          return service.detail(id);
+        }),
+      );
     }),
   );
   router.use((_req, res) => {

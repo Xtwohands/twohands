@@ -322,7 +322,7 @@ export async function companyReport(
       id: "capture-limit",
       title: "Check what the capture limit leaves out",
       category: "Integration",
-      evidence: `${metric.truncated} receipts are marked truncated. APILayer currently captures at most 20,000 extraction characters; this is a host integration limit, not proof of a provider defect.`,
+      evidence: `${metric.truncated} receipts are marked truncated. Two Hands currently captures at most 20,000 extraction characters; this is a host integration limit, not proof of a provider defect.`,
       hypothesis:
         "Important specifications may fall after the captured section on long pages.",
       action:

@@ -55,7 +55,7 @@ export function FundingView() {
   const refresh = useCallback(async () => {
     const id = ++generation.current;
     try {
-      const data = await api<FundingSummary>("/workspace/funding");
+      const data = await api<FundingSummary>("/account/funding");
       if (generation.current === id) {
         setSummary(data);
         setError("");
@@ -135,7 +135,7 @@ export function FundingView() {
                     <strong>On-chain deposits are unavailable</strong>
                     <p>
                       No wallet setup or transfer is needed. Deposits will be
-                      available when octolab enables this payment method.
+                      available when Two Hands enables this payment method.
                     </p>
                   </div>
                 )}
@@ -392,7 +392,7 @@ export function FundingView() {
                 setFormError("");
                 try {
                   const intent = await api<DepositIntent>(
-                    "/workspace/funding/deposits",
+                    "/account/funding/deposits",
                     { requestKey: key.current, amount, sender },
                   );
                   await refresh();
@@ -469,8 +469,8 @@ export function FundingView() {
               <p>
                 Use Base Sepolia and the exact amount above. Send from{" "}
                 <code className="ws-wrap-address">{selected.sender}</code>.
-                You’ll need test ETH for gas. octolab does not sign or send the
-                transfer.
+                You’ll need test ETH for gas. Two Hands does not sign or send
+                the transfer.
               </p>
               {selected.status !== "credited" ? (
                 <form
@@ -481,7 +481,7 @@ export function FundingView() {
                     setFormError("");
                     try {
                       await api<DepositIntent>(
-                        `/workspace/funding/deposits/${selected.id}/verify`,
+                        `/account/funding/deposits/${selected.id}/verify`,
                         { transactionHash: hash },
                       );
                       await refresh();

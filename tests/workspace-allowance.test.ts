@@ -107,12 +107,7 @@ suite("operator-owned hosted workspace allowances", () => {
       undefined,
       accounts,
     );
-    const response = await request(app)
-      .post("/api/auth/workspaces")
-      .set({ Authorization: "Bearer owner" })
-      .send({ name: "Fixture workspace", requestKey: randomUUID() });
-    expect(response.status).toBe(201);
-    workspace = response.body.id;
+    workspace = await accounts.personalAccountScope(owner);
   });
   afterEach(async () => {
     Object.assign(config.keys, previous.keys);
@@ -121,7 +116,7 @@ suite("operator-owned hosted workspace allowances", () => {
   });
   async function issue() {
     const response = await request(app)
-      .post("/api/workspace/api-keys")
+      .post("/api/account/api-keys")
       .set(headers())
       .send({
         name: "Self-issued fixture",
@@ -158,6 +153,7 @@ suite("operator-owned hosted workspace allowances", () => {
       expect(result.status).toBe(403);
       expect(result.body).toMatchObject({
         code: "operator_allowance_exceeded",
+        error: "Paid tool access is currently unavailable for this account.",
         operatorAllowance: { state: "unconfigured", remainingMicros: 0 },
       });
       const offer = await request(app)
@@ -175,7 +171,14 @@ suite("operator-owned hosted workspace allowances", () => {
       ).toMatchObject({ withinBudget: false, operatorAllowed: false });
       expect(offer.body.operatorAllowance.state).toBe("unconfigured");
       expect(
-        (await request(app).get("/api/workspace/operator-allowance").set(key))
+        offer.body.tools.find((t: any) => t.tool === "exa_search")
+          .discoveryMatches[0],
+      ).toMatchObject({
+        status: "disabled",
+        reason: result.body.error,
+      });
+      expect(
+        (await request(app).get("/api/account/operator-allowance").set(key))
           .body.state,
       ).toBe("unconfigured");
     }
@@ -200,7 +203,7 @@ suite("operator-owned hosted workspace allowances", () => {
   });
   it("only permits fresh platform admins to grant, keeps grants immutable to runtime, and preserves pause on replay", async () => {
     const input = grant();
-    const endpoint = `/api/admin/workspace-allowances/${workspace}`;
+    const endpoint = `/api/admin/account-allowances/${owner.userId}`;
     expect(
       (await request(app).post(endpoint).set(headers()).send(input)).status,
     ).toBe(403);
@@ -269,14 +272,14 @@ suite("operator-owned hosted workspace allowances", () => {
     expect(
       (
         await request(app)
-          .get("/api/admin/workspace-allowances")
+          .get("/api/admin/account-allowances")
           .set(headers("admin"))
       ).status,
     ).toBe(401);
   });
   it("serializes independent connections, preserves in-flight settlement during pause, and never recharges replay", async () => {
     await request(app)
-      .post(`/api/admin/workspace-allowances/${workspace}`)
+      .post(`/api/admin/account-allowances/${owner.userId}`)
       .set(headers("admin"))
       .send(grant({ limitMicros: 7000 }));
     const second = new Store(":unused:", url!, workspace);
@@ -298,13 +301,13 @@ suite("operator-owned hosted workspace allowances", () => {
         const pending = obs.execute(s.id, args);
         await vi.waitFor(() => expect(search).toHaveBeenCalledTimes(1));
         await expect(other.execute(t.id, call())).rejects.toThrow(
-          /operator allowance/,
+          /remaining allowance/,
         );
         expect(await store.allowance.status()).toMatchObject({
           reservedMicros: 7000,
           spentMicros: 0,
         });
-        const endpoint = `/api/admin/workspace-allowances/${workspace}`;
+        const endpoint = `/api/admin/account-allowances/${owner.userId}`;
         expect(
           (
             await request(app)
@@ -370,7 +373,7 @@ suite("operator-owned hosted workspace allowances", () => {
         expect((await reopened.allowance.status()).state).toBe("unconfigured");
         await expect(
           reopened.allowance.reserve(randomUUID(), "task", 1),
-        ).rejects.toThrow(/operator allowance/);
+        ).rejects.toThrow(/Paid tool access is currently unavailable/);
         expect(
           await reopened.db
             .prepare("SELECT * FROM workspace_allowance_spend")
@@ -391,10 +394,10 @@ suite("operator-owned hosted workspace allowances", () => {
         });
       await expect(
         engine.reserve(task.id, "exa", randomUUID(), "search", {}),
-      ).rejects.toThrow(/operator allowance/);
+      ).rejects.toThrow(/Paid tool access is currently unavailable/);
       await expect(
         lab.start({ requestKey: randomUUID(), providers: ["exa"] }),
-      ).rejects.toThrow(/operator allowance/);
+      ).rejects.toThrow(/Paid tool access is currently unavailable/);
       expect(search).not.toHaveBeenCalled();
       await grantFixtureAllowance(store, 7000);
       const id = randomUUID();
@@ -408,7 +411,7 @@ suite("operator-owned hosted workspace allowances", () => {
       });
       await expect(
         lab.start({ requestKey: randomUUID(), providers: ["exa"] }),
-      ).rejects.toThrow(/operator allowance/);
+      ).rejects.toThrow(/remaining allowance/);
     });
   });
   it("recovers interrupted observation receipts and key reservations in the same conservative settlement", async () => {

@@ -3,14 +3,11 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { createClient } from "@supabase/supabase-js";
 import type { Request } from "express";
 import { z } from "zod";
+import { PERSONAL_ACCOUNT_SCOPE } from "./personal-account.js";
 import { Companies } from "./companies.js";
 import { PostgresDatabase } from "./database.js";
 import type { Store } from "./store.js";
-import type {
-  AccountProfile,
-  AccountWorkspace,
-  AuthPublicConfig,
-} from "./account-types.js";
+import type { AccountProfile, AuthPublicConfig } from "./account-types.js";
 export class AccountError extends Error {
   constructor(
     public status: number,
@@ -248,43 +245,23 @@ export class Accounts {
     return identity;
   }
   async profile(identity: VerifiedIdentity): Promise<AccountProfile> {
-    const result = this.previewScope.getStore()?.target
-      ? { rows: [] }
-      : this.isAdmin(identity.userId)
-        ? await this.database.pool.query(
-            "SELECT id,name,'platform_admin' AS role FROM octolab.workspaces ORDER BY created_at,id LIMIT 1000",
-          )
-        : await this.database.pool.query(
-            "SELECT w.id,w.name,m.role FROM octolab.workspace_memberships m JOIN octolab.workspaces w ON w.id=m.workspace_id WHERE m.user_id=$1 ORDER BY w.created_at,w.id LIMIT 1000",
-            [identity.userId],
-          );
+    const hasPersonalAccount =
+      !this.previewScope.getStore()?.target &&
+      !!(
+        await this.database.pool.query(PERSONAL_ACCOUNT_SCOPE("$1"), [
+          identity.userId,
+        ])
+      ).rowCount;
     return {
       user: { id: identity.userId, email: identity.email },
-      workspaces: result.rows,
+      hasPersonalAccount,
       isAdmin: this.isAdmin(identity.userId),
       canPreview: this.settings.adminUserIds.includes(identity.userId),
       companyPreview: this.previewScope.getStore()?.target,
       companies: await this.companies.list(identity),
     };
   }
-  async workspace(
-    identity: VerifiedIdentity,
-    requested?: string,
-  ): Promise<AccountWorkspace> {
-    const profile = await this.profile(identity);
-    const value = requested
-      ? profile.workspaces.find((w) => w.id === requested)
-      : profile.workspaces[0];
-    if (!value)
-      throw new AccountError(
-        403,
-        requested
-          ? "You do not have access to this account."
-          : "Open your dashboard to finish setting up your account.",
-      );
-    return value;
-  }
-  async keyWorkspace(secret: string): Promise<string> {
+  async keyAccountScope(secret: string): Promise<string> {
     if (!/^oct_key_[A-Za-z0-9_-]{43}$/.test(secret))
       throw new AccountError(401, "Invalid API key.");
     const row = await this.database.pool.query(
@@ -294,7 +271,7 @@ export class Accounts {
     if (!row.rowCount) throw new AccountError(401, "Invalid API key.");
     return String(row.rows[0].workspace_id);
   }
-  async paymentWorkspace(
+  async paymentAccountScope(
     identity: import("./stripe-funding.js").WebhookIdentity,
   ) {
     const result = await this.database.pool.query(
@@ -310,40 +287,25 @@ export class Accounts {
     if (result.rows.length > 1)
       throw new AccountError(
         409,
-        "Payment identifiers conflict across workspaces. Event processing was stopped.",
+        "Payment identifiers conflict across accounts. Event processing was stopped.",
       );
     return result.rows[0]?.workspace_id as string | undefined;
   }
-  /** Resolve the signed-in user's existing scope, or provision one private scope once. */
-  async ensureAccountWorkspace(
-    identity: VerifiedIdentity,
-  ): Promise<AccountWorkspace> {
+  /** Resolve storage from verified identity. Existing owners retain their original data. */
+  async personalAccountScope(
+    identity: Pick<VerifiedIdentity, "userId">,
+  ): Promise<string> {
+    const existing = await this.database.pool.query<{ id: string }>(
+      PERSONAL_ACCOUNT_SCOPE("$1"),
+      [identity.userId],
+    );
+    if (existing.rows[0]) return existing.rows[0].id;
     if (this.previewScope.getStore())
       throw new AccountError(
         403,
-        "Return to your account before setting it up.",
+        "This account has no personal activity to preview.",
       );
-    return this.createWorkspaceWithLock(
-      identity,
-      { name: "Personal account", requestKey: randomUUID() },
-      true,
-    );
-  }
-  async createWorkspace(
-    identity: VerifiedIdentity,
-    raw: unknown,
-  ): Promise<AccountWorkspace> {
-    const input = z
-      .object({ name: z.string().trim().min(2).max(80), requestKey: z.uuid() })
-      .strict()
-      .parse(raw);
-    return this.createWorkspaceWithLock(identity, input);
-  }
-  private async createWorkspaceWithLock(
-    identity: VerifiedIdentity,
-    input: { name: string; requestKey: string },
-    useExisting = false,
-  ): Promise<AccountWorkspace> {
+
     const client = await this.database.pool.connect();
     try {
       await client.query("BEGIN");
@@ -351,72 +313,28 @@ export class Accounts {
         "SELECT pg_advisory_xact_lock(hashtextextended($1,0))",
         ["account:" + identity.userId],
       );
-      if (useExisting) {
-        const existing = await client.query<AccountWorkspace>(
-          "SELECT w.id,w.name,m.role FROM octolab.workspace_memberships m JOIN octolab.workspaces w ON w.id=m.workspace_id WHERE m.user_id=$1 ORDER BY w.created_at,w.id LIMIT 1",
-          [identity.userId],
-        );
-        if (existing.rowCount) {
-          await client.query("COMMIT");
-          return existing.rows[0];
-        }
-      }
-      const old = await client.query(
-        "SELECT workspace_id,name FROM octolab.workspace_creation_requests WHERE user_id=$1 AND request_key=$2",
-        [identity.userId, input.requestKey],
-      );
-      if (old.rowCount) {
-        if (old.rows[0].name !== input.name)
-          throw new AccountError(
-            409,
-            "This workspace request was already used with a different name.",
-          );
-        const member = await client.query(
-          "SELECT role FROM octolab.workspace_memberships WHERE workspace_id=$1 AND user_id=$2",
-          [old.rows[0].workspace_id, identity.userId],
-        );
-        if (!member.rowCount)
-          throw new AccountError(
-            403,
-            "You no longer have access to that workspace.",
-          );
-        await client.query("COMMIT");
-        return {
-          id: old.rows[0].workspace_id,
-          name: old.rows[0].name,
-          role: member.rows[0].role,
-        };
-      }
-      const count = await client.query(
-        "SELECT count(*)::integer AS n FROM octolab.workspace_memberships WHERE user_id=$1",
+      const current = await client.query<{ id: string }>(
+        PERSONAL_ACCOUNT_SCOPE("$1"),
         [identity.userId],
       );
-      if (count.rows[0].n >= 10)
-        throw new AccountError(409, "Account workspace limit reached.");
-      const id = randomUUID();
-      await client.query(
-        "INSERT INTO octolab.workspaces(id,name) VALUES($1,$2)",
-        [id, input.name],
-      );
-      await client.query(
-        "INSERT INTO octolab.workspace_memberships VALUES($1,$2,'owner')",
-        [id, identity.userId],
-      );
-      await client.query(
-        "INSERT INTO octolab.workspace_creation_requests VALUES($1,$2,$3,$4)",
-        [identity.userId, input.requestKey, id, input.name],
-      );
-      await client.query(
-        "INSERT INTO octolab.account_audit_events(id,workspace_id,actor_user_id,type,data) VALUES($1,$2,$3,'workspace_created',$4)",
-        [
-          randomUUID(),
-          id,
-          identity.userId,
-          JSON.stringify({ name: input.name }),
-        ],
-      );
+      let id = current.rows[0]?.id;
+      if (!id) {
+        id = randomUUID();
+        await client.query(
+          "INSERT INTO octolab.workspaces(id,name) VALUES($1,'Personal account')",
+          [id],
+        );
+        await client.query(
+          "INSERT INTO octolab.workspace_memberships VALUES($1,$2,'owner')",
+          [id, identity.userId],
+        );
+        await client.query(
+          "INSERT INTO octolab.account_audit_events(id,workspace_id,actor_user_id,type,data) VALUES($1,$2,$3,'personal_account_created','{}')",
+          [randomUUID(), id, identity.userId],
+        );
+      }
       await client.query("COMMIT");
-      return { id, name: input.name, role: "owner" };
+      return id;
     } catch (error) {
       await client.query("ROLLBACK");
       throw error;

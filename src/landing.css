@@ -33,14 +33,7 @@
 }
 
 .landing-brand {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-weight: 600;
-  font-size: 18px;
-  letter-spacing: -0.4px;
-  text-decoration: none;
-  color: var(--foreground);
+  flex-shrink: 0;
 }
 
 .landing-nav-actions {
@@ -118,7 +111,7 @@
 }
 
 .status-dot.online {
-  background: #bdbdbb;
+  background: var(--data-ink);
 }
 
 .landing-section {
@@ -219,7 +212,7 @@
 }
 
 .landing-pill.on {
-  border-color: #555;
+  border-color: var(--border-strong);
   color: var(--foreground);
   background: var(--popover);
 }
@@ -305,5 +298,25 @@
 
   .landing-cta {
     padding: 24px 20px;
+  }
+}
+
+@media (max-width: 540px) {
+  .landing-nav {
+    flex-wrap: wrap;
+    height: auto;
+    gap: 10px;
+    padding-block: 10px;
+  }
+
+  .landing-nav-actions {
+    flex-wrap: wrap;
+    gap: 6px;
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .landing-nav-actions [data-slot="button"] {
+    padding-inline: 8px;
   }
 }

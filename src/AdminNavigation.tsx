@@ -11,7 +11,7 @@ import {
 } from "@untitledui/icons";
 const links = [
   { page: "admin", label: "Company reviews", icon: Building07 },
-  { page: "sessions", label: "Workspace operations", icon: Grid01 },
+  { page: "sessions", label: "Account activity", icon: Grid01 },
   { page: "disputes", label: "Payment disputes", icon: CreditCard01 },
   { page: "lab", label: "Provider lab", icon: TerminalSquare },
   { page: "tool-access", label: "Tool access", icon: Key01 },
@@ -20,7 +20,7 @@ const links = [
   { page: "tools", label: "Tool activity", icon: Link01 },
   { page: "cases", label: "Review cases", icon: ShieldTick },
 ];
-/** Same destinations in every admin shell, including routes without a workspace. */
+/** Same destinations in every admin shell. */
 export function AdminNavigation({
   page,
   onNavigate,

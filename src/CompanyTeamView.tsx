@@ -117,8 +117,8 @@ export function CompanyTeamView({ companyId }: { companyId: string }) {
             />
           </label>
           <p>
-            The person needs an existing confirmed octolab account. Adding them
-            grants access to this company only.
+            The person needs an existing confirmed Two Hands account. Adding
+            them grants access to this company only.
           </p>
           <Button type="submit" disabled={busy}>
             {busy ? "Saving…" : "Add analyst"}

@@ -158,7 +158,7 @@ export class ProviderBilling {
         if (!old)
           throw new ObservationError(
             404,
-            "The original import was not found in this workspace.",
+            "The original import was not found in this account.",
           );
         if (
           old.provider !== input.provider ||
@@ -219,7 +219,7 @@ export class ProviderBilling {
         (e) => e.kind === "batch" && e.value.id === batchId,
       );
       if (entry?.kind !== "batch")
-        throw new ObservationError(404, "Import not found in this workspace.");
+        throw new ObservationError(404, "Import not found in this account.");
       // A decision is final for this version. Corrections append a new batch and decision.
       if (
         entries.some((e) => e.kind === "review" && e.value.batchId === batchId)
