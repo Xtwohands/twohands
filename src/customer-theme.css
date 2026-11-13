@@ -129,12 +129,6 @@ body:has(.observation-shell[data-surface="user"], .th-landing, .account-page)
   }
 }
 
-.observation-shell[data-surface="user"] .obs-topbar > div:first-child,
-.observation-shell[data-surface="user"] .obs-footer {
-  color: var(--muted-foreground);
-  border-color: var(--border);
-}
-
 @media (min-width: 701px) {
   .observation-shell[data-surface="user"] .obs-topbar {
     display: none;

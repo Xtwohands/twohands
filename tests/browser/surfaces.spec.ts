@@ -14,6 +14,7 @@ test("public site, user dashboard, and operator console are separate surfaces", 
   await expect(
     page.getByRole("heading", { name: "Tool catalog" }),
   ).toBeVisible();
+  await expect(page.getByRole("contentinfo")).toBeVisible();
   await page.getByRole("button", { name: "Exa", exact: true }).click();
   await expect(page.getByRole("dialog").getByText("exa_search")).toBeVisible();
   await page.keyboard.press("Escape");
@@ -25,6 +26,7 @@ test("public site, user dashboard, and operator console are separate surfaces", 
   await expect(
     page.getByRole("heading", { name: "My dashboard", exact: true }),
   ).toBeVisible();
+  await expect(page.getByRole("contentinfo")).toHaveCount(0);
   if (test.info().project.name === "mobile")
     await page.getByRole("button", { name: "Open navigation" }).click();
   await expect(

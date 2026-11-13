@@ -1558,10 +1558,12 @@ export function ObservationApp() {
             </>
           )}
         </main>
-        <footer className="obs-footer">
-          <span>Intent → tool use → outcome</span>
-          <span>Observed calls. Explicit evaluations.</span>
-        </footer>
+        {!customerSidebar && (
+          <footer className="obs-footer">
+            <span>Intent → tool use → outcome</span>
+            <span>Observed calls. Explicit evaluations.</span>
+          </footer>
+        )}
       </div>
       <NewSession
         open={newOpen}
