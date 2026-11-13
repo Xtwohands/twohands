@@ -154,7 +154,13 @@ export async function companyReport(
       if (!offered) return false;
       const callIds = new Set(
         events
-          .filter((e) => e.id > offered.id && e.type === "tool_called")
+          // Selection means the agent chose. Calls octolab routed are not agent choices.
+          .filter(
+            (e) =>
+              e.id > offered.id &&
+              e.type === "tool_called" &&
+              e.data.selectedBy !== "server_route",
+          )
           .map((e) => e.data.callId),
       );
       callsAfterOffer.set(

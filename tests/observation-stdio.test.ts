@@ -79,7 +79,7 @@ async function connect(base = url, token = "stdio-test-token", scopedKey = "") {
 }
 it("bridges stdio to authenticated HTTP and records the client alongside cached evidence", async () => {
   await connect();
-  expect((await client.listTools()).tools).toHaveLength(8);
+  expect((await client.listTools()).tools).toHaveLength(9);
   const s = payload(
     await client.callTool({
       name: "record_intent",
