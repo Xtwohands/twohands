@@ -1,3 +1,4 @@
+import { availability } from "./helpers";
 import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
 import { Store } from "../server/store";
 import { Engine } from "../server/engine";
@@ -12,6 +13,7 @@ beforeEach(() => {
   store = new Store(":memory:");
   engine = new Engine(store);
   vi.spyOn(engine, "available").mockReturnValue({
+    ...availability(false),
     exa: true,
     tavily: true,
     firecrawl: true,

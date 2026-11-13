@@ -1,3 +1,4 @@
+import { providerIds } from "../server/provider-catalog";
 import { randomUUID } from "node:crypto";
 import type { Intent, Task } from "../server/types";
 import type { Store } from "../server/store";
@@ -40,4 +41,11 @@ export function providerResults(provider: "exa" | "tavily", count = 3) {
         : { content: "This is a long evidence excerpt. ".repeat(6) }),
     })),
   };
+}
+/** Every catalog provider set to the same availability, for engine mocks. */
+export function availability(value: boolean) {
+  return Object.fromEntries(providerIds.map((p) => [p, value])) as Record<
+    (typeof providerIds)[number],
+    boolean
+  >;
 }

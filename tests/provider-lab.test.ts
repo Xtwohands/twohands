@@ -1,3 +1,4 @@
+import type { SearchProviderId } from "../server/provider-catalog";
 import { beforeEach, afterEach, it, expect, vi } from "vitest";
 import request from "supertest";
 import { Store } from "../server/store";
@@ -24,7 +25,7 @@ const previous = {
 };
 const search = vi.fn(
   async (
-    provider: "exa" | "tavily",
+    provider: SearchProviderId,
     query: string,
     _domains: string[],
     id: string,
