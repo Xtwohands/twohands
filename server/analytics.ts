@@ -1,3 +1,4 @@
+import { isExtractProvider, providerIds } from "./provider-catalog.js";
 import type { Store } from "./store.js";
 import type { Candidate, TraceEvent } from "./types.js";
 export async function analytics(store: Store) {
@@ -29,7 +30,7 @@ export async function analytics(store: Store) {
       }
       if (
         e.type === "route_selected" &&
-        e.data.provider !== "firecrawl" &&
+        !isExtractProvider(e.data.provider) &&
         !seenSelections.has(key)
       ) {
         seenSelections.add(key);
@@ -40,74 +41,70 @@ export async function analytics(store: Store) {
   const winners = new Map(
     firstSelections.map((e) => [e.data.invocationId, e.data.provider]),
   );
-  const providers = (["exa", "tavily", "firecrawl"] as const).map(
-    (provider) => {
-      const responses = events.filter(
-        (e) => e.type === "provider_response" && e.data.provider === provider,
-      );
-      const candidateEvents = firstCandidates.filter((e) =>
-        e.data.candidates.some((c: Candidate) => c.provider === provider),
-      );
-      const calls = new Set(responses.map((e) => e.callId));
-      const checks = events.filter(
-        (e) => e.type === "outcome_evaluated" && calls.has(e.callId),
-      );
-      const selected =
-        provider === "firecrawl"
-          ? events.filter(
-              (e) =>
-                e.type === "route_selected" && e.data.provider === provider,
-            )
-          : firstSelections.filter((e) => e.data.provider === provider);
-      const eligible = candidateEvents.filter((e) =>
-        e.data.candidates.some(
-          (c: Candidate) => c.provider === provider && c.eligible,
-        ),
-      );
-      const lossGroups = new Map<string, TraceEvent[]>();
-      for (const event of candidateEvents) {
-        const c = event.data.candidates.find(
-          (c: Candidate) => c.provider === provider,
-        ) as Candidate;
-        const winner = winners.get(event.data.invocationId);
-        const reasons = c.eligible
-          ? winner && winner !== provider
-            ? ["Lower weighted score on initial route"]
-            : []
-          : c.reasons;
-        for (const reason of reasons)
-          lossGroups.set(reason, [...(lossGroups.get(reason) || []), event]);
-      }
-      return {
-        provider,
-        suppressed: false as const,
-        performanceSuppressed: false,
-        eligible: provider === "firecrawl" ? null : count(eligible),
-        selected: count(selected),
-        calls: responses.length,
-        httpSuccesses: responses.filter(
-          (e) => e.data.httpStatus >= 200 && e.data.httpStatus < 300,
-        ).length,
-        successes: responses.filter((e) => e.data.success).length,
-        latencyMs: responses.length
-          ? Math.round(
-              responses.reduce((a, e) => a + e.data.latencyMs, 0) /
-                responses.length,
-            )
-          : null,
-        estimatedMicros: events
-          .filter(
-            (e) => e.type === "budget_settled" && e.data.provider === provider,
+  const providers = providerIds.map((provider) => {
+    const responses = events.filter(
+      (e) => e.type === "provider_response" && e.data.provider === provider,
+    );
+    const candidateEvents = firstCandidates.filter((e) =>
+      e.data.candidates.some((c: Candidate) => c.provider === provider),
+    );
+    const calls = new Set(responses.map((e) => e.callId));
+    const checks = events.filter(
+      (e) => e.type === "outcome_evaluated" && calls.has(e.callId),
+    );
+    const selected = isExtractProvider(provider)
+      ? events.filter(
+          (e) => e.type === "route_selected" && e.data.provider === provider,
+        )
+      : firstSelections.filter((e) => e.data.provider === provider);
+    const eligible = candidateEvents.filter((e) =>
+      e.data.candidates.some(
+        (c: Candidate) => c.provider === provider && c.eligible,
+      ),
+    );
+    const lossGroups = new Map<string, TraceEvent[]>();
+    for (const event of candidateEvents) {
+      const c = event.data.candidates.find(
+        (c: Candidate) => c.provider === provider,
+      ) as Candidate;
+      const winner = winners.get(event.data.invocationId);
+      const reasons = c.eligible
+        ? winner && winner !== provider
+          ? ["Lower weighted score on initial route"]
+          : []
+        : c.reasons;
+      for (const reason of reasons)
+        lossGroups.set(reason, [...(lossGroups.get(reason) || []), event]);
+    }
+    return {
+      provider,
+      suppressed: false as const,
+      performanceSuppressed: false,
+      eligible: isExtractProvider(provider) ? null : count(eligible),
+      selected: count(selected),
+      calls: responses.length,
+      httpSuccesses: responses.filter(
+        (e) => e.data.httpStatus >= 200 && e.data.httpStatus < 300,
+      ).length,
+      successes: responses.filter((e) => e.data.success).length,
+      latencyMs: responses.length
+        ? Math.round(
+            responses.reduce((a, e) => a + e.data.latencyMs, 0) /
+              responses.length,
           )
-          .reduce((a, e) => a + e.data.estimateMicros, 0),
-        coveragePasses: checks.filter((e) => e.data.pass).length,
-        coverageChecks: checks.length,
-        lossReasons: [...lossGroups].map(
-          ([reason, items]) => [reason, count(items)] as const,
-        ),
-      };
-    },
-  );
+        : null,
+      estimatedMicros: events
+        .filter(
+          (e) => e.type === "budget_settled" && e.data.provider === provider,
+        )
+        .reduce((a, e) => a + e.data.estimateMicros, 0),
+      coveragePasses: checks.filter((e) => e.data.pass).length,
+      coverageChecks: checks.length,
+      lossReasons: [...lossGroups].map(
+        ([reason, items]) => [reason, count(items)] as const,
+      ),
+    };
+  });
   const failedCoverage = new Set(
     events
       .filter((e) => e.type === "outcome_evaluated" && e.data.pass === false)

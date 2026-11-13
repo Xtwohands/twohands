@@ -1,3 +1,4 @@
+import { providerIds, providerLabel } from "../server/provider-catalog";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Download01, Upload01 } from "@untitledui/icons";
 import { Button } from "./components/ui/button";
@@ -639,11 +640,13 @@ function BillingImport({
               Provider
               <select
                 name="provider"
-                defaultValue={correction?.provider ?? "exa"}
+                defaultValue={correction?.provider ?? providerIds[0]}
               >
-                <option value="exa">Exa</option>
-                <option value="tavily">Tavily</option>
-                <option value="firecrawl">Firecrawl</option>
+                {providerIds.map((p) => (
+                  <option key={p} value={p}>
+                    {providerLabel(p)}
+                  </option>
+                ))}
               </select>
             </label>
             <label className="billing-label">

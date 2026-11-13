@@ -1,3 +1,4 @@
+import { providerIds } from "./provider-catalog.js";
 import type { Observatory } from "./observation.js";
 import type { ProviderId } from "./types.js";
 
@@ -52,7 +53,7 @@ export async function providerActivity(
         .reduce((n, c) => n + c.estimateMicros, 0),
     };
   });
-  const coUsage = (["exa", "tavily", "firecrawl"] as ProviderId[])
+  const coUsage = (providerIds as ProviderId[])
     .filter((p) => p !== provider)
     .map((p) => ({
       provider: p,

@@ -1,3 +1,9 @@
+import {
+  isProviderId,
+  providerEntry,
+  providerIds,
+  providerLabel,
+} from "../server/provider-catalog";
 import { ToolSettingsView } from "./ToolSettingsView";
 import {
   CompanyPortal,
@@ -179,9 +185,7 @@ function readRoute() {
       ? page
       : "sessions") as Page,
     id,
-    labProvider: ["exa", "tavily", "firecrawl"].includes(section)
-      ? section
-      : "all",
+    labProvider: isProviderId(section) ? section : "all",
     labFinding: ["missed", "unreviewed", "errors", "truncated"].includes(
       finding,
     )
@@ -248,24 +252,24 @@ function ProviderUsageSummary({ calls }: { calls: SessionDetail["calls"] }) {
   return (
     <div className="provider-usage-summary">
       <strong>Provider-reported usage</strong>
-      {["exa", "tavily", "firecrawl"].map((provider) => {
+      {providerIds.map((provider) => {
+        const usd = providerEntry(provider)!.usageUnit === "usd";
         const completed = calls.filter(
           (c) => c.provider === provider && c.status !== "running",
         );
         if (!completed.length) return null;
         const reported = completed.filter((c) => {
           const r = c.result as Record<string, any> | undefined;
-          const v =
-            provider === "exa"
-              ? r?.usage?.providerReportedUsd
-              : (r?.usage?.credits ?? r?.credits);
+          const v = usd
+            ? r?.usage?.providerReportedUsd
+            : (r?.usage?.credits ?? r?.credits);
           return typeof v === "number" && Number.isFinite(v) && v >= 0;
         });
         const total = reported.reduce((sum, c) => {
           const r = c.result as Record<string, any>;
           return (
             sum +
-            (provider === "exa"
+            (usd
               ? r.usage.providerReportedUsd
               : (r.usage?.credits ?? r.credits))
           );
@@ -274,7 +278,7 @@ function ProviderUsageSummary({ calls }: { calls: SessionDetail["calls"] }) {
           <p className="field-hint" key={provider}>
             {provider}:{" "}
             {reported.length
-              ? provider === "exa"
+              ? usd
                 ? `$${total.toFixed(6).replace(/0+$/, "").replace(/\.$/, ".00")}`
                 : `${total} credits`
               : "Not reported"}
@@ -734,7 +738,7 @@ export function ObservationApp() {
             { id: "plans", label: "Test plans", icon: FileCheck02 },
           ].map((p) => (
             <a
-              href={`#company/${route.id || "exa"}/${p.id}`}
+              href={`#company/${route.id || providerIds[0]}/${p.id}`}
               key={p.id}
               className={route.section === p.id ? "selected" : ""}
             >
@@ -862,11 +866,7 @@ export function ObservationApp() {
           {route.page === "company" && (
             <CompanyView
               key={connectionRevision}
-              provider={
-                route.id === "tavily" || route.id === "firecrawl"
-                  ? route.id
-                  : "exa"
-              }
+              provider={isProviderId(route.id) ? route.id : providerIds[0]}
               section={route.section}
             />
           )}
@@ -1159,13 +1159,7 @@ export function ObservationApp() {
                 {catalog.map((t) => (
                   <Panel
                     key={t.tool}
-                    title={
-                      t.provider === "exa"
-                        ? "Exa"
-                        : t.provider === "tavily"
-                          ? "Tavily"
-                          : "Firecrawl"
-                    }
+                    title={providerLabel(t.provider)}
                     action={
                       <StateBadge
                         label={t.available ? "Available" : "Not configured"}
@@ -1431,13 +1425,7 @@ export function ObservationApp() {
                         <span className={`provider-letter ${t.provider}`}>
                           {t.provider[0]}
                         </span>
-                        <strong>
-                          {t.provider === "exa"
-                            ? "Exa"
-                            : t.provider === "tavily"
-                              ? "Tavily"
-                              : "Firecrawl"}
-                        </strong>
+                        <strong>{providerLabel(t.provider)}</strong>
                         <StateBadge
                           label={t.available ? "Configured" : "Missing key"}
                         />

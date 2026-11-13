@@ -1,3 +1,8 @@
+import {
+  providerEntry,
+  providerIds,
+  searchProviderIds,
+} from "./provider-catalog.js";
 import { workspaceAllowanceAdminRoutes } from "./workspace-allowance-api.js";
 import { ToolSettings } from "./tool-settings.js";
 import { toolSettingsRoutes } from "./tool-settings-api.js";
@@ -235,9 +240,7 @@ export function createApp(
   fundingRoutes(app, funding, stripeFunding);
   providerLabRoutes(app, providerLab);
   app.get("/api/provider-activity/:provider", async (req, res) => {
-    const provider = z
-        .enum(["exa", "tavily", "firecrawl"])
-        .safeParse(req.params.provider),
+    const provider = z.enum(providerIds).safeParse(req.params.provider),
       days = z.enum(["7", "30", "90"]).safeParse(req.query.days ?? "30");
     if (!provider.success || !days.success) {
       res.status(400).json({
@@ -250,9 +253,7 @@ export function createApp(
     );
   });
   app.get("/api/company-insights/:provider", async (req, res) => {
-    const p = z
-      .enum(["exa", "tavily", "firecrawl"])
-      .safeParse(req.params.provider);
+    const p = z.enum(providerIds).safeParse(req.params.provider);
     const source = z
       .enum(["demo", "local"])
       .safeParse(req.query.source ?? "demo");
@@ -312,7 +313,7 @@ export function createApp(
       ok: true,
       providers: engine.available(),
       providerAuth: Object.fromEntries(
-        (["exa", "tavily", "firecrawl"] as const).map((p) => [
+        providerIds.map((p) => [
           p,
           engine.available()[p] ? providerAuthMode(p) : "unconfigured",
         ]),
@@ -561,10 +562,11 @@ export function createApp(
       return;
     }
     const available = engine.available();
-    if (!available.exa && !available.tavily) {
+    if (!searchProviderIds.some((p) => available[p])) {
       res.status(409).json({
-        error:
-          "Configure EXA_API_KEY or TAVILY_API_KEY on the server before running live research.",
+        error: `Configure ${searchProviderIds
+          .map((p) => providerEntry(p)!.credentialEnv)
+          .join(" or ")} on the server before running live research.`,
       });
       return;
     }
@@ -573,7 +575,7 @@ export function createApp(
     if (
       remaining <
       Math.min(
-        ...(["exa", "tavily"] as const)
+        ...searchProviderIds
           .filter((p) => available[p])
           .map((p) => config.prices[p]),
       )

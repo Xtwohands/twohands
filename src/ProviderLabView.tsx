@@ -1,3 +1,9 @@
+import {
+  isExtractProvider,
+  providerIds,
+  providerLabel,
+  providerOperation,
+} from "../server/provider-catalog";
 import { useEffect, useRef, useState } from "react";
 import {
   Play,
@@ -43,11 +49,9 @@ import type {
 
 import { labMeasurements, providerUsage } from "../server/provider-lab-metrics";
 
-export const providerNames: Record<ProviderId, string> = {
-  exa: "Exa",
-  tavily: "Tavily",
-  firecrawl: "Firecrawl",
-};
+export const providerNames = Object.fromEntries(
+  providerIds.map((p) => [p, providerLabel(p)]),
+) as Record<ProviderId, string>;
 export interface LabOverview {
   suiteVersion: string;
   methodology: string;
@@ -101,7 +105,7 @@ export function BenchmarkTable({
               <td>
                 <strong>{providerNames[m.provider]}</strong>
                 <small>
-                  {m.provider === "firecrawl"
+                  {isExtractProvider(m.provider)
                     ? "Page extraction"
                     : "Web search"}
                 </small>
@@ -139,11 +143,7 @@ export function ProviderLabView({
   const [run, setRun] = useState<LabRun>();
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  const [providers, setProviders] = useState<ProviderId[]>([
-    "exa",
-    "tavily",
-    "firecrawl",
-  ]);
+  const [providers, setProviders] = useState<ProviderId[]>([...providerIds]);
   const [receiptId, setReceiptId] = useState<string | null>(null);
   const [notice, setNotice] = useState("");
   const [suiteId, setSuiteId] = useState("public-reference-v1");
@@ -154,8 +154,9 @@ export function ProviderLabView({
     duplicate?: boolean;
   } | null>(null);
   const [baselineId, setBaselineId] = useState("none");
-  const [comparisonProvider, setComparisonProvider] =
-    useState<ProviderId>("exa");
+  const [comparisonProvider, setComparisonProvider] = useState<ProviderId>(
+    providerIds[0],
+  );
   const requestKey = useRef<string | null>(null);
   const requestSignature = useRef("");
   const initializedProviders = useRef(false);
@@ -293,8 +294,8 @@ export function ProviderLabView({
   const selectedSuite =
     data?.suites.find((s) => s.id === suiteId) ?? data?.suites[0];
   const plannedCalls = (id: ProviderId) =>
-    selectedSuite?.cases.filter((c) =>
-      id === "firecrawl" ? c.kind === "extract" : c.kind === "search",
+    selectedSuite?.cases.filter(
+      (c) => c.kind === (providerOperation(id) ?? "search"),
     ).length ?? 0;
   const estimate =
     mode === "replay"
@@ -363,10 +364,9 @@ export function ProviderLabView({
                         (p) =>
                           p.configured &&
                           p.enabled !== false &&
-                          suite?.cases.some((c) =>
-                            p.id === "firecrawl"
-                              ? c.kind === "extract"
-                              : c.kind === "search",
+                          suite?.cases.some(
+                            (c) =>
+                              c.kind === (providerOperation(p.id) ?? "search"),
                           ),
                       )
                       .map((p) => p.id),
@@ -508,7 +508,7 @@ export function ProviderLabView({
                         </small>
                       </span>
                       <Badge variant="outline">
-                        {p.id === "firecrawl" ? "Extract" : "Search"}
+                        {isExtractProvider(p.id) ? "Extract" : "Search"}
                       </Badge>
                     </label>
                   ))}
@@ -976,10 +976,9 @@ export function ProviderLabView({
                       (p) =>
                         p.configured &&
                         p.enabled !== false &&
-                        suite.cases.some((c) =>
-                          p.id === "firecrawl"
-                            ? c.kind === "extract"
-                            : c.kind === "search",
+                        suite.cases.some(
+                          (c) =>
+                            c.kind === (providerOperation(p.id) ?? "search"),
                         ),
                     )
                     .map((p) => p.id) ?? [],

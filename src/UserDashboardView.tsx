@@ -1,4 +1,12 @@
 import {
+  providerCatalog,
+  providerEntry,
+  providerForTool,
+  providerIds,
+  providerLabel,
+  toolOperation,
+} from "../server/provider-catalog";
+import {
   ProviderBillingView,
   ProviderAdaptersView,
 } from "./ProviderBillingView";
@@ -109,21 +117,10 @@ const labels: Record<DashboardSection, [string, string]> = {
     "One MCP connection. Your tools, in the agent you already use.",
   ],
 };
-const toolLabels: Record<ToolName, string> = {
-  exa_search: "Web search with page text",
-  tavily_search: "Web search with excerpts",
-  firecrawl_extract: "Page extraction",
-};
-export function providerLabel(provider: string) {
-  return (
-    (
-      { exa: "Exa", tavily: "Tavily", firecrawl: "Firecrawl" } as Record<
-        string,
-        string
-      >
-    )[provider] ?? provider
-  );
-}
+const toolLabels = Object.fromEntries(
+  providerCatalog.map((p) => [p.tool, p.summary]),
+) as Record<ToolName, string>;
+export { providerLabel };
 function latency(ms: number | null | undefined) {
   return ms == null
     ? "—"
@@ -137,16 +134,7 @@ function ProviderIcon({ provider }: { provider: string }) {
       className={`ws-provider-icon ws-provider-${provider}`}
       aria-hidden="true"
     >
-      <img
-        src={
-          provider === "exa"
-            ? "/providers/exa-icon.svg"
-            : provider === "tavily"
-              ? "/providers/tavily.svg"
-              : "/providers/firecrawl.png"
-        }
-        alt=""
-      />
+      <img src={providerEntry(provider)?.logo ?? ""} alt="" />
     </span>
   );
 }
@@ -681,9 +669,9 @@ export function UserDashboardView({
                   }}
                   options={[
                     ["all", "All providers"],
-                    ["exa", "Exa"],
-                    ["tavily", "Tavily"],
-                    ["firecrawl", "Firecrawl"],
+                    ...providerIds.map(
+                      (p) => [p, providerLabel(p)] as [string, string],
+                    ),
                   ]}
                 />
                 <NativeSelect
@@ -1130,8 +1118,7 @@ function CatalogView({
                 .toLowerCase()
                 .includes(query.trim().toLowerCase())) &&
             (category === "all" ||
-              (t.tool === "firecrawl_extract" ? "extract" : "search") ===
-                category) &&
+              (toolOperation(t.tool) ?? "search") === category) &&
             (availability === "all" ||
               (availability === "ready"
                 ? t.available && enabled(t.tool)
@@ -1196,9 +1183,7 @@ function CatalogView({
               {
                 catalog.filter(
                   (t) =>
-                    id === "all" ||
-                    (t.tool === "firecrawl_extract" ? "extract" : "search") ===
-                      id,
+                    id === "all" || (toolOperation(t.tool) ?? "search") === id,
                 ).length
               }
             </span>
@@ -1232,10 +1217,13 @@ function CatalogView({
             <p>{t.description}</p>
             <div className="ws-tool-tags">
               <span>
-                {t.tool === "firecrawl_extract" ? "Extraction" : "Web search"}
+                {toolOperation(t.tool) === "extract"
+                  ? "Extraction"
+                  : "Web search"}
               </span>
               <span>
-                {t.tool === "tavily_search" ? "Excerpts" : "Page text"}
+                {providerEntry(providerForTool(t.tool) ?? "")?.resultDetail ??
+                  "Page text"}
               </span>
             </div>
             <div className="ws-tool-stats">

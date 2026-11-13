@@ -11,6 +11,17 @@ import {
 import type { ToolName } from "./observation-types.js";
 import type { ProviderId } from "./types.js";
 import { providerTools } from "./provider-identifiers.js";
+import { providerEntry } from "./provider-catalog.js";
+
+/** Credential lookup driven by the catalog's environment variable names. */
+function catalogCredential(provider: ProviderId) {
+  const entry = providerEntry(provider)!;
+  return {
+    reference: entry.credentialEnv,
+    resolve: () => config.keys[provider],
+    accountReference: () => process.env[entry.accountReferenceEnv],
+  };
+}
 
 const nonnegative = z.number().finite().nonnegative();
 const status = z.number().int().min(100).max(599);
@@ -72,12 +83,7 @@ function quote(provider: ProviderId, request: AdapterRequest): AdapterQuote {
     units: provider === "exa" ? null : units,
     unit: provider === "exa" ? "request plus additional results" : "credits",
     rateCardVersion: config.rateCardVersion,
-    pricingSource:
-      provider === "exa"
-        ? "https://exa.ai/pricing"
-        : provider === "tavily"
-          ? "https://docs.tavily.com/documentation/api-credits"
-          : "https://docs.firecrawl.dev/billing",
+    pricingSource: providerEntry(provider)!.pricingSource,
     pricingCheckedAt: "2026-11-02",
     basis,
     uncertainty:
@@ -97,11 +103,7 @@ const definitions: AdapterDefinition<ToolName, ProviderId>[] = [
     pageText: true,
     searchDepth: false,
     capabilities: capabilityData.exa_search,
-    credential: {
-      reference: "EXA_API_KEY",
-      resolve: () => config.keys.exa,
-      accountReference: () => process.env.EXA_ACCOUNT_REFERENCE,
-    },
+    credential: catalogCredential("exa"),
     input: adapterInput("search"),
     result: searchResult("exa"),
     estimate: (r) => quote("exa", r),
@@ -131,11 +133,7 @@ const definitions: AdapterDefinition<ToolName, ProviderId>[] = [
     pageText: false,
     searchDepth: true,
     capabilities: capabilityData.tavily_search,
-    credential: {
-      reference: "TAVILY_API_KEY",
-      resolve: () => config.keys.tavily,
-      accountReference: () => process.env.TAVILY_ACCOUNT_REFERENCE,
-    },
+    credential: catalogCredential("tavily"),
     input: adapterInput("search", true),
     result: searchResult("tavily"),
     estimate: (r) => quote("tavily", r),
@@ -162,11 +160,7 @@ const definitions: AdapterDefinition<ToolName, ProviderId>[] = [
     pageText: true,
     searchDepth: false,
     capabilities: capabilityData.firecrawl_extract,
-    credential: {
-      reference: "FIRECRAWL_API_KEY",
-      resolve: () => config.keys.firecrawl,
-      accountReference: () => process.env.FIRECRAWL_ACCOUNT_REFERENCE,
-    },
+    credential: catalogCredential("firecrawl"),
     input: adapterInput("extract"),
     result: extractResult,
     estimate: (r) => quote("firecrawl", r),

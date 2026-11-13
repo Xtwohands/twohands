@@ -1,3 +1,4 @@
+import { providerIds, providerLabel } from "../server/provider-catalog";
 import { AdminNavigation } from "./AdminNavigation";
 import { AdminMfa } from "./AdminMfa";
 import { CompanyTeamView } from "./CompanyTeamView";
@@ -775,9 +776,11 @@ export function AdminCompanyReview() {
                     }
                   >
                     <option value="">Choose an integration</option>
-                    <option value="exa">Exa</option>
-                    <option value="tavily">Tavily</option>
-                    <option value="firecrawl">Firecrawl</option>
+                    {providerIds.map((p) => (
+                      <option key={p} value={p}>
+                        {providerLabel(p)}
+                      </option>
+                    ))}
                   </select>
                 </label>
                 <label className="portal-checkbox">

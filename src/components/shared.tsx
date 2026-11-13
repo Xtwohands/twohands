@@ -1,3 +1,4 @@
+import { providerEntry } from "../../server/provider-catalog";
 import type React from "react";
 
 export function Stat({
@@ -26,7 +27,7 @@ export function Stat({
 export function ProviderMark({ provider }: { provider: string }) {
   return (
     <span className={`provider-mark ${provider}`}>
-      {provider === "exa" ? "e" : provider === "tavily" ? "t" : "f"}
+      {providerEntry(provider)?.initial ?? provider.charAt(0)}
     </span>
   );
 }

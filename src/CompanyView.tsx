@@ -1,3 +1,4 @@
+import { isProviderId, toolForProvider } from "../server/provider-catalog";
 import { providerLogos } from "./components/ToolOptions";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -51,7 +52,7 @@ function readDemoPlans(): Experiment[] {
             (p) =>
               p &&
               typeof p.id === "string" &&
-              ["exa", "tavily", "firecrawl"].includes(p.provider) &&
+              isProviderId(p.provider) &&
               ["planned", "testing", "reviewed"].includes(p.status) &&
               ["retrieval", "agent_choice", "integration"].includes(
                 p.verification,
@@ -436,11 +437,7 @@ export function CompanyView({
                 description="Describe this integration clearly before judging adoption."
               >
                 <div className="company-capability">
-                  <code>
-                    {provider === "firecrawl"
-                      ? "firecrawl_extract"
-                      : `${provider}_search`}
-                  </code>
+                  <code>{toolForProvider(provider)}</code>
                   <p>{report.capabilities.description}</p>
                   <strong>When to use it</strong>
                   <p>{report.capabilities.useWhen}</p>

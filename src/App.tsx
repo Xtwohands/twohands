@@ -1,3 +1,8 @@
+import {
+  providerEntry,
+  providerIds,
+  providerLabel,
+} from "../server/provider-catalog";
 import { useEffect, useState, useCallback, useRef } from "react";
 import {
   Activity,
@@ -767,27 +772,15 @@ export function App() {
               Credentials are read from server environment variables. They are
               never sent to this browser.
             </p>
-            {(["exa", "tavily", "firecrawl"] as const).map((p) => (
+            {providerIds.map((p) => (
               <div key={p} className="provider-connection">
                 <ProviderMark provider={p} />
                 <div>
-                  <strong>
-                    {p === "exa"
-                      ? "Exa"
-                      : p === "tavily"
-                        ? "Tavily"
-                        : "Firecrawl"}
-                  </strong>
-                  <code>{p.toUpperCase()}_API_KEY</code>
+                  <strong>{providerLabel(p)}</strong>
+                  <code>{providerEntry(p)!.credentialEnv}</code>
                   <a
                     className="setup-link"
-                    href={
-                      p === "exa"
-                        ? "https://dashboard.exa.ai"
-                        : p === "tavily"
-                          ? "https://app.tavily.com"
-                          : "https://www.firecrawl.dev/app/api-keys"
-                    }
+                    href={providerEntry(p)!.keySetupUrl}
                     target="_blank"
                     rel="noopener noreferrer"
                   >

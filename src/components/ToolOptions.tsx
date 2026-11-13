@@ -1,3 +1,4 @@
+import { providerCatalog } from "../../server/provider-catalog";
 import {
   Accordion,
   AccordionContent,
@@ -29,11 +30,9 @@ type ToolOption = Pick<
     ReturnType<Observatory["catalog"]>
   >[number]["reputation"];
 };
-export const providerLogos = {
-  exa: "/providers/exa-icon.svg",
-  tavily: "/providers/tavily.svg",
-  firecrawl: "/providers/firecrawl.png",
-} as const;
+export const providerLogos = Object.fromEntries(
+  providerCatalog.map((p) => [p.id, p.logo]),
+) as Record<(typeof providerCatalog)[number]["id"], string>;
 
 function priceLabel(tool: ToolOption) {
   const quotes = tool.requestEstimates ?? [];

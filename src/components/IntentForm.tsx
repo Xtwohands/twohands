@@ -1,3 +1,9 @@
+import {
+  isExtractProvider,
+  providerIds,
+  providerLabel,
+  searchProviderIds,
+} from "../../server/provider-catalog";
 import { useState } from "react";
 import {
   Activity,
@@ -241,7 +247,7 @@ export function IntentForm({
                   planned {supporting.trim() ? "queries" : "query"} ·{" "}
                   {money(
                     (health
-                      ? (["exa", "tavily"] as const)
+                      ? searchProviderIds
                           .filter((p) => health.providers[p])
                           .reduce((sum, p) => sum + health.estimates[p], 0)
                       : 0) *
@@ -309,19 +315,13 @@ export function IntentForm({
           <p className="rail-intro">
             One normalized tool. Multiple real providers.
           </p>
-          {(["exa", "tavily", "firecrawl"] as const).map((p) => (
+          {providerIds.map((p) => (
             <div className="provider-row" key={p}>
               <ProviderMark provider={p} />
               <div>
-                <b>
-                  {p === "exa"
-                    ? "Exa"
-                    : p === "tavily"
-                      ? "Tavily"
-                      : "Firecrawl"}
-                </b>
+                <b>{providerLabel(p)}</b>
                 <small>
-                  {p === "firecrawl"
+                  {isExtractProvider(p)
                     ? "Page extraction · optional"
                     : "Web search"}
                 </small>

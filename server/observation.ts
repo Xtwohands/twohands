@@ -1,3 +1,4 @@
+import { isExtractProvider, providerToolNames } from "./provider-catalog.js";
 import { providerWork } from "./provider-settings-gate.js";
 import {
   applyOperatorAllowance,
@@ -155,8 +156,8 @@ export class Observatory {
       .object({
         revision: z.number().int().min(0),
         disabledTools: z
-          .array(z.enum(["exa_search", "tavily_search", "firecrawl_extract"]))
-          .max(3),
+          .array(z.enum(providerToolNames))
+          .max(providerToolNames.length),
       })
       .strict()
       .parse(raw);
@@ -698,19 +699,18 @@ export class Observatory {
         requestKey: input.requestKey,
         tool: input.tool,
         provider,
-        arguments:
-          provider === "firecrawl"
-            ? { url: input.url }
-            : {
-                query: input.query,
-                domains: input.domains,
-                ...(input.maxResults !== undefined
-                  ? { maxResults: input.maxResults }
-                  : {}),
-                ...(input.searchDepth !== undefined
-                  ? { searchDepth: input.searchDepth }
-                  : {}),
-              },
+        arguments: isExtractProvider(provider)
+          ? { url: input.url }
+          : {
+              query: input.query,
+              domains: input.domains,
+              ...(input.maxResults !== undefined
+                ? { maxResults: input.maxResults }
+                : {}),
+              ...(input.searchDepth !== undefined
+                ? { searchDepth: input.searchDepth }
+                : {}),
+            },
         costEstimate: estimate,
         adapter: providerRegistry.snapshot(input.tool),
         providerAccountReference: await providerAccountForCall(

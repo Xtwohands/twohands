@@ -1,3 +1,4 @@
+import { providerIds } from "./provider-catalog.js";
 /** Shared by live export and the read-only recording viewer. No Node-only imports. */
 const scalarFields = [
   "invocationId",
@@ -28,7 +29,7 @@ const reasonAllowlist = new Set([
   "Already attempted for this invocation",
 ]);
 const signalNames = new Set(["cost", "latency", "reliability", "quality"]);
-const providers = new Set(["exa", "tavily", "firecrawl"]);
+const providers = new Set<string>(providerIds);
 export function sanitizedEventData(
   data: Record<string, unknown>,
   type: string,

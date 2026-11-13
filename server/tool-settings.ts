@@ -1,3 +1,4 @@
+import { providerIds } from "./provider-catalog.js";
 import { createHash, randomUUID } from "node:crypto";
 import type { PoolClient } from "pg";
 import { z } from "zod";
@@ -14,7 +15,7 @@ import type {
   ToolSettingsView,
 } from "./tool-settings-types.js";
 
-export const providerIds = ["exa", "tavily", "firecrawl"] as const;
+export { providerIds };
 const micro = z.number().int().min(0).max(10_000_000);
 const provider = z
   .object({

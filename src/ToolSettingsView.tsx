@@ -1,3 +1,4 @@
+import { providerIds, providerLabel } from "../server/provider-catalog";
 import { useEffect, useRef, useState } from "react";
 import type {
   ToolSettingsView as Settings,
@@ -19,7 +20,7 @@ import {
 import { Panel, InlineError, date } from "./observation-ui";
 import "./tool-settings.css";
 import { useActorGeneration } from "./useActorGeneration";
-const providers: ProviderId[] = ["exa", "tavily", "firecrawl"];
+const providers: ProviderId[] = [...providerIds];
 type History = {
   actorId: string;
   actorEmail?: string | null;
@@ -40,7 +41,7 @@ export function ToolSettingsView() {
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
   const [key, setKey] = useState("");
-  const [provider, setProvider] = useState<ProviderId>("exa");
+  const [provider, setProvider] = useState<ProviderId>(providerIds[0]);
   const requestKey = useRef(crypto.randomUUID());
   const allowed =
     account.profile?.isAdmin &&
@@ -176,13 +177,7 @@ export function ToolSettingsView() {
                 <div className="platform-provider-grid">
                   {providers.map((id) => (
                     <fieldset key={id}>
-                      <legend>
-                        {id === "exa"
-                          ? "Exa"
-                          : id === "tavily"
-                            ? "Tavily"
-                            : "Firecrawl"}
-                      </legend>
+                      <legend>{providerLabel(id)}</legend>
                       <label
                         className="platform-enabled"
                         htmlFor={`${id}-enabled`}
@@ -354,9 +349,11 @@ export function ToolSettingsView() {
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="exa">Exa</SelectItem>
-                        <SelectItem value="tavily">Tavily</SelectItem>
-                        <SelectItem value="firecrawl">Firecrawl</SelectItem>
+                        {providerIds.map((p) => (
+                          <SelectItem key={p} value={p}>
+                            {providerLabel(p)}
+                          </SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
                   </div>

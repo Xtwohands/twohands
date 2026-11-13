@@ -1,3 +1,4 @@
+import type { SearchProviderId } from "./provider-catalog.js";
 import { randomUUID } from "node:crypto";
 import { config, providerAuthMode } from "./config.js";
 import type { ProviderId, Source } from "./types.js";
@@ -32,7 +33,7 @@ function clean(value: unknown, max: number) {
   return typeof value === "string" ? value.slice(0, max) : "";
 }
 export async function search(
-  provider: "exa" | "tavily",
+  provider: SearchProviderId,
   query: string,
   domains: string[],
   callId: string,

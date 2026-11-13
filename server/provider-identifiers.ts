@@ -1,12 +1,14 @@
-/** Stable public identifiers. Add reviewed integrations here and in provider-adapters.ts. */
-export const providerTools = {
-  exa_search: "exa",
-  tavily_search: "tavily",
-  firecrawl_extract: "firecrawl",
-} as const;
-export type RegisteredToolName = keyof typeof providerTools;
-export type RegisteredProviderId = (typeof providerTools)[RegisteredToolName];
-export const toolIdentifiers = Object.keys(providerTools) as [
-  RegisteredToolName,
-  ...RegisteredToolName[],
-];
+import {
+  providerCatalog,
+  providerToolNames,
+  type CatalogProviderId,
+  type CatalogToolName,
+} from "./provider-catalog.js";
+
+/** Stable public identifiers, derived from provider-catalog.ts. */
+export const providerTools = Object.fromEntries(
+  providerCatalog.map((p) => [p.tool, p.id]),
+) as { [E in (typeof providerCatalog)[number] as E["tool"]]: E["id"] };
+export type RegisteredToolName = CatalogToolName;
+export type RegisteredProviderId = CatalogProviderId;
+export const toolIdentifiers = providerToolNames;

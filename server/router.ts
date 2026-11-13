@@ -1,3 +1,4 @@
+import { searchProviderIds } from "./provider-catalog.js";
 import { config } from "./config.js";
 import type { Candidate, Intent, Observation, ProviderId } from "./types.js";
 export function candidates(
@@ -7,14 +8,17 @@ export function candidates(
   available: Record<ProviderId, boolean>,
   limited: Set<ProviderId> = new Set(),
 ): Candidate[] {
-  const maxCost = Math.max(config.prices.exa, config.prices.tavily, 1);
+  const maxCost = Math.max(
+    ...searchProviderIds.map((p) => config.prices[p]),
+    1,
+  );
   const weights =
     intent.preference === "cost"
       ? [0.65, 0.1, 0.15, 0.1]
       : intent.preference === "latency"
         ? [0.15, 0.55, 0.2, 0.1]
         : [0.35, 0.2, 0.25, 0.2];
-  return (["exa", "tavily"] as const)
+  return searchProviderIds
     .map((provider) => {
       const obs = observations
         .filter((o) => o.provider === provider)

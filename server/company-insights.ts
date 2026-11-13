@@ -1,3 +1,4 @@
+import { isExtractProvider, toolForProvider } from "./provider-catalog.js";
 import type { ProviderId } from "./types.js";
 import type { Observatory } from "./observation.js";
 import { toolCapabilities } from "./provider-capabilities.js";
@@ -303,10 +304,9 @@ export async function companyReport(
   if (metric.referenceKnown > metric.referencePassed)
     opportunities.push({
       id: "reference-gaps",
-      title:
-        provider === "firecrawl"
-          ? "Inspect pages that missed the reference check"
-          : "Inspect missed reference pages",
+      title: isExtractProvider(provider)
+        ? "Inspect pages that missed the reference check"
+        : "Inspect missed reference pages",
       category: "Coverage",
       evidence: `${metric.referenceKnown - metric.referencePassed} of ${metric.referenceKnown} known checks missed the predefined reference.${source === "demo" ? " These are simulated results." : ""}`,
       hypothesis:
@@ -367,13 +367,6 @@ export async function companyReport(
           ? `${latest.suiteVersion} · ${latest.createdAt}`
           : "No completed test run",
     opportunities,
-    capabilities:
-      toolCapabilities[
-        provider === "firecrawl"
-          ? "firecrawl_extract"
-          : provider === "exa"
-            ? "exa_search"
-            : "tavily_search"
-      ],
+    capabilities: toolCapabilities[toolForProvider(provider)],
   };
 }
