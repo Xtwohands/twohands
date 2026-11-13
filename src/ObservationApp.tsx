@@ -43,7 +43,6 @@ import {
   FileCheck02,
   TerminalSquare,
   Activity,
-  GitBranch01,
   CreditCard01,
   Key01,
 } from "@untitledui/icons";
@@ -492,7 +491,7 @@ export function ObservationApp() {
               tools: "Tool catalog",
               activity: "Activity",
               usage: "Usage",
-              routing: "Routing",
+              routing: "Configure routing",
               connections: "Connections",
               credits: "Credits",
               keys: "API keys",
@@ -532,10 +531,10 @@ export function ObservationApp() {
     return (
       <main className="account-page">
         <section className="account-card">
-          <h1>Workspace owner access required</h1>
-          <p>Ask your workspace owner to manage credits and API keys.</p>
+          <h1>Account owner access required</h1>
+          <p>Ask your account owner to manage credits and API keys.</p>
           <Button asChild>
-            <a href="#dashboard">Back to your workspace</a>
+            <a href="#dashboard">Back to your dashboard</a>
           </Button>
         </section>
       </main>
@@ -549,10 +548,7 @@ export function ObservationApp() {
       <main className="account-page">
         <section className="account-card">
           <h1>Administrator access required</h1>
-          <p>
-            This area is reserved for platform administration. Your user
-            workspace and company portal are separate.
-          </p>
+          <p>This area is reserved for platform administration.</p>
           <Button asChild>
             <a href="#dashboard">Open your dashboard</a>
           </Button>
@@ -621,6 +617,7 @@ export function ObservationApp() {
       : route.page === "company"
         ? "business"
         : "operator";
+  const inToolCatalog = route.id === "tools" || route.id === "routing";
   const sidebarContent = (
     <>
       <a href="#home" className="obs-brand">
@@ -650,25 +647,20 @@ export function ObservationApp() {
               <Grid01 />
               My dashboard
             </a>
-            <div className="ws-nav-group">
-              <span>Tool routing</span>
-              <a
-                href="#dashboard/tools"
-                className={route.id === "tools" ? "selected" : ""}
-                aria-current={route.id === "tools" ? "page" : undefined}
-              >
-                <Link01 />
-                Tool catalog
-              </a>
-              <a
-                href="#dashboard/routing"
-                className={route.id === "routing" ? "selected" : ""}
-                aria-current={route.id === "routing" ? "page" : undefined}
-              >
-                <GitBranch01 />
-                Routing
-              </a>
-            </div>
+            <a
+              href="#dashboard/tools"
+              className={inToolCatalog ? "selected" : ""}
+              aria-current={
+                route.id === "tools"
+                  ? "page"
+                  : inToolCatalog
+                    ? "location"
+                    : undefined
+              }
+            >
+              <Link01 />
+              Tool catalog
+            </a>
             <div className="ws-nav-group">
               <span>Account</span>
               <a
@@ -833,9 +825,7 @@ export function ObservationApp() {
               }
             >
               <TerminalSquare />
-              {route.page === "company"
-                ? "Workspace settings"
-                : "Connect agent"}
+              {route.page === "company" ? "Account settings" : "Connect agent"}
             </Button>
           </div>
         </header>
@@ -879,9 +869,11 @@ export function ObservationApp() {
               evidenceFilter={route.labFinding}
             />
           )}
-          {route.page === "dashboard" && account.enabled && (
-            <OperatorAllowanceNotice />
-          )}
+          {route.page === "dashboard" &&
+            account.enabled &&
+            (!route.id || route.id === "overview" || inToolCatalog) && (
+              <OperatorAllowanceNotice />
+            )}
           {route.page === "dashboard" && (
             <UserDashboardView
               key={connectionRevision}

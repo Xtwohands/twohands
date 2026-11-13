@@ -11,14 +11,14 @@ test("sidebar pages have independent routes, browser history, and accessible lay
     ["tools", "Tool catalog"],
     ["activity", "Activity"],
     ["usage", "Usage"],
-    ["routing", "Routing"],
+    ["routing", "Configure routing"],
     ["connections", "Connections"],
   ]) {
     await page.goto(`/#dashboard${route ? `/${route}` : ""}`);
     await expect(
       page.getByRole("heading", { name: heading, exact: true }),
     ).toBeVisible();
-    await expect(page.getByText("Loading workspace data…")).toHaveCount(0);
+    await expect(page.getByText("Loading account data…")).toHaveCount(0);
     expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
     expect(
       await page.evaluate(
@@ -27,17 +27,34 @@ test("sidebar pages have independent routes, browser history, and accessible lay
     ).toBe(true);
   }
   await page.goto("/#dashboard/tools");
-  if (test.info().project.name === "mobile")
-    await page.getByRole("button", { name: "Open navigation" }).click();
-  await page
-    .getByRole("navigation", { name: "User navigation" })
-    .getByRole("link", { name: "Routing", exact: true })
-    .click();
+  const configure = page.getByRole("link", { name: "Configure", exact: true });
+  await configure.click();
   await expect(page).toHaveURL(/#dashboard\/routing$/);
+  await expect(
+    page.getByRole("heading", { name: "Configure routing", exact: true }),
+  ).toBeVisible();
+  const navigation = page.getByRole("navigation", { name: "User navigation" });
+  const catalog = navigation.getByRole("link", {
+    name: "Tool catalog",
+    exact: true,
+  });
+  if (test.info().project.name === "desktop") {
+    await expect(catalog).toHaveClass("selected");
+    await expect(catalog).toHaveAttribute("aria-current", "location");
+  }
   await page.goBack();
   await expect(
     page.getByRole("heading", { name: "Tool catalog", exact: true }),
   ).toBeVisible();
+  await configure.click();
+  await page.getByRole("link", { name: "Back to catalog" }).click();
+  await expect(page).toHaveURL(/#dashboard\/tools$/);
+  if (test.info().project.name === "mobile")
+    await page.getByRole("button", { name: "Open navigation" }).click();
+  await expect(
+    navigation.getByRole("link", { name: "Routing", exact: true }),
+  ).toHaveCount(0);
+  await expect(catalog).toHaveAttribute("aria-current", "page");
 });
 
 test("catalog search, capability filters, and tool details", async ({
