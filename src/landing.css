@@ -649,7 +649,7 @@
 
 .th-format [data-slot="tabs-trigger"][data-state="active"] {
   background: white;
-  color: var(--th-blue-ink);
+  color: var(--foreground);
 }
 
 .th-example-panel {
@@ -710,7 +710,7 @@
 }
 
 .th-receipt-estimate strong {
-  color: var(--th-blue-ink);
+  color: var(--foreground);
   font-size: 29px;
   font-weight: 500;
   line-height: 1.1;
@@ -1007,7 +1007,7 @@
   border: 1px solid color-mix(in srgb, var(--th-blue) 27%, white);
   border-radius: 6px;
   background: color-mix(in srgb, var(--th-blue) 10%, white);
-  color: var(--th-blue-ink);
+  color: var(--foreground);
   font-size: 12px;
 }
 
