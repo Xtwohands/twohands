@@ -1,5 +1,6 @@
 import {
   isExtractProvider,
+  providerEntry,
   providerIds,
   providerLabel,
   providerOperation,
@@ -1084,7 +1085,10 @@ function ReceiptContent({
           <span>{money(usage.reportedUsd * 1e6)} provider-reported USD</span>
         )}
         {usage.creditCalls > 0 && (
-          <span>{usage.credits} provider-reported credits</span>
+          <span>
+            {usage.credits} provider-reported{" "}
+            {providerEntry(call.provider)?.usageUnit ?? "credits"}
+          </span>
         )}
         {(usage.usdCalls > 0 || usage.creditCalls > 0) && (
           <small>

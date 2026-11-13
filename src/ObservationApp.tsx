@@ -279,7 +279,7 @@ function ProviderUsageSummary({ calls }: { calls: SessionDetail["calls"] }) {
             {reported.length
               ? usd
                 ? `$${total.toFixed(6).replace(/0+$/, "").replace(/\.$/, ".00")}`
-                : `${total} credits`
+                : `${total} ${providerEntry(provider)!.usageUnit}`
               : "Not reported"}
             {` · ${reported.length} of ${completed.length} completed calls reported usage`}
           </p>

@@ -885,8 +885,13 @@ test("provider options start collapsed, show logos and prices, and expand indepe
   await page.goto(`/#sessions/${s.id}/trace`);
   await page.getByRole("button", { name: /Tool options returned/ }).click();
   const cards = page.locator(".provider-option");
-  await expect(cards).toHaveCount(3);
-  for (const name of ["exa search", "tavily search", "firecrawl extract"]) {
+  await expect(cards).toHaveCount(4);
+  for (const name of [
+    "exa search",
+    "tavily search",
+    "firecrawl extract",
+    "jina extract",
+  ]) {
     await expect(
       page.getByRole("button", { name: new RegExp(`^${name}`) }),
     ).toHaveAttribute("aria-expanded", "false");

@@ -28,8 +28,11 @@ export interface ProviderCatalogEntry {
   /** Where an operator creates the provider API key. */
   keySetupUrl: string;
   accountReferenceEnv: string;
-  /** Unit the provider reports usage in on responses. */
-  usageUnit: "usd" | "credits";
+  /**
+   * Unit the provider reports usage in on responses. Credit and token counts
+   * are stored in the receipt's `credits` field and labelled with this unit.
+   */
+  usageUnit: "usd" | "credits" | "tokens";
   /** Environment variable overriding the per-request USD estimate. */
   priceEnv: string;
   defaultUsd: number;
@@ -87,6 +90,23 @@ export const providerCatalog = [
     priceEnv: "FIRECRAWL_SCRAPE_USD",
     defaultUsd: 0.001,
     pricingSource: "https://docs.firecrawl.dev/billing",
+  },
+  {
+    id: "jina",
+    tool: "jina_extract",
+    label: "Jina Reader",
+    initial: "j",
+    operation: "extract",
+    summary: "Page extraction",
+    credentialEnv: "JINA_API_KEY",
+    keySetupUrl: "https://jina.ai/api-dashboard",
+    accountReferenceEnv: "JINA_ACCOUNT_REFERENCE",
+    usageUnit: "tokens",
+    priceEnv: "JINA_READ_USD",
+    // Billed per output token. ~5k tokens for a 20k-character page; unconfirmed
+    // published rate, so this is a conservative per-page estimate.
+    defaultUsd: 0.0005,
+    pricingSource: "https://jina.ai/reader",
   },
 ] as const satisfies readonly ProviderCatalogEntry[];
 

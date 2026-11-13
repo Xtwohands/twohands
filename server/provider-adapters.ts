@@ -60,36 +60,81 @@ const extractResult = z.object({
 });
 const basis =
   "Request parameters × configured rates. Account discounts and free credits are unknown; this is not an invoice.";
-function quote(provider: ProviderId, request: AdapterRequest): AdapterQuote {
-  const base = providerEstimate(provider),
-    maxResults = request.maxResults ?? 10,
-    depth = request.searchDepth ?? "basic";
-  const units = provider === "tavily" && depth === "advanced" ? 2 : 1;
-  const extra = provider === "exa" ? Math.max(0, maxResults - 10) : 0;
-  return {
-    estimatedMicros: base * units + extra * config.exaAdditionalResultMicros,
+type PricingDetail = Pick<
+  AdapterQuote,
+  "breakdown" | "units" | "unit" | "uncertainty"
+> & {
+  /** Multiplier applied to the configured base estimate. */
+  multiplier: number;
+  additionalMicros?: number;
+  rates?: Partial<AdapterQuote["rates"]>;
+  pricingCheckedAt: string;
+};
+/** Provider-specific pricing; every catalog provider must define one. */
+const pricing: Record<
+  ProviderId,
+  (request: AdapterRequest, base: number) => PricingDetail
+> = {
+  exa: (request) => {
+    const maxResults = request.maxResults ?? 10;
+    const extra = Math.max(0, maxResults - 10);
+    return {
+      multiplier: 1,
+      additionalMicros: extra * config.exaAdditionalResultMicros,
+      rates: { additionalResultMicros: config.exaAdditionalResultMicros },
+      breakdown: `Auto search, up to ${maxResults} results with page text; base includes 10 results${extra ? ` + ${extra} additional results` : ""}`,
+      units: null,
+      unit: "request plus additional results",
+      uncertainty: "Account-specific billing may differ.",
+      pricingCheckedAt: "2026-11-02",
+    };
+  },
+  tavily: (request) => {
+    const depth = request.searchDepth ?? "basic";
+    const units = depth === "advanced" ? 2 : 1;
+    return {
+      multiplier: units,
+      breakdown: `${depth} search, up to ${request.maxResults ?? 10} results; ${units} credit${units === 1 ? "" : "s"}`,
+      units,
+      unit: "credits",
+      uncertainty: "Account-specific billing may differ.",
+      pricingCheckedAt: "2026-11-02",
+    };
+  },
+  firecrawl: () => ({
+    multiplier: 1,
     breakdown:
-      provider === "exa"
-        ? `Auto search, up to ${maxResults} results with page text; base includes 10 results${extra ? ` + ${extra} additional results` : ""}`
-        : provider === "tavily"
-          ? `${depth} search, up to ${maxResults} results; ${units} credit${units === 1 ? "" : "s"}`
-          : "One page as Markdown; 1 base scrape credit. PDF parsing can add credits; page count is unknown before retrieval.",
-    rates: {
-      baseMicros: base,
-      ...(provider === "exa"
-        ? { additionalResultMicros: config.exaAdditionalResultMicros }
-        : {}),
-    },
-    units: provider === "exa" ? null : units,
-    unit: provider === "exa" ? "request plus additional results" : "credits",
+      "One page as Markdown; 1 base scrape credit. PDF parsing can add credits; page count is unknown before retrieval.",
+    units: 1,
+    unit: "credits",
+    uncertainty: "Base page estimate; document parsing can increase usage.",
+    pricingCheckedAt: "2026-11-02",
+  }),
+  jina: () => ({
+    multiplier: 1,
+    breakdown:
+      "One page as Markdown; billed by output tokens, which are unknown before retrieval. Estimate assumes a page near the 20,000-character capture limit.",
+    units: null,
+    unit: "output tokens",
+    uncertainty:
+      "Per-token rate not yet confirmed from Jina's pricing page; long pages and PDFs cost more.",
+    pricingCheckedAt: "2026-11-12",
+  }),
+};
+function quote(provider: ProviderId, request: AdapterRequest): AdapterQuote {
+  const base = providerEstimate(provider);
+  const detail = pricing[provider](request, base);
+  return {
+    estimatedMicros: base * detail.multiplier + (detail.additionalMicros ?? 0),
+    breakdown: detail.breakdown,
+    rates: { baseMicros: base, ...detail.rates },
+    units: detail.units,
+    unit: detail.unit,
     rateCardVersion: config.rateCardVersion,
     pricingSource: providerEntry(provider)!.pricingSource,
-    pricingCheckedAt: "2026-11-02",
+    pricingCheckedAt: detail.pricingCheckedAt,
     basis,
-    uncertainty:
-      provider === "firecrawl"
-        ? "Base page estimate; document parsing can increase usage."
-        : "Account-specific billing may differ.",
+    uncertainty: detail.uncertainty,
   };
 }
 /** Only these reviewed server-side definitions are executable in production. */
@@ -168,6 +213,25 @@ const definitions: AdapterDefinition<ToolName, ProviderId>[] = [
       "Markdown extraction, up to 20,000 captured characters; full-page completeness is not guaranteed.",
     ],
     execute: (r, c) => c.transports.scrape(r.url!),
+  },
+  {
+    tool: "jina_extract",
+    provider: "jina",
+    version: "1.0.0",
+    environment: "production",
+    operation: "extract",
+    pageText: true,
+    searchDepth: false,
+    capabilities: capabilityData.jina_extract,
+    credential: catalogCredential("jina"),
+    input: adapterInput("extract"),
+    result: extractResult,
+    estimate: (r) => quote("jina", r),
+    mappingNotes: () => [
+      "Jina Reader Markdown with images removed, up to 20,000 captured characters; full-page completeness is not guaranteed.",
+      "Reported usage is Jina output tokens, stored as provider-reported units.",
+    ],
+    execute: (r, c) => c.transports.scrape(r.url!, "jina"),
   },
 ];
 export const providerRegistry = new AdapterRegistry(definitions);

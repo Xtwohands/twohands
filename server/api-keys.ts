@@ -40,7 +40,7 @@ const settings = z
     allowedTools: z
       .array(z.enum(API_KEY_TOOLS))
       .min(1)
-      .max(3)
+      .max(API_KEY_TOOLS.length)
       .default([...API_KEY_TOOLS])
       .transform((v) => [...new Set(v)].sort()),
     limitUsd: dollars,

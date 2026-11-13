@@ -1,3 +1,4 @@
+import { providerToolNames } from "../server/provider-catalog.js";
 import { beforeEach, afterEach, it, expect, vi } from "vitest";
 import request from "supertest";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -73,13 +74,11 @@ it("exposes distinct provider tools and no approval, scoring, consent, or refund
   expect(tools.map((t) => t.name).sort()).toEqual(
     [
       "discover_tools",
-      "exa_search",
-      "firecrawl_extract",
+      ...providerToolNames,
       "get_session",
       "get_evidence",
       "record_intent",
       "submit_outcome",
-      "tavily_search",
     ].sort(),
   );
   expect(
@@ -108,7 +107,7 @@ it("runs from intent to provider evidence and output without consumer approval",
       arguments: { sessionId: s.id, need: "Read a known page" },
     }),
   );
-  expect(offered.tools).toHaveLength(3);
+  expect(offered.tools).toHaveLength(providerToolNames.length);
   expect(offered.tools.find((t: any) => t.provider === "exa")).toMatchObject({
     description: expect.stringContaining("2,500 characters"),
     adapter: { type: "auto", numResults: 10, textMaxCharacters: 2500 },

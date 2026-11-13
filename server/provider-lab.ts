@@ -32,7 +32,7 @@ export const labRunInput = z
     providers: z
       .array(provider)
       .min(1)
-      .max(3)
+      .max(registeredProviderSchema.options.length)
       .refine((v) => new Set(v).size === v.length, "Choose each provider once"),
     suiteId: z.string().min(1).max(120).optional(),
     suiteRevision: z.number().int().positive().optional(),

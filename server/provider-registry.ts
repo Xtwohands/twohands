@@ -236,7 +236,7 @@ export function adapterInput(operation: "search" | "extract", depth = false) {
     if (!depth && r.searchDepth !== undefined)
       ctx.addIssue({
         code: "custom",
-        message: "searchDepth applies only to Tavily; Exa uses auto mode.",
+        message: "searchDepth is not supported by this tool.",
       });
   });
 }

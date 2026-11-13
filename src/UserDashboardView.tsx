@@ -1,3 +1,4 @@
+import { ProviderLogo } from "./components/shared";
 import {
   providerCatalog,
   providerEntry,
@@ -135,7 +136,7 @@ function ProviderIcon({ provider }: { provider: string }) {
       className={`ws-provider-icon ws-provider-${provider}`}
       aria-hidden="true"
     >
-      <img src={providerEntry(provider)?.logo ?? ""} alt="" />
+      <ProviderLogo provider={provider} />
     </span>
   );
 }

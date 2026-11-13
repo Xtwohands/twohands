@@ -62,9 +62,13 @@ test("catalog search, capability filters, and tool details", async ({
 }) => {
   await page.goto("/#dashboard/tools");
   await page.getByRole("button", { name: /Extraction/ }).click();
-  await expect(page.locator(".ws-tool-card")).toHaveCount(1);
-  await expect(page.locator(".ws-tool-card")).toContainText("Firecrawl");
-  await page.getByRole("button", { name: "View tool" }).click();
+  await expect(page.locator(".ws-tool-card")).toHaveCount(2);
+  const firecrawl = page.locator(".ws-tool-card", { hasText: "Firecrawl" });
+  await expect(firecrawl).toHaveCount(1);
+  await expect(
+    page.locator(".ws-tool-card", { hasText: "Jina Reader" }),
+  ).toHaveCount(1);
+  await firecrawl.getByRole("button", { name: "View tool" }).click();
   await expect(page.getByRole("dialog")).toContainText("What to expect");
   await expect(page.getByRole("dialog")).toContainText("firecrawl_extract");
   await page.getByRole("button", { name: "Close", exact: true }).click();

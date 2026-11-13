@@ -1,6 +1,7 @@
 import { test, expect, type Page } from "@playwright/test";
 import { captureJourney } from "./helpers/launch-screenshots";
 import AxeBuilder from "@axe-core/playwright";
+import { providerIds } from "../../server/provider-catalog";
 const authBrowserUrl =
   process.env.OCTOLAB_AUTH_BROWSER_URL || "http://127.0.0.1:3102";
 test.use({ baseURL: authBrowserUrl });
@@ -1375,7 +1376,7 @@ const platformSettingsFixture = () => ({
   rateCardVersion: "isolated-settings-fixture",
   values: {
     providers: Object.fromEntries(
-      ["exa", "tavily", "firecrawl"].map((id) => [
+      providerIds.map((id) => [
         id,
         { enabled: true, requestsPerMinute: 20, estimateMicros: 7000 },
       ]),
@@ -1387,7 +1388,7 @@ const platformSettingsFixture = () => ({
     exaAdditionalResultMicros: 1000,
   },
   credentials: Object.fromEntries(
-    ["exa", "tavily", "firecrawl"].map((id) => [
+    providerIds.map((id) => [
       id,
       { configured: true, source: "environment", needsReplacement: false },
     ]),

@@ -1,5 +1,9 @@
-import { isProviderId, toolForProvider } from "../server/provider-catalog";
-import { providerLogos } from "./components/ToolOptions";
+import {
+  isProviderId,
+  providerEntry,
+  toolForProvider,
+} from "../server/provider-catalog";
+import { ProviderLogo } from "./components/shared";
 import { useEffect, useRef, useState } from "react";
 import {
   ArrowUpRight,
@@ -210,12 +214,10 @@ export function CompanyView({
       <div className="page-heading company-heading">
         <div>
           <div className="company-title">
-            <img
+            <ProviderLogo
+              provider={provider}
               className={`company-logo company-logo-${provider}`}
-              src={providerLogos[provider]}
-              alt=""
-              width={32}
-              height={32}
+              size={32}
             />
             <h1>{providerNames[provider]} insights</h1>
           </div>
@@ -531,7 +533,8 @@ export function CompanyView({
                   )}
                   {report.usage.creditCalls > 0 && (
                     <p>
-                      {report.usage.credits} provider-reported credits across{" "}
+                      {report.usage.credits} provider-reported{" "}
+                      {providerEntry(provider)?.usageUnit ?? "credits"} across{" "}
                       {report.usage.creditCalls} calls. Credits have not been
                       converted to USD.
                     </p>

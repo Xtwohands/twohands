@@ -2,6 +2,7 @@ import {
   providerEntry,
   providerIds,
   providerLabel,
+  searchProviderIds,
 } from "../server/provider-catalog";
 import { useEffect, useState, useCallback, useRef } from "react";
 import {
@@ -215,7 +216,7 @@ export function App() {
   const configured =
     health && Object.values(health.providers).filter(Boolean).length;
   const searchReady =
-    health && (health.providers.exa || health.providers.tavily);
+    health && searchProviderIds.some((p) => health.providers[p]);
   function startResearch() {
     setSelection(undefined);
     setTask(undefined);

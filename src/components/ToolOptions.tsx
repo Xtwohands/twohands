@@ -1,4 +1,4 @@
-import { providerCatalog } from "../../server/provider-catalog";
+import { ProviderLogo } from "./shared";
 import {
   Accordion,
   AccordionContent,
@@ -30,9 +30,6 @@ type ToolOption = Pick<
     ReturnType<Observatory["catalog"]>
   >[number]["reputation"];
 };
-export const providerLogos = Object.fromEntries(
-  providerCatalog.map((p) => [p.id, p.logo]),
-) as Record<(typeof providerCatalog)[number]["id"], string>;
 
 function priceLabel(tool: ToolOption) {
   const quotes = tool.requestEstimates ?? [];
@@ -66,10 +63,9 @@ export function ToolOptions({ tools }: { tools: ToolOption[] }) {
             className="provider-option"
           >
             <AccordionTrigger className="provider-option-trigger">
-              <img
+              <ProviderLogo
+                provider={tool.provider}
                 className={`provider-option-logo provider-option-logo-${tool.provider}`}
-                src={providerLogos[tool.provider]}
-                alt=""
               />
               <span className="provider-option-name">
                 {tool.tool.replaceAll("_", " ")}
