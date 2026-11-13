@@ -17,8 +17,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: npm
@@ -28,7 +28,7 @@ jobs:
       - run: npm run format:check
       - run: npx playwright install --with-deps chromium
       - run: npm run test:e2e
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: failure()
         continue-on-error: true
         with:
@@ -51,8 +51,8 @@ jobs:
           --health-cmd "pg_isready -U postgres -d octolab_ci"
           --health-interval 5s --health-timeout 5s --health-retries 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: npm
@@ -82,7 +82,7 @@ jobs:
         run: npm run test:restore
         env:
           OCTOLAB_RESTORE_DRILL_URL: postgresql://postgres:isolated_ci_fixture@127.0.0.1:5432/postgres
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         continue-on-error: true
         with:
@@ -110,7 +110,7 @@ jobs:
       SUPABASE_URL: https://fixture.supabase.co
       SUPABASE_PUBLISHABLE_KEY: sb_publishable_isolated_fixture_only
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Build production and recovery artifacts
         run: |
           docker build --build-arg SOURCE_REVISION="$GITHUB_SHA" -t octolab:ci .
@@ -175,7 +175,7 @@ jobs:
             sleep 1
           done
           docker exec -i octolab-restored-ci node --input-type=module - restored < tests/container-postgres-smoke.mjs
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         continue-on-error: true
         with:
