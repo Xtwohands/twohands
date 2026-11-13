@@ -12,6 +12,7 @@ export interface DatabaseSnapshot {
   audit: { events: number; chains: number; valid: boolean };
   keyLedgerValid: boolean;
   allowanceLedgerValid: boolean | null;
+  shadowWalletValid?: boolean;
 }
 export const sqlIdentifier = (value: string) =>
   `"${value.replaceAll('"', '""')}"`;
@@ -103,6 +104,39 @@ export async function databaseSnapshot(
         )
       ).rowCount === 0
     : null;
+  const shadowWalletValid = tables.some(
+    (t) => t.schema === "octolab" && t.name === "shadow_wallet_holds",
+  )
+    ? (
+        await client.query(`
+          SELECT 1 FROM octolab.shadow_wallet_closures c
+          LEFT JOIN octolab.shadow_wallet_journal j
+            ON j.workspace_id=c.workspace_id AND j.call_id=c.call_id
+          WHERE c.outcome='posted' AND j.source_id IS NULL
+          UNION ALL
+          SELECT 1 FROM octolab.shadow_wallet_holds h
+          LEFT JOIN octolab.shadow_wallet_closures c
+            ON c.workspace_id=h.workspace_id AND c.call_id=h.call_id
+          LEFT JOIN octolab.observation_calls a
+            ON a.workspace_id=h.workspace_id AND a.id=h.call_id
+          WHERE h.admitted AND c.call_id IS NULL
+            AND (a.id IS NULL OR a.body::jsonb->>'status' <> 'running')
+          UNION ALL
+          SELECT 1 FROM (
+            SELECT workspace_id, wallet_micros AS amount
+            FROM octolab.shadow_wallet_journal
+            UNION ALL
+            SELECT h.workspace_id, -h.maximum_micros AS amount
+            FROM octolab.shadow_wallet_holds h
+            WHERE h.admitted AND NOT EXISTS (
+              SELECT 1 FROM octolab.shadow_wallet_closures c
+              WHERE c.workspace_id=h.workspace_id AND c.call_id=h.call_id
+            )
+          ) amounts GROUP BY workspace_id HAVING sum(amount)<0
+          LIMIT 1
+        `)
+      ).rowCount === 0
+    : undefined;
   const ledger = (
     await client.query(
       "SELECT workspace_id,source,COUNT(*)::integer AS entries,SUM(delta_units)::text AS balance_units FROM octolab.funding_ledger GROUP BY workspace_id,source ORDER BY workspace_id,source",
@@ -145,6 +179,7 @@ export async function databaseSnapshot(
     columnSecurity,
     policies,
     allowanceLedgerValid,
+    ...(shadowWalletValid === undefined ? {} : { shadowWalletValid }),
     ledger,
     audit: { events, chains: heads.size, valid },
     keyLedgerValid: inconsistent.rowCount === 0,

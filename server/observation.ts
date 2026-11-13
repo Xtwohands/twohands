@@ -1000,6 +1000,7 @@ export class Observatory {
     input.statedReason = callInput.parse(input).statedReason;
     const signature = digest(input);
     let call!: ObservedCall;
+    let shadowReserved = false;
     const replay = await this.db.transaction(async () => {
       const existing = await this.db.receipt(id, input.requestKey);
       if (existing) {
@@ -1110,6 +1111,11 @@ export class Observatory {
       s.status = "active";
       await this.db.save(s);
       await this.db.saveCall(call, signature);
+      if (s.authorizationSource === "backend_policy")
+        shadowReserved = await this.db.shadowWallet.recordAdmission(
+          call,
+          config.keys[provider],
+        );
       // A routed call carries the agent's stated need, not a reason for choosing this tool.
       if (input.statedReason && !routed)
         await this.db.event(id, "selection_explanation", "agent_reported", {
@@ -1167,7 +1173,12 @@ export class Observatory {
       call.latencyMs = Date.now() - start;
       call.finishedAt = new Date().toISOString();
       try {
-        await this.db.transaction(async () => {
+        const recovered = await this.db.transaction(async () => {
+          const stored = await this.db.receipt(id, input.requestKey);
+          if (!stored || stored.call.id !== call.id)
+            throw new Error("Missing admitted call receipt.");
+          if (stored.call.status !== "running")
+            return { ...stored.call, replayed: true };
           const s = await this.require(id);
           await this.db.apiKeys.settle(call.id);
           await this.db.store.allowance.settle(call.id);
@@ -1175,6 +1186,7 @@ export class Observatory {
           s.spentMicros += call.estimateMicros;
           await this.db.save(s);
           await this.db.saveCall(call, signature);
+          if (shadowReserved) await this.db.shadowWallet.close(call);
           await this.db.event(id, "tool_result", "observed", {
             callId: call.id,
             tool: call.tool,
@@ -1186,6 +1198,7 @@ export class Observatory {
             result: call.result ?? null,
           });
         });
+        if (recovered) call = recovered;
       } finally {
         this.active.delete(call.id);
       }
