@@ -14,6 +14,7 @@ import { applyMigrations, claimRuntime } from "../../server/migration.js";
 import { Observatory, callInput } from "../../server/observation.js";
 import { FundingService } from "../../server/funding.js";
 import { StripeFundingService } from "../../server/stripe-funding.js";
+import { shadowWalletCredentialDigest } from "../../server/shadow-wallet.js";
 import { backupDatabase, restoreDatabase } from "../../server/backup.js";
 import { digest } from "../../server/observation-store.js";
 import { grantFixtureAllowance } from "./allowance.js";
@@ -50,6 +51,9 @@ export async function runRestoreDrill(
     token: config.token,
     rpm: config.rpm,
     fetch: globalThis.fetch,
+    shadowWallet: process.env.TWO_HANDS_SHADOW_WALLET,
+    shadowStripe: process.env.TWO_HANDS_SHADOW_STRIPE_SANDBOX,
+    tavilyAccount: process.env.TAVILY_ACCOUNT_REFERENCE,
   };
   const created: string[] = [];
   let source: Store | undefined, restored: Store | undefined;
@@ -69,6 +73,7 @@ export async function runRestoreDrill(
     rowDigestsMatch: false,
     auditChainsValid: false,
     financialBalancesMatch: false,
+    shadowWalletRestored: false,
     billingAmountsMatch: false,
     workspaceIsolationPassed: false,
     allowancesPreserved: false,
@@ -84,6 +89,10 @@ export async function runRestoreDrill(
       throw new Error("External HTTP is disabled in the restore drill.");
     };
     config.keys.exa = "FIXTURE_ONLY";
+    config.keys.tavily = "TAVILY_RESTORE_FIXTURE_ONLY";
+    process.env.TAVILY_ACCOUNT_REFERENCE = "restore-fixture-tavily";
+    process.env.TWO_HANDS_SHADOW_WALLET = "true";
+    process.env.TWO_HANDS_SHADOW_STRIPE_SANDBOX = "true";
     config.token = "fixture-owner-token-for-isolated-restore";
     config.rpm = 1000;
     for (const name of [sourceName, targetName]) {
@@ -97,8 +106,18 @@ export async function runRestoreDrill(
       "INSERT INTO octolab.workspaces(id,name) VALUES($1,'Restore fixture A'),($2,'Restore fixture B')",
       workspaces,
     );
+    await database.pool.query(
+      `INSERT INTO octolab.shadow_wallet_rates
+       (workspace_id,rate_version,provider_account,credential_digest,provider_cost_micros,verified_at,expires_at)
+       VALUES ($1,'restore-v1',$2,$3,7000,now()-interval '1 hour',now()+interval '1 hour')`,
+      [
+        workspaces[0],
+        process.env.TAVILY_ACCOUNT_REFERENCE,
+        shadowWalletCredentialDigest(config.keys.tavily),
+      ],
+    );
     const obs = new Observatory(source, {
-      search: async (_provider, _query, _domains, callId) => ({
+      search: async (provider, _query, _domains, callId) => ({
         httpStatus: 200,
         requestId: `restore-request-${callId}`,
         sources: [
@@ -107,7 +126,7 @@ export async function runRestoreDrill(
             title: "RESTORE_FIXTURE_RAW",
             url: "https://example.com/fixture",
             snippet: "Synthetic private evidence",
-            provider: "exa",
+            provider,
             callId,
           },
         ],
@@ -116,6 +135,7 @@ export async function runRestoreDrill(
     });
     await obs.ready;
     const balances: number[] = [];
+    let shadowCallId = "";
     const allowances: Awaited<ReturnType<Store["allowance"]["status"]>>[] = [];
     const fixtures: {
       sessionId: string;
@@ -272,6 +292,44 @@ export async function runRestoreDrill(
           gateway.pay(deposit.checkoutSessionId!, index ? 0 : 250);
           await stripe.reconcile(deposit.id);
           balances.push(await funding.ledger.balance());
+          if (index === 0) {
+            const shadowKey = (
+              await obs.db.apiKeys.create({
+                requestKey: randomUUID(),
+                name: "Restore shadow fixture agent",
+                scopes: ["research:write", "tools:execute"],
+                allowedTools: ["tavily_search"],
+                limitUsd: "0.1",
+              })
+            ).key;
+            // Seed a retained shadow posting separately from the research data.
+            const shadowCall = {
+              ...receipt,
+              id: randomUUID(),
+              result: undefined,
+              apiKeyId: shadowKey.id,
+              tool: "tavily_search" as const,
+              provider: "tavily" as const,
+              arguments: { query: "isolated restore wallet fixture" },
+              adapter: providerRegistry.snapshot("tavily_search"),
+              providerAccountReference: process.env.TAVILY_ACCOUNT_REFERENCE,
+            };
+            shadowCallId = shadowCall.id;
+            await source!.actorScope.run(
+              { kind: "api_key", id: shadowKey.id },
+              () =>
+                source!.transaction(async () => {
+                  assert.equal(
+                    await obs.db.shadowWallet.recordAdmission(
+                      shadowCall,
+                      config.keys.tavily,
+                    ),
+                    true,
+                  );
+                  await obs.db.shadowWallet.close(shadowCall);
+                }),
+            );
+          }
         }),
       );
     }
@@ -361,7 +419,8 @@ export async function runRestoreDrill(
     });
     await restoredObs.ready;
     let isolated = true,
-      billingMatch = true;
+      billingMatch = true,
+      shadowWalletRestored = recovery.shadowWalletValid === true;
     const restoredBalances: number[] = [];
     let allowancesMatch = true,
       permissionsMatch = true,
@@ -371,6 +430,24 @@ export async function runRestoreDrill(
     for (const [index, workspaceId] of workspaces.entries())
       await restored.scope.run(workspaceId, async () => {
         const fixture = fixtures[index];
+        const shadowUsage = await restored!.db
+          .prepare(
+            "SELECT source_id,wallet_micros FROM shadow_wallet_journal WHERE kind='usage'",
+          )
+          .all();
+        const shadowFunding = await restored!.db
+          .prepare(
+            "SELECT COALESCE(sum(wallet_micros),0) AS net FROM shadow_wallet_sandbox_entries",
+          )
+          .get();
+        shadowWalletRestored &&=
+          index === 0
+            ? shadowUsage.length === 1 &&
+              shadowUsage[0].source_id === shadowCallId &&
+              Number(shadowUsage[0].wallet_micros) === -7700 &&
+              Number(shadowFunding?.net) === 7500000
+            : shadowUsage.length === 0 && Number(shadowFunding?.net) === 0;
+
         const before = await restored!.allowance.status();
         if (JSON.stringify(before) !== JSON.stringify(allowances[index]))
           allowancesMatch = false;
@@ -491,6 +568,7 @@ export async function runRestoreDrill(
     evidence.receiptReplaysNotCharged =
       replaysFree && unexpectedTransports === 0;
     evidence.billingAmountsMatch = billingMatch;
+    evidence.shadowWalletRestored = shadowWalletRestored;
     evidence.financialBalancesMatch =
       JSON.stringify(balances) === JSON.stringify(restoredBalances) &&
       balances[0] === 7500000 &&
@@ -507,6 +585,7 @@ export async function runRestoreDrill(
         evidence.rowDigestsMatch,
         evidence.auditChainsValid,
         evidence.financialBalancesMatch,
+        evidence.shadowWalletRestored,
         evidence.billingAmountsMatch,
         evidence.workspaceIsolationPassed,
         evidence.allowancesPreserved,
@@ -535,5 +614,13 @@ export async function runRestoreDrill(
     config.token = original.token;
     config.rpm = original.rpm;
     globalThis.fetch = original.fetch;
+    for (const [name, value] of Object.entries({
+      TWO_HANDS_SHADOW_WALLET: original.shadowWallet,
+      TWO_HANDS_SHADOW_STRIPE_SANDBOX: original.shadowStripe,
+      TAVILY_ACCOUNT_REFERENCE: original.tavilyAccount,
+    })) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
   }
 }

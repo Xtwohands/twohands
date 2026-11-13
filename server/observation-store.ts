@@ -1,3 +1,4 @@
+import { ShadowWallet } from "./shadow-wallet.js";
 import { ApiKeyService } from "./api-keys.js";
 import { createHash, randomUUID } from "node:crypto";
 import { SHARING_POLICY, sharingPolicyEvent } from "./sharing-policy.js";
@@ -26,8 +27,10 @@ export function digest(value: unknown): string {
 }
 export class ObservationStore {
   readonly apiKeys: ApiKeyService;
+  readonly shadowWallet: ShadowWallet;
   constructor(public store: Store) {
     this.apiKeys = new ApiKeyService(store);
+    this.shadowWallet = new ShadowWallet(store);
   }
   async applySharingPolicy() {
     await this.transaction(async () => {
@@ -181,6 +184,7 @@ export class ObservationStore {
             "Server restarted before the result was recorded. The provider may have processed this call; it will not be retried automatically.";
           const receipt = (await this.receipt(s.id, c.requestKey))!;
           await this.saveCall(c, receipt.signature);
+          await this.shadowWallet.close(c);
           await this.apiKeys.settle(c.id);
           await this.store.allowance.settle(c.id);
           s.reservedMicros = Math.max(0, s.reservedMicros - c.estimateMicros);

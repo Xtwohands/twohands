@@ -332,15 +332,17 @@ export function observationRoutes(app: Express, obs: Observatory) {
   app.post(
     "/api/observations/:id/delete",
     route(async (req, res) => {
-      const s = await obs.require(String(req.params.id));
-      if (req.body?.confirmSessionId !== s.id)
-        throw new ObservationError(
-          400,
-          "Confirm this session ID to delete its local records.",
-        );
-      if ((await obs.db.calls(s.id)).some((c) => c.status === "running"))
-        throw new ObservationError(409, "Wait for active calls to finish.");
-      await obs.db.remove(s.id);
+      await obs.db.transaction(async () => {
+        const s = await obs.require(String(req.params.id));
+        if (req.body?.confirmSessionId !== s.id)
+          throw new ObservationError(
+            400,
+            "Confirm this session ID to delete its local records.",
+          );
+        if ((await obs.db.calls(s.id)).some((c) => c.status === "running"))
+          throw new ObservationError(409, "Wait for active calls to finish.");
+        await obs.db.remove(s.id);
+      });
       res.json({ ok: true });
     }),
   );

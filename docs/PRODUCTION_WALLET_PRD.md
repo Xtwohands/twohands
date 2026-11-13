@@ -78,6 +78,18 @@ The payment-provider decision assumes customers buy Two Hands service credits an
 
 If Finance needs an invoice workspace later, place **Provider invoices** under **Administration → Billing** for cross-account cost checks and exception review. The existing **Dashboard → Usage → Provider billing** import operates within one account. Provider accounting corrections do not automatically change a posted customer charge. Customers see top-ups and statements under **Credits** and tool receipts under **Activity**. [Current reconciliation scope](../server/provider-billing.ts#L302)
 
+## Shadow implementation
+
+The shadow phase records simulated admission and charges for hosted, backend-authorized API-key calls. Direct calls and routed attempts share the same accounting path. Shadow accounting neither changes tool access nor spends the test-credit balance. Reviewers can inspect the private `octolab.shadow_wallet_rates`, `octolab.shadow_wallet_holds`, `octolab.shadow_wallet_closures`, and `octolab.shadow_wallet_journal` tables. The shadow journal has no customer interface or live payment route.
+
+- Apply migrations using the existing release procedure. Keep `TWO_HANDS_SHADOW_WALLET=false` by default.
+- A database operator can enroll a specific workspace by recording a time-bounded verified USD cost for Tavily basic search with 10 maximum results, an immutable rate version identifier, and the actual server-side Tavily account and credential binding. The digest is SHA-256 over `two-hands-shadow-tavily-v1`, a NUL byte, and the exact credential, computed within the secret-handling environment. Never export the credential or its digest. A key rotation or adapter version change requires re-verification. Published estimates and included or ambiguous credits cannot establish a rate.
+- Seed only simulated credit in the shadow journal. The runtime cannot enroll a workspace, set a rate, or seed the balance. A reservation denied by the shadow balance is recorded without interrupting existing dispatch. Admitted holds settle against the frozen rate even after the pilot is switched off. A failed, interrupted, or contradictory usage receipt releases the hold. The recovery and backup checks include the shadow accounting records.
+
+The Stripe sandbox mirror is separately default-off. With `TWO_HANDS_SHADOW_STRIPE_SANDBOX=true`, a new checkout intent for an enrolled workspace can feed the simulated balance after existing Stripe test-mode payment verification. Historical test payments stay separate. Signed webhook retries converge on one deposit posting. Verified refunds and dispute holds append adjustments. A simulated shortfall or dispute prevents further shadow admissions while existing holds can settle. Existing provider authorization and the existing test-credit balance are independent of this exercise.
+
+Before a customer pilot, add live Checkout funding, durable payment-event recovery, customer balances and statements, and wallet enforcement on every enabled customer entry point. Verify dispute resolution, unused-balance refunds, and provider terms and rates before accepting real money.
+
 ## Acceptance and operating metrics
 
 - **Isolation and replay.** Concurrent calls from two keys cannot reserve beyond one balance. Requests from a neighboring account, fixture, preview role, or test payment cannot mutate live credits. Replaying a request after a lost response or process restart returns one receipt and one debit at most.

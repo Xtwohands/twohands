@@ -87,6 +87,13 @@ test("fixture test deposit creates, verifies, and credits exactly once", async (
   expect(after.onchainBalanceUnits).toBe(10000000);
   expect(after.onchainDeposits).toBe(1);
   await expect(page.getByRole("dialog")).toHaveCSS("opacity", "1");
+  await page.getByRole("dialog").evaluate(async (dialog) => {
+    await Promise.all(
+      dialog
+        .getAnimations({ subtree: true })
+        .map((animation) => animation.finished),
+    );
+  });
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
   await page.getByRole("button", { name: "Close", exact: true }).click();
   await expect(page.locator(".ws-balance-card")).toContainText("test credits");
