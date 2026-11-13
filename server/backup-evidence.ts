@@ -104,6 +104,9 @@ export async function databaseSnapshot(
         )
       ).rowCount === 0
     : null;
+  const hasShadowSandbox = tables.some(
+    (t) => t.schema === "octolab" && t.name === "shadow_wallet_sandbox_entries",
+  );
   const shadowWalletValid = tables.some(
     (t) => t.schema === "octolab" && t.name === "shadow_wallet_holds",
   )
@@ -121,18 +124,40 @@ export async function databaseSnapshot(
             ON a.workspace_id=h.workspace_id AND a.id=h.call_id
           WHERE h.admitted AND c.call_id IS NULL
             AND (a.id IS NULL OR a.body::jsonb->>'status' <> 'running')
-          UNION ALL
-          SELECT 1 FROM (
-            SELECT workspace_id, wallet_micros AS amount
-            FROM octolab.shadow_wallet_journal
+          ${
+            hasShadowSandbox
+              ? `
             UNION ALL
-            SELECT h.workspace_id, -h.maximum_micros AS amount
-            FROM octolab.shadow_wallet_holds h
-            WHERE h.admitted AND NOT EXISTS (
-              SELECT 1 FROM octolab.shadow_wallet_closures c
-              WHERE c.workspace_id=h.workspace_id AND c.call_id=h.call_id
-            )
-          ) amounts GROUP BY workspace_id HAVING sum(amount)<0
+            SELECT 1 FROM octolab.shadow_wallet_sandbox_deposits e
+            JOIN octolab.stripe_deposits d
+              ON d.workspace_id=e.workspace_id AND d.id=e.deposit_id
+            LEFT JOIN octolab.shadow_wallet_sandbox_entries j
+              ON j.workspace_id=e.workspace_id AND j.deposit_id=e.deposit_id
+            GROUP BY e.workspace_id,e.deposit_id,d.body,d.payment_intent_id
+            HAVING COALESCE(sum(j.wallet_micros),0)<>(d.body::jsonb->>'netCreditUnits')::bigint
+              OR bool_or(j.payment_intent_id IS DISTINCT FROM d.payment_intent_id) FILTER (WHERE j.revision IS NOT NULL)
+            UNION ALL
+            SELECT 1 FROM (
+              SELECT target_micros, sum(wallet_micros) OVER w AS cumulative,
+                     revision, row_number() OVER w AS expected_revision
+              FROM octolab.shadow_wallet_sandbox_entries
+              WINDOW w AS (PARTITION BY workspace_id,deposit_id ORDER BY revision)
+            ) entries WHERE target_micros<>cumulative OR revision<>expected_revision
+          `
+              : `
+            UNION ALL
+            SELECT 1 FROM (
+              SELECT workspace_id, wallet_micros AS amount FROM octolab.shadow_wallet_journal
+              UNION ALL
+              SELECT h.workspace_id, -h.maximum_micros AS amount
+              FROM octolab.shadow_wallet_holds h
+              WHERE h.admitted AND NOT EXISTS (
+                SELECT 1 FROM octolab.shadow_wallet_closures c
+                WHERE c.workspace_id=h.workspace_id AND c.call_id=h.call_id
+              )
+            ) amounts GROUP BY workspace_id HAVING sum(amount)<0
+          `
+          }
           LIMIT 1
         `)
       ).rowCount === 0

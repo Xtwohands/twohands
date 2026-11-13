@@ -14,6 +14,9 @@ import {
   shadowWalletPrice,
 } from "../server/shadow-wallet";
 import { Store } from "../server/store";
+import { FundingService } from "../server/funding";
+import { StripeFundingService } from "../server/stripe-funding";
+import { FixtureStripeGateway, fixtureStripeSettings } from "./fixtures/stripe";
 import { grantFixtureAllowance } from "./fixtures/allowance";
 
 it("calculates fixed 10% markup in integer micros and rounds the hold up", () => {
@@ -301,6 +304,104 @@ hosted("hosted shadow wallet", () => {
     });
     expect(search).toHaveBeenCalledTimes(1);
     expect(await debitRows()).toHaveLength(1);
+  });
+
+  it("mirrors signed sandbox funding once, then posts call usage and verified reversals", async () => {
+    vi.stubEnv("TWO_HANDS_SHADOW_STRIPE_SANDBOX", "false");
+    const gateway = new FixtureStripeGateway();
+    const funding = new FundingService(store, {
+      enabled: false,
+      recipient: "",
+      rpcUrl: "https://fixture.invalid",
+    });
+    const stripe = new StripeFundingService(
+      funding,
+      fixtureStripeSettings,
+      gateway,
+    );
+    const old = await stripe.create({ requestKey: randomUUID(), amount: "5" });
+    vi.stubEnv("TWO_HANDS_SHADOW_STRIPE_SANDBOX", "true");
+    const payment = await stripe.create({
+      requestKey: randomUUID(),
+      amount: "5",
+    });
+    const entries = () =>
+      db
+        .prepare(
+          "SELECT deposit_id,kind,wallet_micros,target_micros FROM shadow_wallet_sandbox_entries ORDER BY revision",
+        )
+        .all();
+    const oldEvent = gateway.signed(
+      "checkout.session.completed",
+      gateway.pay(old.checkoutSessionId!),
+    );
+    await stripe.webhook(oldEvent.payload, oldEvent.signature);
+    expect(await entries()).toEqual([]);
+    const paid = gateway.pay(payment.checkoutSessionId!);
+    const signed = gateway.signed("checkout.session.completed", paid);
+    await expect(stripe.webhook(signed.payload, "invalid")).rejects.toThrow(
+      /signature/,
+    );
+    expect(await entries()).toEqual([]);
+    const live = gateway.signed("checkout.session.completed", paid, undefined, {
+      livemode: true,
+    });
+    await expect(stripe.webhook(live.payload, live.signature)).rejects.toThrow(
+      /test-mode/,
+    );
+    await stripe.webhook(signed.payload, signed.signature);
+    await stripe.webhook(signed.payload, signed.signature);
+    expect(await entries()).toEqual([
+      {
+        deposit_id: payment.id,
+        kind: "deposit",
+        wallet_micros: "5000000",
+        target_micros: "5000000",
+      },
+    ]);
+    const id = await session();
+    const receipt = await run(id, call());
+    expect(receipt.status).toBe("succeeded");
+    expect(await debitRows()).toHaveLength(1);
+    vi.stubEnv("TWO_HANDS_SHADOW_STRIPE_SANDBOX", "false");
+    const partial = gateway.pay(payment.checkoutSessionId!, 100);
+    const refund = gateway.signed(
+      "charge.refunded",
+      partial.payment_intent.latest_charge,
+    );
+    await stripe.webhook(refund.payload, refund.signature);
+    const disputed = gateway.pay(payment.checkoutSessionId!, 100, true);
+    const dispute = gateway.signed(
+      "charge.dispute.created",
+      disputed.payment_intent.latest_charge,
+    );
+    await stripe.webhook(dispute.payload, dispute.signature);
+    expect(await entries()).toMatchObject([
+      { kind: "deposit", wallet_micros: "5000000", target_micros: "5000000" },
+      { kind: "refund", wallet_micros: "-1000000", target_micros: "4000000" },
+      { kind: "dispute_hold", wallet_micros: "-4000000", target_micros: "0" },
+    ]);
+    expect(await funding.ledger.balance()).toBe(5_000_000);
+    expect((await run(id, call())).status).toBe("succeeded");
+    expect((await holds()).map((row) => row.admitted)).toEqual([true, false]);
+    expect(await debitRows()).toHaveLength(1);
+    // A conservative dispute freeze applies even if other simulated funds are available.
+    await fund();
+    expect((await run(id, call())).status).toBe("succeeded");
+    expect((await holds()).map((row) => row.admitted)).toEqual([
+      true,
+      false,
+      false,
+    ]);
+    expect(await debitRows()).toHaveLength(1);
+    const client = await db.pool.connect();
+    try {
+      await beginBackupSnapshot(client);
+      expect((await databaseSnapshot(client)).shadowWalletValid).toBe(true);
+    } finally {
+      await client.query("ROLLBACK");
+      client.release();
+    }
   });
 
   it("releases interrupted calls on recovery even when the feature was turned off", async () => {

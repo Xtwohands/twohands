@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import Stripe from "stripe";
 import { z } from "zod";
+import { ShadowWallet } from "./shadow-wallet.js";
 import { FundingError, type FundingService } from "./funding.js";
 import type { StripeDeposit, StripeFundingStatus } from "./funding-types.js";
 export type StripeSettings = {
@@ -144,13 +145,16 @@ export class StripeFundingService {
   ) => Promise<string | undefined>;
   readonly active = new Map<string, Promise<StripeDeposit>>();
   readonly creating = new Map<string, Promise<StripeDeposit>>();
+  private readonly shadowWallet: ShadowWallet;
   private manualChecks = new Map<string, number>();
   constructor(
     public funding: FundingService,
     public settings = stripeSettings(),
     private gateway = stripeGateway(settings),
     private now = () => Date.now(),
-  ) {}
+  ) {
+    this.shadowWallet = new ShadowWallet(funding.store);
+  }
   status(): StripeFundingStatus {
     const reason = !this.settings.enabled
       ? "Stripe test deposits are not enabled on this server."
@@ -289,6 +293,7 @@ export class StripeFundingService {
             )
             .run(value.id, input.requestKey, JSON.stringify(value));
           await this.save(value, "checkout_requested");
+          await this.shadowWallet.enrollSandboxDeposit(value.id);
         }
       }
       if (!this.status().enabled)
@@ -487,6 +492,12 @@ export class StripeFundingService {
               ? "refund"
               : "deposit",
           current.lastCheckedAt!,
+        );
+        await this.shadowWallet.reconcileSandboxDeposit(
+          id,
+          payment.id,
+          target,
+          current.disputed,
         );
         current.netCreditUnits = target;
         current.checkoutUrl = null;

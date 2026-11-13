@@ -74,11 +74,17 @@ export class ShadowWallet {
       .prepare(
         `SELECT (SELECT COALESCE(sum(wallet_micros),0) FROM shadow_wallet_journal
                  WHERE workspace_id=current_setting('octolab.workspace_id'))
+           + (SELECT COALESCE(sum(wallet_micros),0) FROM shadow_wallet_sandbox_entries
+                 WHERE workspace_id=current_setting('octolab.workspace_id'))
            - (SELECT COALESCE(sum(h.maximum_micros),0) FROM shadow_wallet_holds h
               WHERE h.workspace_id=current_setting('octolab.workspace_id')
                 AND h.admitted AND NOT EXISTS (
                 SELECT 1 FROM shadow_wallet_closures c WHERE c.workspace_id=h.workspace_id AND c.call_id=h.call_id
-              )) >= ? AS admitted`,
+              )) >= ?
+           AND NOT EXISTS (
+             SELECT 1 FROM shadow_wallet_sandbox_entries e
+             WHERE e.workspace_id=current_setting('octolab.workspace_id') AND e.kind='dispute_hold'
+           ) AS admitted`,
       )
       .get(maximumMicros);
 
@@ -106,6 +112,70 @@ export class ShadowWallet {
         admitted,
       );
     return admitted;
+  }
+
+  /** Enroll new checkout intents in the sandbox mirror inside their creation transaction. */
+  async enrollSandboxDeposit(depositId: string) {
+    const { db } = this.store;
+    if (
+      process.env.TWO_HANDS_SHADOW_WALLET !== "true" ||
+      process.env.TWO_HANDS_SHADOW_STRIPE_SANDBOX !== "true" ||
+      db.dialect !== "postgres"
+    )
+      return;
+    await db
+      .prepare(
+        `
+      INSERT INTO shadow_wallet_sandbox_deposits(deposit_id)
+      SELECT ? WHERE EXISTS (
+        SELECT 1 FROM shadow_wallet_rates
+        WHERE workspace_id=current_setting('octolab.workspace_id')
+          AND verified_at<=now() AND expires_at>now()
+      )
+    `,
+      )
+      .run(depositId);
+  }
+
+  /** Mirrors a confirmed test-mode reconciliation without changing real balances. */
+  async reconcileSandboxDeposit(
+    depositId: string,
+    paymentIntentId: string,
+    targetMicros: number,
+    disputed: boolean,
+  ) {
+    const { db } = this.store;
+    if (db.dialect !== "postgres") return;
+    const enrollment = await db
+      .prepare(
+        `
+      SELECT EXISTS(SELECT 1 FROM shadow_wallet_sandbox_deposits WHERE deposit_id=?) AS enrolled,
+             COALESCE(sum(wallet_micros),0) AS current,
+             COALESCE(max(revision),0)+1 AS next_revision
+      FROM shadow_wallet_sandbox_entries WHERE deposit_id=?
+    `,
+      )
+      .get(depositId, depositId);
+    if (!enrollment?.enrolled) return;
+    const delta = targetMicros - Number(enrollment.current);
+    if (!delta && !disputed) return;
+    await db
+      .prepare(
+        `
+      INSERT INTO shadow_wallet_sandbox_entries
+       (deposit_id,revision,payment_intent_id,kind,target_micros,wallet_micros)
+      VALUES (?,?,?,?,?,?)
+      ON CONFLICT (workspace_id,deposit_id,dispute_marker) DO NOTHING
+    `,
+      )
+      .run(
+        depositId,
+        enrollment.next_revision,
+        paymentIntentId,
+        disputed ? "dispute_hold" : delta < 0 ? "refund" : "deposit",
+        targetMicros,
+        delta,
+      );
   }
 
   /** Closes a committed hold even after the pilot flag or rate is turned off. */
