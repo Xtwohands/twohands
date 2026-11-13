@@ -7,15 +7,14 @@ import {
   type ReactNode,
 } from "react";
 import type { Session, SupabaseClient } from "@supabase/supabase-js";
-import { ArrowRight } from "@untitledui/icons";
 import type { AccountProfile, AuthPublicConfig } from "../server/account-types";
 import type { CompanyPreviewTarget } from "../server/company-types";
 import { setAccountSession, setPreviewRole } from "./api";
 import { Button } from "./components/ui/button";
 import { AccountMenu } from "./AccountMenu";
-import { Input } from "./components/ui/input";
-import { InlineError } from "./observation-ui";
 import "./account.css";
+import { AuthView } from "./AuthView";
+import { readAuthCallback, type AuthMode } from "./auth-state";
 type AccountContext = {
   sessionEpoch?: number;
   enabled: boolean;
@@ -114,15 +113,17 @@ export function AccountGate({ children }: { children: ReactNode }) {
   const [previewTargetError, setPreviewTargetError] = useState("");
   const canPreviewRef = useRef(false);
   const [ready, setReady] = useState(false),
-    [error, setError] = useState(""),
-    [notice, setNotice] = useState("");
-  const [mode, setMode] = useState<"signin" | "signup" | "reset" | "recover">(
-    "signin",
+    [error, setError] = useState("");
+  const [mode, setMode] = useState<AuthMode>("options");
+  const callbackUrl = useRef(new URL(location.href));
+  const [callback, setCallback] = useState(() =>
+    readAuthCallback(callbackUrl.current),
   );
-  const [email, setEmail] = useState(""),
-    [password, setPassword] = useState("");
-  const [busy, setBusy] = useState(false),
-    [route, setRoute] = useState(location.hash);
+  const callbackHandled = useRef(false);
+  const googleAvailability = useRef<Promise<boolean | undefined>>(
+    Promise.resolve(undefined),
+  );
+  const [route, setRoute] = useState(location.hash);
   const client = useRef<SupabaseClient | null>(null),
     currentSession = useRef<Session | null>(null),
     sessionEpoch = useRef(0),
@@ -143,11 +144,10 @@ export function AccountGate({ children }: { children: ReactNode }) {
     version.current++;
     routedAccount.current = "";
     currentSession.current = null;
-    setMode("signin");
+    setMode("options");
     setAccountSession("", "");
     setSession(null);
     setProfile(undefined);
-    setPassword("");
   };
   const signOut = () => {
     clear();
@@ -264,6 +264,21 @@ export function AccountGate({ children }: { children: ReactNode }) {
         }
         if (!/^sb_publishable_/.test(settings.publishableKey))
           throw new Error("Sign-in is not configured correctly.");
+        googleAvailability.current = fetch(
+          new URL("/auth/v1/settings", settings.url),
+          {
+            headers: { apikey: settings.publishableKey },
+            signal: AbortSignal.timeout(8000),
+          },
+        )
+          .then(async (response) => {
+            if (!response.ok) return undefined;
+            const value = await response.json();
+            return typeof value.external?.google === "boolean"
+              ? value.external.google
+              : undefined;
+          })
+          .catch(() => undefined);
         const { createClient } = await import("@supabase/supabase-js");
         if (disposed) return;
         const supabase = createClient(settings.url, settings.publishableKey, {
@@ -312,6 +327,15 @@ export function AccountGate({ children }: { children: ReactNode }) {
         };
         const { data } = supabase.auth.onAuthStateChange((event, value) => {
           if (event === "PASSWORD_RECOVERY") setMode("recover");
+          if (
+            event === "SIGNED_IN" &&
+            callback.flow === "signup" &&
+            value?.user.email_confirmed_at &&
+            !callbackHandled.current
+          ) {
+            callbackHandled.current = true;
+            setMode("confirmed");
+          }
           apply(value);
         });
         unsubscribe = () => {
@@ -320,6 +344,20 @@ export function AccountGate({ children }: { children: ReactNode }) {
         };
         const initial = await supabase.auth.getSession();
         if (initial.error) throw initial.error;
+        if (
+          !initial.data.session &&
+          callbackUrl.current.searchParams.has("code")
+        ) {
+          setCallback((value) => ({
+            ...value,
+            stage:
+              value.flow === "google"
+                ? "google-error"
+                : value.flow === "recovery"
+                  ? "reset-expired"
+                  : "confirmation-expired",
+          }));
+        }
         apply(initial.data.session);
       } catch (e) {
         if (!disposed) {
@@ -430,7 +468,7 @@ export function AccountGate({ children }: { children: ReactNode }) {
     return <Context.Provider value={context}>{children}</Context.Provider>;
   const emptyPreview =
     previewRole === "user" && profile?.hasPersonalAccount === false;
-  if (profile && !emptyPreview && mode !== "recover")
+  if (profile && !emptyPreview && mode !== "recover" && mode !== "confirmed")
     return (
       <Context.Provider value={context}>
         <div
@@ -450,198 +488,27 @@ export function AccountGate({ children }: { children: ReactNode }) {
         </div>
       </Context.Provider>
     );
-  const title = emptyPreview
-    ? "No personal activity to preview"
-    : mode === "signup"
-      ? "Create your account"
-      : mode === "reset"
-        ? "Reset your password"
-        : mode === "recover"
-          ? "Choose a new password"
-          : "Sign in to Two Hands";
   return (
-    <main className="account-page">
-      <a href="#home" className="account-brand">
-        <img src="/two-hands.svg" width="156" height="34" alt="Two Hands" />
-      </a>
-      <section className="account-card">
-        {previewRole === "user" && (
-          <Button variant="outline" onClick={() => void context.preview(null)}>
-            Return to admin
-          </Button>
-        )}
-        {previewRole === "company" && (
-          <PreviewNotice
-            role={previewRole}
-            target={previewTarget}
-            targets={previewTargets}
-            onTarget={(target) => void context.preview("company", target)}
-            onExit={() => void context.preview(null)}
-          />
-        )}
-        <h1>
-          {!ready || (session && !profile && !error)
-            ? "Loading your account…"
-            : title}
-        </h1>
-        <p>
-          {emptyPreview
-            ? "This account has no personal activity yet."
-            : route.startsWith("#company")
-              ? "Sign in to register or manage your tool company."
-              : "Sign in to manage your tools and usage."}
-        </p>
-        {error && <InlineError message={error} />}
-        {notice && (
-          <p role="status" className="account-notice">
-            {notice}
-          </p>
-        )}
-        {ready && config?.enabled && (!session || mode === "recover") && (
-          <form
-            onSubmit={async (e) => {
-              e.preventDefault();
-              if (busy || !client.current) return;
-              setBusy(true);
-              setError("");
-              setNotice("");
-              try {
-                const auth = client.current.auth,
-                  redirect =
-                    location.origin +
-                    "/?auth_callback=1" +
-                    (route.startsWith("#company")
-                      ? "#company"
-                      : route.startsWith("#admin")
-                        ? "#admin"
-                        : "#dashboard");
-                if (mode === "signin") {
-                  const { error } = await auth.signInWithPassword({
-                    email,
-                    password,
-                  });
-                  if (error) throw error;
-                  setPassword("");
-                } else if (mode === "signup") {
-                  const { error, data } = await auth.signUp({
-                    email,
-                    password,
-                    options: { emailRedirectTo: redirect },
-                  });
-                  if (error) throw error;
-                  setPassword("");
-                  if (!data.session)
-                    setNotice(
-                      "Check your email to confirm your account, then sign in.",
-                    );
-                } else if (mode === "reset") {
-                  const { error } = await auth.resetPasswordForEmail(email, {
-                    redirectTo: redirect,
-                  });
-                  if (error) throw error;
-                  setNotice(
-                    "If the account exists, a reset link will arrive by email.",
-                  );
-                } else {
-                  const { error } = await auth.updateUser({ password });
-                  if (error) throw error;
-                  setPassword("");
-                  setMode("signin");
-                  setNotice("Password updated.");
-                }
-              } catch (e) {
-                setError((e as Error).message);
-              } finally {
-                setBusy(false);
-              }
-            }}
-          >
-            <>
-              {mode !== "recover" && (
-                <label>
-                  Email
-                  <Input
-                    type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    required
-                    autoComplete="email"
-                  />
-                </label>
-              )}
-              {mode !== "reset" && (
-                <label>
-                  Password
-                  <Input
-                    type="password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    required
-                    minLength={mode === "signin" ? 1 : 12}
-                    maxLength={256}
-                    autoComplete={
-                      mode === "signin" ? "current-password" : "new-password"
-                    }
-                  />
-                </label>
-              )}
-            </>
-            <Button type="submit" disabled={busy || !client.current}>
-              {busy
-                ? "Working…"
-                : mode === "signup"
-                  ? "Create account"
-                  : mode === "reset"
-                    ? "Send reset link"
-                    : mode === "recover"
-                      ? "Update password"
-                      : "Sign in"}
-              <ArrowRight size={16} />
-            </Button>
-          </form>
-        )}
-        {ready && session && !profile && mode !== "recover" && (
-          <div className="account-actions">
-            <Button onClick={() => void loadProfile(session)}>
-              Retry account access
-            </Button>
-            <Button variant="ghost" onClick={signOut}>
-              Sign out
-            </Button>
-          </div>
-        )}
-        {ready && (!config || (config.enabled && !client.current)) && (
-          <Button onClick={() => location.reload()}>Retry</Button>
-        )}
-        {ready && config?.enabled && !session && (
-          <div className="account-links">
-            <Button
-              variant="link"
-              onClick={() => {
-                setMode(mode === "signup" ? "signin" : "signup");
-                setError("");
-                setNotice("");
-                setPassword("");
-              }}
-            >
-              {mode === "signup"
-                ? "Already have an account? Sign in"
-                : "Create an account"}
-            </Button>
-            <Button
-              variant="link"
-              onClick={() => {
-                setMode(mode === "reset" ? "signin" : "reset");
-                setError("");
-                setNotice("");
-                setPassword("");
-              }}
-            >
-              {mode === "reset" ? "Back to sign in" : "Forgot password?"}
-            </Button>
-          </div>
-        )}
-      </section>
-    </main>
+    <AuthView
+      client={client.current}
+      ready={ready}
+      session={session}
+      mode={mode}
+      onModeChange={(next) => {
+        setError("");
+        setMode(next);
+      }}
+      error={error}
+      callbackStage={callback.stage}
+      googleAvailable={() => googleAvailability.current}
+      returnRoute={route}
+      emptyPreview={emptyPreview}
+      onRetry={() => {
+        if (session) void loadProfile(session);
+        else location.reload();
+      }}
+      onSignOut={signOut}
+      onReturnToAdmin={() => void context.preview(null)}
+    />
   );
 }

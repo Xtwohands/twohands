@@ -349,8 +349,11 @@ async function mockAuth(
 async function login(page: Page, destination = "/#dashboard/activity") {
   await page.goto(destination);
   await expect(
-    page.getByRole("heading", { name: "Sign in to Two Hands" }),
+    page.getByRole("heading", { name: "Continue to twohands" }),
   ).toBeVisible();
+  await page
+    .getByRole("button", { name: "Continue with email", exact: true })
+    .click();
   await page
     .getByLabel("Email", { exact: true })
     .fill("account@fixture.invalid");
@@ -401,7 +404,7 @@ test("email sign-in, persisted session, and sign-out clear the private workspace
     .last()
     .click();
   await expect(
-    page.getByRole("heading", { name: "Sign in to Two Hands" }),
+    page.getByRole("heading", { name: "Continue to twohands" }),
   ).toBeVisible();
   await expect(page.getByText("Private A receipt")).toHaveCount(0);
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
@@ -427,7 +430,7 @@ test("new accounts start automatically and expired access removes private conten
   state.revoked = true;
   await page.getByRole("button", { name: "Refresh account" }).click();
   await expect(
-    page.getByRole("heading", { name: "Sign in to Two Hands" }),
+    page.getByRole("heading", { name: "Continue to twohands" }),
   ).toBeVisible();
   await expect(page.getByText("Private A receipt")).toHaveCount(0);
   await captureJourney(page, "expired-session");
@@ -492,9 +495,12 @@ test("a delayed profile response cannot restore the previous account after sign-
     window.dispatchEvent(new Event("octolab-session-invalid")),
   );
   await expect(
-    page.getByRole("heading", { name: "Sign in to Two Hands", exact: true }),
+    page.getByRole("heading", { name: "Continue to twohands", exact: true }),
   ).toBeVisible();
   state.actorId = "00000000-0000-4000-8000-000000000099";
+  await page
+    .getByRole("button", { name: "Continue with email", exact: true })
+    .click();
   await page
     .getByLabel("Email", { exact: true })
     .fill("second@fixture.invalid");
@@ -520,18 +526,23 @@ test("confirmation, recovery, invalid credentials, and public landing stay usabl
   await mockAuth(page);
   await page.goto("/#home");
   await expect(
-    page.getByRole("heading", { name: "Sign in to Two Hands" }),
+    page.getByRole("heading", { name: "Continue to twohands" }),
   ).toHaveCount(0);
   await page.goto("/#dashboard");
   await expect(
-    page.getByRole("heading", { name: "Sign in to Two Hands" }),
+    page.getByRole("heading", { name: "Continue to twohands" }),
   ).toBeVisible();
+  await page
+    .getByRole("button", { name: "Continue with email", exact: true })
+    .click();
   await page
     .getByLabel("Email", { exact: true })
     .fill("account@fixture.invalid");
   await page.getByLabel("Password", { exact: true }).fill("incorrect");
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
-  await expect(page.getByText("Invalid login credentials")).toBeVisible();
+  await expect(
+    page.getByText("The email or password is incorrect."),
+  ).toBeVisible();
   await page
     .getByRole("button", { name: "Create an account", exact: true })
     .click();
@@ -541,14 +552,23 @@ test("confirmation, recovery, invalid credentials, and public landing stay usabl
   await page
     .getByRole("button", { name: "Create account", exact: true })
     .click();
-  await expect(page.getByRole("status")).toContainText("Check your email");
+  await expect(
+    page.getByRole("heading", { name: "Check your email", exact: true }),
+  ).toBeVisible();
+  await page
+    .getByRole("button", { name: "Back to sign in", exact: true })
+    .click();
   await page
     .getByRole("button", { name: "Forgot password?", exact: true })
     .click();
   await page
     .getByRole("button", { name: "Send reset link", exact: true })
     .click();
-  await expect(page.getByRole("status")).toContainText("If the account exists");
+  await expect(
+    page.getByText(
+      "If an account exists for account@fixture.invalid, you’ll receive a password reset link.",
+    ),
+  ).toBeVisible();
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth <= innerWidth,
@@ -561,6 +581,9 @@ test("tool company registration never forces a customer workspace or exposes the
 }) => {
   const state = await mockAuth(page, true, "company");
   await page.goto("/#company");
+  await page
+    .getByRole("button", { name: "Continue with email", exact: true })
+    .click();
   await page
     .getByLabel("Email", { exact: true })
     .fill("account@fixture.invalid");
@@ -1319,9 +1342,12 @@ test("a previous settings response cannot overwrite the next signed-in admin's c
     .last()
     .click();
   await expect(
-    page.getByRole("heading", { name: "Sign in to Two Hands" }),
+    page.getByRole("heading", { name: "Continue to twohands" }),
   ).toBeVisible();
   state.actorId = "00000000-0000-4000-8000-000000000099";
+  await page
+    .getByRole("button", { name: "Continue with email", exact: true })
+    .click();
   await page
     .getByLabel("Email", { exact: true })
     .fill("second@fixture.invalid");
