@@ -13,11 +13,13 @@
   --border-strong: #bdbdbd;
   --input: #888;
 
-  --brand-accent: #277bb6;
-  --primary: #246ca3;
+  /* Approved blue: Figma WjofMoGOzEmDvoRdERi1O5, frame 71:2861. */
+  --brand-accent: #3aa0ed;
+  --brand-border: #318cde;
+  --primary: var(--brand-accent);
   --primary-foreground: #fff;
-  --ring: #277bb6;
-  --selection: #d9ecfa;
+  --ring: var(--brand-accent);
+  --selection: color-mix(in srgb, var(--brand-accent) 18%, white);
   --destructive: #a32e2e;
   --error-foreground: #932c2c;
   --error-surface: #fff4f4;

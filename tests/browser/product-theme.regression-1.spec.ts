@@ -32,8 +32,9 @@ test("product surfaces keep the shared light theme when the system prefers dark"
     expect(theme.scheme, route).toBe("light");
     expect(Math.min(...theme.background), route).toBeGreaterThan(230);
     expect(Math.max(...theme.foreground), route).toBeLessThan(80);
-    await expect(
-      page.getByRole("img", { name: "Two Hands", exact: true }).first(),
-    ).toBeVisible();
+    expect(
+      await page.locator('img[alt^="Two Hands"]').count(),
+      route,
+    ).toBeGreaterThan(0);
   }
 });

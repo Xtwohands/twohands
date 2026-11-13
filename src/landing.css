@@ -1,10 +1,10 @@
 .th-landing {
   --th-margin: clamp(24px, 4.17vw, 76px);
-  --th-line: #e0e4e9;
+  --th-line: color-mix(in srgb, var(--th-blue) 25%, white);
   --th-mono: "Geist Mono Variable", ui-monospace, monospace;
   --th-blue: var(--brand-accent);
   --th-blue-ink: var(--primary);
-  --th-ice: #edf4fa;
+  --th-ice: color-mix(in srgb, var(--th-blue) 11%, white);
   --th-muted: var(--muted-foreground);
   background: var(--card);
   color: var(--foreground);
@@ -128,7 +128,7 @@
 .th-header-inner[data-compact="true"] .th-nav {
   border-color: var(--th-line);
   background: rgb(255 255 255 / 91%);
-  box-shadow: 0 4px 18px rgb(27 61 95 / 9%);
+  box-shadow: 0 4px 18px color-mix(in srgb, var(--th-blue) 9%, transparent);
   backdrop-filter: blur(10px);
 }
 
@@ -191,7 +191,7 @@
   height: clamp(180px, 28svh, 310px);
   overflow: hidden;
   border-block: 1px solid var(--th-line);
-  background: #f5f8fc;
+  background: color-mix(in srgb, var(--th-blue) 6%, white);
 }
 
 .th-glyph-field pre {
@@ -203,10 +203,10 @@
   background: radial-gradient(
     ellipse at 22% 48%,
     var(--th-blue) 0,
-    #6ca8d3 23%,
-    #a4bed3 52%,
-    #658caa 81%,
-    #a8c7df 100%
+    color-mix(in srgb, var(--th-blue) 89%, white) 23%,
+    color-mix(in srgb, var(--th-blue) 63%, white) 52%,
+    color-mix(in srgb, var(--th-blue) 92%, black) 81%,
+    color-mix(in srgb, var(--th-blue) 55%, white) 100%
   );
   background-clip: text;
   color: transparent;
@@ -250,7 +250,7 @@
 }
 
 .th-provider:hover {
-  background: #f1f7fc;
+  background: color-mix(in srgb, var(--th-blue) 8%, white);
 }
 
 .th-provider img {
@@ -380,7 +380,7 @@
   left: -5px;
   width: 11px;
   height: 11px;
-  border: 1px solid #a9bdcb;
+  border: 1px solid color-mix(in srgb, var(--th-blue) 64%, white);
   border-radius: 50%;
   background: white;
 }
@@ -388,7 +388,7 @@
 .th-stage[data-position="active"] button i {
   border-color: var(--th-blue-ink);
   background: var(--brand-accent);
-  box-shadow: 0 0 0 4px #e0effb;
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--th-blue) 16%, white);
 }
 
 .th-stage-detail {
@@ -420,9 +420,13 @@
   overflow: hidden;
   border-left: 1px solid var(--th-line);
   background:
-    radial-gradient(circle, #c4d5e3 0.8px, transparent 1.25px) 7px 7px / 16px
-      16px,
-    #f8fbfd;
+    radial-gradient(
+        circle,
+        color-mix(in srgb, var(--th-blue) 40%, white) 0.8px,
+        transparent 1.25px
+      )
+      7px 7px / 16px 16px,
+    color-mix(in srgb, var(--th-blue) 4%, white);
 }
 
 .th-stack {
@@ -461,25 +465,33 @@
   gap: 7%;
   padding: 12%;
   transform: rotateX(57deg) rotateZ(43deg);
-  border: 1px solid #b4c8db;
+  border: 1px solid color-mix(in srgb, var(--th-blue) 52%, white);
   border-radius: 6px;
-  background: linear-gradient(160deg, white 22%, #edf3f9);
+  background: linear-gradient(
+    160deg,
+    white 22%,
+    color-mix(in srgb, var(--th-blue) 11%, white)
+  );
   box-shadow:
-    5px 7px 0 #dfe9f1,
-    7px 9px 0 #bccddd,
-    15px 17px 24px rgb(51 89 123 / 12%);
+    5px 7px 0 color-mix(in srgb, var(--th-blue) 21%, white),
+    7px 9px 0 color-mix(in srgb, var(--th-blue) 47%, white),
+    15px 17px 24px color-mix(in srgb, var(--th-blue) 12%, transparent);
   transition:
     border-color 340ms,
     background 340ms;
 }
 
 .th-stack-layer[data-active="true"] .th-stack-face {
-  border-color: #6caee1;
-  background: linear-gradient(160deg, #f7fbff 22%, #cce7fb);
+  border-color: color-mix(in srgb, var(--th-blue) 82%, white);
+  background: linear-gradient(
+    160deg,
+    color-mix(in srgb, var(--th-blue) 4%, white) 22%,
+    color-mix(in srgb, var(--th-blue) 26%, white)
+  );
   box-shadow:
-    5px 7px 0 #bddcf4,
-    7px 9px 0 #7fafd4,
-    15px 17px 34px rgb(52 126 185 / 18%);
+    5px 7px 0 color-mix(in srgb, var(--th-blue) 36%, white),
+    7px 9px 0 color-mix(in srgb, var(--th-blue) 80%, white),
+    15px 17px 34px color-mix(in srgb, var(--th-blue) 18%, transparent);
 }
 
 .th-stack-pane,
@@ -492,7 +504,7 @@
   justify-content: center;
   gap: 8%;
   padding: 9%;
-  border: 1px solid #bccfdf;
+  border: 1px solid color-mix(in srgb, var(--th-blue) 46%, white);
   border-radius: 5px;
   background: rgb(255 255 255 / 64%);
   color: var(--th-blue-ink);
@@ -523,7 +535,7 @@
   width: 88%;
   height: 4px;
   border-radius: 4px;
-  background: #a7c0d5;
+  background: color-mix(in srgb, var(--th-blue) 60%, white);
 }
 
 .th-stack-block i:nth-child(2n),
@@ -610,9 +622,12 @@
   padding: 40px;
   border-left: 1px solid var(--th-line);
   background:
-    linear-gradient(rgb(224 239 250 / 28%), rgb(210 232 247 / 16%)),
+    linear-gradient(
+      color-mix(in srgb, var(--th-blue) 28%, transparent),
+      color-mix(in srgb, var(--th-blue) 16%, transparent)
+    ),
     url("./assets/landing-water.webp") center / cover,
-    #a8c9e0;
+    color-mix(in srgb, var(--th-blue) 55%, white);
 }
 
 .th-format {
@@ -624,8 +639,8 @@
 }
 
 .th-format [data-slot="tabs-list"] {
-  border: 1px solid #d3e0eb;
-  background: #edf4f9;
+  border: 1px solid color-mix(in srgb, var(--th-blue) 30%, white);
+  background: color-mix(in srgb, var(--th-blue) 11%, white);
 }
 
 .th-format [data-slot="tabs-trigger"] {
@@ -641,10 +656,10 @@
   width: 100%;
   min-height: 380px;
   overflow: hidden;
-  border: 1px solid #d8e2ea;
+  border: 1px solid color-mix(in srgb, var(--th-blue) 28%, white);
   border-radius: 10px;
   background: white;
-  box-shadow: 0 18px 46px rgb(44 75 111 / 14%);
+  box-shadow: 0 18px 46px color-mix(in srgb, var(--th-blue) 14%, transparent);
 }
 
 .th-panel-heading {
@@ -691,7 +706,7 @@
   margin-block: 17px 10px;
   padding: 10px 13px;
   border-radius: 6px;
-  background: #f0f6fb;
+  background: color-mix(in srgb, var(--th-blue) 9%, white);
 }
 
 .th-receipt-estimate strong {
@@ -715,7 +730,7 @@
 }
 
 .th-code-example {
-  color: #27577d;
+  color: color-mix(in srgb, var(--th-blue) 56%, black);
   font-size: 12px;
   line-height: 1.65;
   overflow-wrap: anywhere;
@@ -775,7 +790,7 @@
   place-items: center;
   border: 1px solid var(--th-line);
   border-radius: 6px;
-  background: #f7f9fb;
+  background: color-mix(in srgb, var(--th-blue) 6%, white);
 }
 
 .th-products a strong,
@@ -830,24 +845,33 @@
   place-items: center;
   overflow: hidden;
   background:
-    radial-gradient(circle, #a9c4da 0.85px, transparent 1px) 8px 8px / 13px 13px,
-    #eaf3fb;
+    radial-gradient(
+        circle,
+        color-mix(in srgb, var(--th-blue) 57%, white) 0.85px,
+        transparent 1px
+      )
+      8px 8px / 13px 13px,
+    color-mix(in srgb, var(--th-blue) 12%, white);
 }
 
 .th-story-art[data-theme="extract"] {
   background:
-    repeating-linear-gradient(145deg, #c4dbed 0 1px, transparent 1px 14px),
-    #edf5fb;
+    repeating-linear-gradient(
+      145deg,
+      color-mix(in srgb, var(--th-blue) 36%, white) 0 1px,
+      transparent 1px 14px
+    ),
+    color-mix(in srgb, var(--th-blue) 10%, white);
 }
 
 .th-story-art[data-theme="review"] {
   background:
     repeating-radial-gradient(
       ellipse at 50% 160%,
-      #d1e3ef 0 1px,
+      color-mix(in srgb, var(--th-blue) 29%, white) 0 1px,
       transparent 1px 13px
     ),
-    #eef3f8;
+    color-mix(in srgb, var(--th-blue) 11%, white);
 }
 
 .th-story-art > div {
@@ -855,11 +879,11 @@
   width: 68px;
   height: 68px;
   place-items: center;
-  border: 1px solid #ccdfed;
+  border: 1px solid color-mix(in srgb, var(--th-blue) 32%, white);
   border-radius: 9px;
   background: #fff;
   color: var(--th-blue-ink);
-  box-shadow: 0 5px 24px rgb(34 94 143 / 10%);
+  box-shadow: 0 5px 24px color-mix(in srgb, var(--th-blue) 10%, transparent);
 }
 
 .th-story-description {
@@ -980,9 +1004,9 @@
   gap: 8px;
   margin: 9px;
   padding: 2px 3px 2px 7px;
-  border: 1px solid #d4e4f0;
+  border: 1px solid color-mix(in srgb, var(--th-blue) 27%, white);
   border-radius: 6px;
-  background: #edf5fb;
+  background: color-mix(in srgb, var(--th-blue) 10%, white);
   color: var(--th-blue-ink);
   font-size: 12px;
 }
@@ -1038,7 +1062,12 @@
   place-items: center;
   padding-block: 47px;
   background:
-    radial-gradient(circle, #cadfec 1px, transparent 1.25px) center / 18px 18px,
+    radial-gradient(
+        circle,
+        color-mix(in srgb, var(--th-blue) 33%, white) 1px,
+        transparent 1.25px
+      )
+      center / 18px 18px,
     var(--th-ice);
 }
 

@@ -50,7 +50,10 @@
 [data-slot="button"][data-variant="brand"] {
   --button-fill: var(--brand-accent);
   --button-hover: color-mix(in srgb, var(--button-fill), black 8%);
-  --button-border: color-mix(in srgb, var(--button-fill), black 16%);
+  --button-border: var(--brand-border);
+  text-shadow:
+    0 0 2px color-mix(in srgb, var(--brand-accent), black 65%),
+    0 0 3px color-mix(in srgb, var(--brand-accent), black 65%);
 }
 [data-slot="button"]:is([data-variant="default"], [data-variant="brand"]) {
   border-radius: 8px;
@@ -83,6 +86,7 @@
     box-shadow: none;
     border-color: var(--border);
     opacity: 0.65;
+    text-shadow: none;
   }
 }
 [data-slot="button"][data-variant="link"] {

@@ -335,7 +335,7 @@ test("company switching rejects stale responses from the previous provider", asy
   let release!: () => void;
   const gate = new Promise<void>((r) => (release = r));
   await page.route(
-    "**/api/company-insights/exa?source=demo&scope=workspace",
+    "**/api/company-insights/exa?source=demo&scope=account",
     async (route) => {
       const response = await route.fetch();
       await gate;
