@@ -6,7 +6,7 @@ test("account menu opens upward, restores focus, and keeps settings reachable lo
 }) => {
   await page.goto("/#dashboard");
   await expect(
-    page.getByRole("heading", { name: "My dashboard", exact: true }),
+    page.getByRole("heading", { name: "Home", exact: true }),
   ).toBeVisible();
   if (test.info().project.name === "mobile") {
     await page.getByRole("button", { name: "Open navigation" }).click();
@@ -57,7 +57,7 @@ test("customer navigation groups keys and test funding without hiding existing p
     "page",
   );
   await expect(nav.getByRole("link")).toHaveText([
-    "My dashboard",
+    "Home",
     "Tool catalog",
     "Activity",
     "API keys",

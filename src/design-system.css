@@ -49,7 +49,7 @@
 }
 [data-slot="button"][data-variant="brand"] {
   --button-fill: var(--brand-accent);
-  --button-hover: color-mix(in srgb, var(--button-fill), black 8%);
+  --button-hover: var(--brand-accent);
   --button-border: var(--brand-border);
   text-shadow: none;
 }

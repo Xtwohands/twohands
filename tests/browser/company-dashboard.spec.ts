@@ -307,3 +307,23 @@ test("the first recorded call is visible in company-holder and admin-preview das
   );
   await expect(page.getByText(/at least 5|minimum cohort/i)).toHaveCount(0);
 });
+
+test("leaving a registration edit opens the selected company page", async ({
+  page,
+}) => {
+  await fixture(page, true);
+  await page.goto(`/#company/${id}/details`);
+  await page
+    .getByRole("button", { name: "Update registration", exact: true })
+    .click();
+  await expect(
+    page.getByRole("heading", { name: "Update company details", exact: true }),
+  ).toBeVisible();
+
+  await page.goto(`/#company/${id}/team`);
+
+  await expect(page.getByLabel("Analyst email", { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Update company details", exact: true }),
+  ).toHaveCount(0);
+});

@@ -24,13 +24,8 @@ import { CopyButton, Empty, InlineError, date } from "./observation-ui";
 import type { DepositIntent } from "../server/funding-types";
 import "./funding.css";
 
-export function testUsdc(units: number) {
-  const whole = Math.floor(units / 1000000);
-  const fraction = String(units % 1000000)
-    .padStart(6, "0")
-    .replace(/0+$/, "");
-  return `${whole.toLocaleString("en-US")}${fraction ? `.${fraction}` : ".00"}`;
-}
+import { testUsdc } from "./funding-format";
+export { testUsdc } from "./funding-format";
 const statuses: Record<DepositIntent["status"], string> = {
   awaiting_transfer: "Awaiting transfer",
   pending: "Pending",

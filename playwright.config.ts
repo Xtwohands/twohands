@@ -31,6 +31,11 @@ export default defineConfig({
       reuseExistingServer: false,
     },
     {
+      command: "PORT=3101 npx vite --host 127.0.0.1 --port 3110 --strictPort",
+      url: "http://127.0.0.1:3110",
+      reuseExistingServer: false,
+    },
+    {
       command: "API_TOKEN= node --import tsx tests/fixtures/server.ts",
       url: "http://127.0.0.1:3102",
       reuseExistingServer: false,

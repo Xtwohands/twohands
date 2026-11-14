@@ -1,38 +1,60 @@
+import { startPolling } from "./polling";
 import {
   isProviderId,
   providerEntry,
   providerIds,
   providerLabel,
 } from "../server/provider-catalog";
-import { ToolSettingsView } from "./ToolSettingsView";
-import {
-  CompanyPortal,
-  AdminCompanyReview,
-  AccountSettings,
-  PortalShell,
-} from "./RolePortals";
+import { useConnectAgent } from "./ConnectAgentDialog";
+
 import { AdminNavigation } from "./AdminNavigation";
-import { ToolAccessView, OperatorAllowanceNotice } from "./ToolAccessView";
+import { OperatorAllowanceNotice } from "./OperatorAllowanceNotice";
 import { AccountControls, useAccount } from "./AccountGate";
 import { CustomerFunding, useCustomerFunding } from "./customer-funding";
-import { testUsdc } from "./FundingView";
-import { DisputeReviewView } from "./DisputeReviewView";
+import { testUsdc } from "./funding-format";
+const DisputeReviewView = lazy(() =>
+  import("./DisputeReviewView").then((m) => ({ default: m.DisputeReviewView })),
+);
 import { ToolOptions } from "./components/ToolOptions";
 import { ProviderLogo } from "./components/shared";
 import { OutcomeContent } from "./components/DeferredOutcomeContent";
-import { CompanyView } from "./CompanyView";
-import { ProviderLabView } from "./ProviderLabView";
-import { LandingView } from "./LandingView";
-import {
-  UserDashboardView,
-  dashboardSections,
-  type DashboardSection,
-} from "./UserDashboardView";
+const CompanyView = lazy(() =>
+  import("./CompanyView").then((m) => ({ default: m.CompanyView })),
+);
+const ProviderLabView = lazy(() =>
+  import("./ProviderLabView").then((m) => ({ default: m.ProviderLabView })),
+);
+const LandingView = lazy(() =>
+  import("./LandingView").then((m) => ({ default: m.LandingView })),
+);
+import { dashboardSections, type DashboardSection } from "./dashboard-routes";
+const UserDashboardView = lazy(() =>
+  import("./UserDashboardView").then((m) => ({ default: m.UserDashboardView })),
+);
+const ToolSettingsView = lazy(() =>
+  import("./ToolSettingsView").then((m) => ({ default: m.ToolSettingsView })),
+);
+const ToolAccessView = lazy(() =>
+  import("./ToolAccessView").then((m) => ({ default: m.ToolAccessView })),
+);
+const CompanyPortal = lazy(() =>
+  import("./RolePortals").then((m) => ({ default: m.CompanyPortal })),
+);
+const AdminCompanyReview = lazy(() =>
+  import("./RolePortals").then((m) => ({ default: m.AdminCompanyReview })),
+);
+const AccountSettings = lazy(() =>
+  import("./RolePortals").then((m) => ({ default: m.AccountSettings })),
+);
+const PortalShell = lazy(() =>
+  import("./RolePortals").then((m) => ({ default: m.PortalShell })),
+);
 import "./provider.css";
 import "./customer-navigation.css";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { lazy, useCallback, useEffect, useRef, useState } from "react";
 import {
   Grid01,
+  HomeLine,
   BarChartSquare02,
   ShieldTick,
   Link01,
@@ -151,6 +173,22 @@ type Summary = {
 type Catalog = Awaited<
   ReturnType<import("../server/observation").Observatory["catalog"]>
 >;
+
+// Untitled UI home-line: https://www.untitledui.com/free-icons
+function HomeNavigationIcon() {
+  return (
+    <span className="customer-home-icon" aria-hidden="true">
+      <HomeLine
+        style={{
+          width: 24,
+          height: 24,
+          transform: "scale(0.7083333333)",
+          transformOrigin: "top left",
+        }}
+      />
+    </span>
+  );
+}
 
 const pages = [
   { id: "sessions", label: "Sessions", icon: Grid01 },
@@ -332,11 +370,16 @@ function eventText(e: ObservationEvent) {
 }
 
 export function ObservationApp() {
+  const openConnectAgent = useConnectAgent();
   const account = useAccount();
   const [route, setRoute] = useState(readRoute);
   const [sessions, setSessions] = useState<ObservationListItem[]>([]);
   const [summary, setSummary] = useState<Summary>();
   const [catalog, setCatalog] = useState<Catalog>([]);
+  const [catalogStatus, setCatalogStatus] = useState<
+    "loading" | "ready" | "error"
+  >("loading");
+  const [catalogError, setCatalogError] = useState("");
   const [legacy, setLegacy] = useState<TaskSummary[]>([]);
   const [connection, setConnection] = useState<{
     lastSeenAt: string | null;
@@ -397,7 +440,7 @@ export function ObservationApp() {
       route.page === "tool-access" ||
       route.page === "tool-settings");
   const operatorArea =
-    !account.enabled ||
+    (!account.enabled && route.page !== "dashboard" && route.page !== "home") ||
     (!!account.profile?.isAdmin &&
       ![
         "dashboard",
@@ -407,37 +450,71 @@ export function ObservationApp() {
         "tool-access",
         "tool-settings",
       ].includes(route.page));
+  const needsCatalog =
+    route.page !== "dashboard" ||
+    ["tools", "routing", "connections"].includes(route.id ?? "");
   const refresh = useCallback(async () => {
     if (independentArea || route.page === "home") return true;
     const current = ++generation.current;
+    let accessRevoked = false;
+    setCatalogStatus((status) => (status === "ready" ? status : "loading"));
+    // Catalog readiness must not depend on unrelated account requests.
+    const catalogRequest = !needsCatalog
+      ? Promise.resolve(true)
+      : api<Catalog>("/observations/catalog").then(
+          (data) => {
+            if (current === generation.current && !accessRevoked) {
+              setCatalog(data);
+              setCatalogStatus("ready");
+              setCatalogError("");
+            }
+            return true;
+          },
+          (error: unknown) => {
+            if (current === generation.current) {
+              setCatalogStatus("error");
+              setCatalogError((error as Error).message);
+              if (
+                error instanceof ApiError &&
+                (error.status === 401 || error.status === 403)
+              )
+                setCatalog([]);
+            }
+            return false;
+          },
+        );
     try {
-      const [ss, sm, ct, l, c] = await Promise.all([
+      const [ss, sm, catalogOk, l, c] = await Promise.all([
         operatorArea
           ? api<ObservationListItem[]>("/observations")
           : Promise.resolve([]),
         operatorArea
           ? api<Summary>("/observations/summary")
           : Promise.resolve(undefined),
-        api<Catalog>("/observations/catalog"),
+        catalogRequest,
         operatorArea ? api<TaskSummary[]>("/tasks") : Promise.resolve([]),
-        api<typeof connection>("/observations/connection"),
+        operatorArea
+          ? api<typeof connection>("/observations/connection")
+          : Promise.resolve({ lastSeenAt: null, clientName: null }),
       ]);
       if (current !== generation.current) return;
       setSessions(ss);
       setSummary(sm);
-      setCatalog(ct);
       setLegacy(l);
       setConnection(c);
       setError("");
-      return true;
+      return catalogOk;
     } catch (e) {
       if (current === generation.current) {
         setError((e as Error).message);
         if (e instanceof ApiError && (e.status === 401 || e.status === 403)) {
+          accessRevoked = true;
           detailGeneration.current++;
           setSessions([]);
           setSummary(undefined);
           setCatalog([]);
+          setCatalogStatus("error");
+          setCatalogError((e as Error).message);
           setLegacy([]);
           setSelected(undefined);
           setConnection({ lastSeenAt: null, clientName: null });
@@ -447,7 +524,7 @@ export function ObservationApp() {
     } finally {
       if (current === generation.current) setLoading(false);
     }
-  }, [independentArea, operatorArea, route.page]);
+  }, [independentArea, operatorArea, route.page, needsCatalog]);
   const reloadDetail = useCallback(async (id: string) => {
     const current = ++detailGeneration.current;
     try {
@@ -465,9 +542,11 @@ export function ObservationApp() {
     }
   }, []);
   useEffect(() => {
-    void refresh();
-    const timer = setInterval(() => void refresh(), 5000);
-    return () => clearInterval(timer);
+    const stop = startPolling(refresh, operatorArea ? 10000 : 60000);
+    return () => {
+      stop();
+      generation.current++;
+    };
   }, [refresh]);
   useEffect(() => {
     detailGeneration.current++;
@@ -475,9 +554,11 @@ export function ObservationApp() {
     setDetailError("");
     if (independentArea || !route.id || route.page !== "sessions") return;
     setDetailLoading(true);
-    void reloadDetail(route.id);
-    const timer = setInterval(() => void reloadDetail(route.id!), 3000);
-    return () => clearInterval(timer);
+    const stop = startPolling(() => reloadDetail(route.id!), 3000);
+    return () => {
+      stop();
+      detailGeneration.current++;
+    };
   }, [route.id, route.page, reloadDetail, independentArea]);
   async function mutate(path: string, body: unknown, message: string) {
     setBusy(true);
@@ -519,13 +600,14 @@ export function ObservationApp() {
             {
               tools: "Tool catalog",
               activity: "Activity",
+              requests: "Request log",
               usage: "Usage",
               routing: "Configure routing",
               connections: "Connections",
               credits: "Credits",
               keys: "API keys",
             } as Record<string, string>
-          )[route.id ?? ""] || "My dashboard"
+          )[route.id ?? ""] || "Home"
         : route.page === "company"
           ? "Tool company"
           : route.page === "settings"
@@ -600,13 +682,14 @@ export function ObservationApp() {
   const inToolCatalog = route.id === "tools" || route.id === "routing";
   const customerSidebar = surface === "user";
   const onOverview = !route.id || route.id === "overview";
+  const inActivity = ["activity", "requests", "usage"].includes(route.id ?? "");
   const sidebarContent = (
     <>
       <a href="#home" className="obs-brand">
         <img src="/two-hands.svg" width="147" height="32" alt="Two Hands" />
       </a>
       <nav
-        className={customerSidebar ? "customer-navigation" : undefined}
+        className="customer-navigation"
         aria-label={
           surface === "user"
             ? "User navigation"
@@ -621,18 +704,12 @@ export function ObservationApp() {
           <>
             <a
               href="#dashboard"
-              className={onOverview || route.id === "usage" ? "selected" : ""}
-              aria-current={
-                onOverview
-                  ? "page"
-                  : route.id === "usage"
-                    ? "location"
-                    : undefined
-              }
+              className={onOverview ? "selected" : ""}
+              aria-current={onOverview ? "page" : undefined}
               onClick={() => setMenuOpen(false)}
             >
-              <Grid01 />
-              My dashboard
+              <HomeNavigationIcon />
+              Home
             </a>
             <a
               href="#dashboard/tools"
@@ -651,8 +728,14 @@ export function ObservationApp() {
             </a>
             <a
               href="#dashboard/activity"
-              className={route.id === "activity" ? "selected" : ""}
-              aria-current={route.id === "activity" ? "page" : undefined}
+              className={inActivity ? "selected" : ""}
+              aria-current={
+                route.id === "activity"
+                  ? "page"
+                  : inActivity
+                    ? "location"
+                    : undefined
+              }
               onClick={() => setMenuOpen(false)}
             >
               <Activity />
@@ -721,6 +804,8 @@ export function ObservationApp() {
               href={`#company/${route.id || providerIds[0]}/${p.id}`}
               key={p.id}
               className={route.section === p.id ? "selected" : ""}
+              aria-current={route.section === p.id ? "page" : undefined}
+              onClick={() => setMenuOpen(false)}
             >
               <p.icon />
               {p.label}
@@ -737,6 +822,8 @@ export function ObservationApp() {
               href={`#${p.id}`}
               key={p.id}
               className={route.page === p.id ? "selected" : ""}
+              aria-current={route.page === p.id ? "page" : undefined}
+              onClick={() => setMenuOpen(false)}
             >
               <p.icon />
               {p.label}
@@ -753,25 +840,26 @@ export function ObservationApp() {
     </>
   );
   return (
-    <div className="observation-shell" data-surface={surface}>
-      <a
-        className="skip-link"
-        href="#main-content"
-        onClick={(e) => {
-          e.preventDefault();
-          document.getElementById("main-content")?.focus();
-        }}
-      >
-        Skip to content
-      </a>
-      <aside
-        className={`obs-sidebar${customerSidebar ? " customer-sidebar" : ""}`}
-      >
-        {sidebarContent}
-      </aside>
+    <div
+      className={`observation-shell${surface !== "user" ? " workspace-console" : ""}`}
+      data-surface={surface}
+    >
+      <nav aria-label="Skip links">
+        <a
+          className="skip-link"
+          href="#main-content"
+          onClick={(e) => {
+            e.preventDefault();
+            document.getElementById("main-content")?.focus();
+          }}
+        >
+          Skip to content
+        </a>
+      </nav>
+      <aside className="obs-sidebar customer-sidebar">{sidebarContent}</aside>
       <Dialog open={menuOpen} onOpenChange={setMenuOpen}>
         <DialogContent
-          className={`mobile-navigation translate-x-0 translate-y-0${customerSidebar ? " customer-mobile-navigation" : ""}`}
+          className="mobile-navigation customer-mobile-navigation translate-x-0 translate-y-0"
           onCloseAutoFocus={(e) => {
             e.preventDefault();
             if (navigatingFromMenu.current) {
@@ -790,25 +878,16 @@ export function ObservationApp() {
           aria-describedby={undefined}
         >
           <DialogTitle className="sr-only">Navigation</DialogTitle>
-          <div
-            className={`mobile-sidebar-content${customerSidebar ? " customer-sidebar" : ""}`}
-          >
+          <div className="mobile-sidebar-content customer-sidebar">
             {sidebarContent}
           </div>
         </DialogContent>
       </Dialog>
       <div className="obs-body">
         <header className="obs-topbar">
-          {customerSidebar && (
-            <a href="#home" className="customer-mobile-brand">
-              <img
-                src="/two-hands.svg"
-                width="109"
-                height="24"
-                alt="Two Hands"
-              />
-            </a>
-          )}
+          <a href="#home" className="customer-mobile-brand">
+            <img src="/two-hands.svg" width="109" height="24" alt="Two Hands" />
+          </a>
           <div>
             <Button
               className="mobile-nav-button"
@@ -819,7 +898,9 @@ export function ObservationApp() {
             >
               {menuOpen ? <XClose /> : <Menu01 />}
             </Button>
-            {!customerSidebar && <span>{currentTitle}</span>}
+            {!customerSidebar && (
+              <span className="sr-only">{currentTitle}</span>
+            )}
             {route.id && route.page === "sessions" && (
               <>
                 <span className="breadcrumb-slash">/</span>
@@ -829,20 +910,6 @@ export function ObservationApp() {
               </>
             )}
           </div>
-          {!customerSidebar && (
-            <div className="topbar-right">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => navigate("settings")}
-              >
-                <TerminalSquare />
-                {route.page === "company"
-                  ? "Account settings"
-                  : "Connect agent"}
-              </Button>
-            </div>
-          )}
         </header>
         <main id="main-content" tabIndex={-1} className="obs-main">
           <InlineError message={error} />
@@ -886,9 +953,7 @@ export function ObservationApp() {
           )}
           {route.page === "dashboard" &&
             account.enabled &&
-            (!route.id ||
-              ["overview", "activity"].includes(route.id) ||
-              inToolCatalog) && <OperatorAllowanceNotice />}
+            (inActivity || inToolCatalog) && <OperatorAllowanceNotice />}
           {route.page === "dashboard" && (
             <CustomerFunding.Provider
               value={{
@@ -904,6 +969,8 @@ export function ObservationApp() {
                     : "overview"
                 }
                 catalog={catalog}
+                catalogLoading={catalogStatus === "loading"}
+                catalogError={catalogStatus === "error" ? catalogError : ""}
                 refreshCatalog={refresh}
                 connectionRevision={connectionRevision}
               />
@@ -1029,7 +1096,7 @@ export function ObservationApp() {
                         </Button>
                         <Button
                           variant="outline"
-                          onClick={() => navigate("settings")}
+                          onClick={() => openConnectAgent()}
                         >
                           Connect agent
                           <ArrowUpRight />
@@ -1142,7 +1209,10 @@ export function ObservationApp() {
                     ))}
                   </div>
                 ) : (
-                  <Empty title="No model evaluations yet">
+                  <Empty
+                    title="No model evaluations yet"
+                    icon={BarChartSquare02}
+                  >
                     Once your agent submits an output, review it against the
                     accepted criteria. Complete reviews build this comparison.
                   </Empty>
@@ -1304,7 +1374,7 @@ export function ObservationApp() {
                     )}
                   </div>
                 ) : (
-                  <Empty title="No review cases">
+                  <Empty title="No review cases" icon={ShieldTick}>
                     After evaluating an output, open a case from its session to
                     document a shortfall and track a resolution.
                   </Empty>
@@ -1336,11 +1406,11 @@ export function ObservationApp() {
                     <a className="settings-destination" href="#dashboard">
                       <div className="session-name">
                         <span className="session-symbol">
-                          <Grid01 />
+                          <HomeNavigationIcon />
                         </span>
                         <div>
-                          <strong>My dashboard</strong>
-                          <span>Your tools and usage</span>
+                          <strong>Home</strong>
+                          <span>Your Two Hands account</span>
                         </div>
                       </div>
                       <ArrowUpRight />
@@ -1509,12 +1579,6 @@ export function ObservationApp() {
             </div>
           )}
         </main>
-        {!customerSidebar && (
-          <footer className="obs-footer">
-            <span>Intent → tool use → outcome</span>
-            <span>Observed calls. Explicit evaluations.</span>
-          </footer>
-        )}
       </div>
       <NewSession
         open={newOpen}

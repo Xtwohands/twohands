@@ -9,6 +9,9 @@ import {
   Activity,
   Building07,
   Users01,
+  CheckCircle,
+  Target04,
+  LayersThree01,
 } from "@untitledui/icons";
 import type { CompanyInsights, ToolCompany } from "../server/company-types";
 import { capabilityData } from "../server/provider-capability-data";
@@ -82,7 +85,9 @@ function EmptySection({
         : Link01;
   return (
     <div className="company-dashboard-empty">
-      <Icon aria-hidden="true" />
+      <span className="company-empty-symbol">
+        <Icon aria-hidden="true" />
+      </span>
       <div>
         <h3>{title}</h3>
         <p>{children}</p>
@@ -164,7 +169,8 @@ function ControlledTests() {
 function TestPlans() {
   return (
     <EmptySection title="No test plans yet" icon="plan">
-      Planning data runs will be added later. No runs have been scheduled.
+      Your hypotheses, planned changes, and success measures will appear here.
+      No runs have been scheduled.
     </EmptySection>
   );
 }
@@ -215,8 +221,78 @@ export function CompanyDashboard({
         : "";
   const percent = (value: number, total: number) =>
     total ? `${Math.round((value / total) * 100)}%` : "—";
+  const pageDescriptions: Record<string, [string, string]> = {
+    overview: [
+      `${name} dashboard`,
+      "Understand how agents discover, use, and evaluate your tool.",
+    ],
+    activity: [
+      "Live usage",
+      "Follow your tool from discovery to completed requests.",
+    ],
+    benchmarks: [
+      "Controlled tests",
+      "Compare changes with consistent cases and reviewed evidence.",
+    ],
+    plans: ["Test plans", "Turn a hypothesis into a change you can measure."],
+    integration: [
+      "Integration",
+      "See the tool information available to agents.",
+    ],
+  };
+  const [pageTitle, pageDescription] = pageDescriptions[tab];
+  const metricCards = (
+    <div className="company-metric-grid" aria-label="Recorded usage summary">
+      {[
+        [
+          "Selected when offered",
+          metrics
+            ? percent(metrics.selectedSessions, metrics.offeredSessions)
+            : "—",
+          metrics
+            ? `${metrics.selectedSessions.toLocaleString()} of ${metrics.offeredSessions.toLocaleString()} sessions`
+            : "No usage available yet",
+          BarChartSquare02,
+        ],
+        [
+          "Requests succeeded",
+          metrics ? percent(metrics.successfulCalls, metrics.calls) : "—",
+          metrics
+            ? `${metrics.successfulCalls.toLocaleString()} of ${metrics.calls.toLocaleString()} completed calls`
+            : "No completed requests available",
+          CheckCircle,
+        ],
+        [
+          "Sessions using your tool",
+          metrics ? metrics.selectedSessions.toLocaleString() : "—",
+          "Recorded agent selections",
+          Users01,
+        ],
+        [
+          "Completed requests",
+          metrics ? metrics.calls.toLocaleString() : "—",
+          "Organic tool activity",
+          Activity,
+        ],
+      ].map(([label, value, detail, Icon]) => {
+        const MetricIcon = Icon as typeof Activity;
+        return (
+          <div className="company-metric" key={String(label)}>
+            <h2>
+              {String(label)}
+              <MetricIcon aria-hidden="true" />
+            </h2>
+            <strong>{String(value)}</strong>
+            <p>{String(detail)}</p>
+          </div>
+        );
+      })}
+    </div>
+  );
   const Integration = ({ full = false }: { full?: boolean }) => (
-    <div className="company-capability">
+    <div
+      className={`company-capability${full ? " company-capability-full" : ""}`}
+    >
       <code>{tool || company?.toolName || "Integration not linked"}</code>
       <p>
         {capability?.description ||
@@ -235,7 +311,7 @@ export function CompanyDashboard({
             Provider documentation <ArrowUpRight />
           </a>
           {full && (
-            <>
+            <div className="company-request-defaults">
               <h3 className="company-dashboard-subheading">Request defaults</h3>
               <dl className="company-dashboard-defaults">
                 {Object.entries(capability.adapter).map(([key, value]) => (
@@ -249,27 +325,23 @@ export function CompanyDashboard({
                 <summary>Integration limitations</summary>
                 <p>{capability.limitations}</p>
               </details>
-            </>
+            </div>
           )}
         </>
       )}
     </div>
   );
   return (
-    <div className="provider-page company-page company-dashboard">
+    <div
+      className="provider-page company-page company-dashboard"
+      data-company-section={tab}
+    >
       <div className="page-heading company-heading">
         <div>
           <div className="company-title">
-            {providerId && (
-              <ProviderLogo
-                provider={providerId}
-                className={`company-logo company-logo-${providerId}`}
-                size={32}
-              />
-            )}
-            <h1>{name} dashboard</h1>
+            <h1>{pageTitle}</h1>
           </div>
-          <p>Understand how agents discover, use, and evaluate your tool.</p>
+          <p>{pageDescription}</p>
         </div>
         <div className="company-dashboard-actions">
           {companies.length > 1 && (
@@ -290,16 +362,42 @@ export function CompanyDashboard({
               </select>
             </label>
           )}
-          <Badge variant="outline">{status}</Badge>
           <Button
             variant="outline"
             onClick={refresh}
+            disabled={loading}
             aria-label="Refresh company dashboard"
           >
-            <RefreshCw01 />
+            <RefreshCw01
+              className={loading ? "company-refreshing" : undefined}
+            />
             Refresh
           </Button>
         </div>
+      </div>
+      <div className="company-identity-strip">
+        <div>
+          {providerId ? (
+            <ProviderLogo
+              provider={providerId}
+              className={`company-logo company-logo-${providerId}`}
+              size={24}
+            />
+          ) : (
+            <Building07 aria-hidden="true" />
+          )}
+          <strong>{name}</strong>
+          <span className="company-identity-divider" />
+          <span>
+            {providerId
+              ? company?.toolName || tool || "Tool integration"
+              : "Company registration"}
+          </span>
+        </div>
+        <Badge variant="secondary">
+          <span className="company-status-dot" />
+          {status}
+        </Badge>
       </div>
       <InlineError message={error} />
       {statusNote && (
@@ -315,42 +413,7 @@ export function CompanyDashboard({
       )}
       {tab === "overview" && (
         <>
-          <div className="company-metric-grid">
-            {[
-              [
-                "Selected when offered",
-                metrics
-                  ? percent(metrics.selectedSessions, metrics.offeredSessions)
-                  : "—",
-                metrics
-                  ? `${metrics.selectedSessions.toLocaleString()} of ${metrics.offeredSessions.toLocaleString()} sessions`
-                  : "No usage available yet",
-              ],
-              [
-                "Requests succeeded",
-                metrics ? percent(metrics.successfulCalls, metrics.calls) : "—",
-                metrics
-                  ? `${metrics.successfulCalls.toLocaleString()} of ${metrics.calls.toLocaleString()} completed calls`
-                  : "No completed requests available",
-              ],
-              [
-                "Sessions using your tool",
-                metrics ? metrics.selectedSessions.toLocaleString() : "—",
-                "Recorded agent selections",
-              ],
-              [
-                "Completed requests",
-                metrics ? metrics.calls.toLocaleString() : "—",
-                "Organic tool activity",
-              ],
-            ].map(([label, value, detail]) => (
-              <div className="company-metric" key={label}>
-                <h2>{label}</h2>
-                <strong>{value}</strong>
-                <p>{detail}</p>
-              </div>
-            ))}
-          </div>
+          {metricCards}
           <div className="company-main-grid">
             <Panel
               title="From discovery to use"
@@ -454,20 +517,32 @@ export function CompanyDashboard({
         </>
       )}
       {tab === "activity" && (
-        <Panel
-          title="Live usage"
-          description="Recorded organic activity for your tool"
-        >
-          <Usage
-            insights={insights}
-            loading={loading}
-            restricted={restricted}
-          />
-        </Panel>
+        <>
+          {metricCards}
+          <Panel
+            title="Live usage"
+            description="Recorded organic activity for your tool"
+          >
+            <Usage
+              insights={insights}
+              loading={loading}
+              restricted={restricted}
+            />
+            <div className="company-data-note">
+              <LayersThree01 aria-hidden="true" />
+              <p>
+                Based on eligible activity recorded through Two Hands. A
+                successful request records execution, not the quality of the
+                agent’s final answer.
+              </p>
+            </div>
+          </Panel>
+        </>
       )}
       {tab === "benchmarks" && (
         <>
           <Panel
+            className="company-full-empty"
             title="Controlled tests"
             description="Compare execution, response time, and returned evidence"
           >
@@ -494,12 +569,34 @@ export function CompanyDashboard({
         </>
       )}
       {tab === "plans" && (
-        <Panel
-          title="Test plans"
-          description="Document a hypothesis, a change, and a way to measure it"
-        >
-          <TestPlans />
-        </Panel>
+        <>
+          <Panel
+            className="company-full-empty"
+            title="Test plans"
+            description="Document a hypothesis, a change, and a way to measure it"
+          >
+            <TestPlans />
+          </Panel>
+          <Panel title="A useful plan starts with a clear question">
+            <div className="company-dashboard-method">
+              <div>
+                <Target04 aria-hidden="true" />
+                <strong>Define the hypothesis</strong>
+                <p>Identify the behavior you want to understand or improve.</p>
+              </div>
+              <div>
+                <Link01 aria-hidden="true" />
+                <strong>Describe one change</strong>
+                <p>Keep the integration or description change specific.</p>
+              </div>
+              <div>
+                <BarChartSquare02 aria-hidden="true" />
+                <strong>Choose a success measure</strong>
+                <p>Use the same cases and criteria before and after.</p>
+              </div>
+            </div>
+          </Panel>
+        </>
       )}
       {tab === "integration" && (
         <Panel

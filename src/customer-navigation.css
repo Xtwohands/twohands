@@ -188,3 +188,18 @@
 .customer-mobile-brand img {
   display: block;
 }
+
+.customer-home-icon {
+  position: relative;
+  display: inline-block;
+  flex: none;
+  width: 17px;
+  height: 17px;
+}
+
+.customer-home-icon > svg {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: block;
+}

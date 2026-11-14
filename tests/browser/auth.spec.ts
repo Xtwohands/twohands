@@ -442,7 +442,7 @@ test("direct sign-in starts a new customer account without workspace onboarding"
   await login(page, "/#signin");
   await expect(page).toHaveURL(/#dashboard/);
   await expect(
-    page.getByRole("heading", { name: "My dashboard", exact: true }),
+    page.getByRole("heading", { name: "Home", exact: true }),
   ).toBeVisible();
   await openNav(page);
   await expect(
@@ -465,6 +465,13 @@ test("the account menu provides settings and help without a customer picker", as
   ).toBeVisible();
   await expect(
     page.getByRole("button", { name: "Help and documentation", exact: true }),
+  ).toBeVisible();
+  await page.keyboard.press("Escape");
+  await page.goto("/#dashboard/connections");
+  await expect(
+    page.getByText(
+      "Two Hands manages provider availability. Your API keys connect agents to this account.",
+    ),
   ).toBeVisible();
 });
 
@@ -776,7 +783,7 @@ test("user preview has no floating bar and can return through account settings",
   await openSettings(page);
   await page.getByLabel("Preview as").selectOption("user");
   await expect(
-    page.getByRole("heading", { name: "My dashboard", exact: true }),
+    page.getByRole("heading", { name: "Home", exact: true }),
   ).toBeVisible();
   await expect(page.locator(".preview-notice")).toHaveCount(0);
   await openSettings(page);
@@ -953,7 +960,7 @@ test("signed-in account owner can create the first key and proceed to agent setu
   expect(sentHeaders["x-octolab-workspace"]).toBeUndefined();
   await captureJourney(page, "first-api-key");
   await page
-    .getByRole("link", { name: "Agent connection setup", exact: true })
+    .getByRole("button", { name: "Agent connection setup", exact: true })
     .click();
   await expect(
     page.getByLabel("New API key secret", { exact: true }),
@@ -963,6 +970,14 @@ test("signed-in account owner can create the first key and proceed to agent setu
   );
   expect(page.url()).not.toContain(secret);
   await captureJourney(page, "owner-agent-setup");
+  await page
+    .getByRole("dialog", { name: "Connect agent", exact: true })
+    .getByRole("button", { name: "Close", exact: true })
+    .click();
+  await expect(
+    page.getByRole("dialog", { name: "Connect agent", exact: true }),
+  ).toHaveCount(0);
+  await captureJourney(page, "api-keys-column-header");
 });
 
 test("admin navigation persists across company reviews and account activity", async ({
@@ -1060,6 +1075,7 @@ test("admin destinations preserve navigation, active links, refresh, and browser
       if (await page.getByRole("dialog").isVisible())
         await page.keyboard.press("Escape");
       else await page.getByRole("button", { name: "Close navigation" }).click();
+      await expect(page.getByRole("dialog")).toHaveCount(0);
     }
   }
   await page.goBack();

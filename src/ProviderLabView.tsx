@@ -521,7 +521,7 @@ export function ProviderLabView({
                   {money(data.backendBudgetMicros)} backend cap
                 </span>
                 <Button
-                  variant={mode === "replay" ? "default" : "brand"}
+                  variant="default"
                   disabled={
                     busy ||
                     !selectedSuite ||
