@@ -203,3 +203,27 @@
   color: var(--muted-foreground);
   font-size: 12px;
 }
+/* Connector offers in a session's discovery trace. */
+.connector-offers {
+  margin-top: 16px;
+}
+.connector-offers ul {
+  display: grid;
+  gap: 10px;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.connector-offers li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.connector-offers li .field-hint {
+  flex-basis: 100%;
+  margin: 0;
+}

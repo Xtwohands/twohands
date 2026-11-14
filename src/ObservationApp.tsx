@@ -18,7 +18,7 @@ import { CustomerFunding, useCustomerFunding } from "./customer-funding";
 import { testUsdc } from "./FundingView";
 import { DisputeReviewView } from "./DisputeReviewView";
 import { ConnectorsView } from "./ConnectorsView";
-import { ToolOptions } from "./components/ToolOptions";
+import { ToolOptions, ConnectorOffers } from "./components/ToolOptions";
 import { ProviderLogo } from "./components/shared";
 import { OutcomeContent } from "./components/DeferredOutcomeContent";
 import { CompanyView } from "./CompanyView";
@@ -1879,6 +1879,15 @@ function SessionView({
                           e.data.tools as Parameters<
                             typeof ToolOptions
                           >[0]["tools"]
+                        }
+                      />
+                    )}
+                    {e.type === "tools_offered" && (
+                      <ConnectorOffers
+                        offers={
+                          e.data.connectorTools as Parameters<
+                            typeof ConnectorOffers
+                          >[0]["offers"]
                         }
                       />
                     )}

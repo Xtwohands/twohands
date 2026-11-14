@@ -31,6 +31,11 @@ import { search, scrape, ProviderError } from "./providers.js";
 import { publicEvidenceUrl } from "./url-policy.js";
 import { ConnectorCallError, inputChecker } from "./connector-client.js";
 import { ConnectorError, type ConnectorStore } from "./connectors.js";
+import {
+  CONNECTOR_MATCHING,
+  matchConnectorTools,
+} from "./connector-discovery.js";
+import { keyAllowsConnectors } from "./api-keys.js";
 import { digest, ObservationStore } from "./observation-store.js";
 import type { Store } from "./store.js";
 import type { ProviderId } from "./types.js";
@@ -667,6 +672,27 @@ export class Observatory {
             : match,
         );
     }
+    // Company connector tools are matched on the stated need, not on operations.
+    const connectorMatch = matchConnectorTools(
+      {
+        need: discovery.input.need,
+        context: discovery.input.context ?? null,
+        operationText: discovery.operations.flatMap((op) =>
+          op.query ? [op.query] : [],
+        ),
+      },
+      (await this.connectors?.approvedTools()) ?? [],
+      {
+        remainingMicros: remainingBudgetMicros,
+        allowance: operatorAllowance,
+        keyAllowsConnectors: !key || keyAllowsConnectors(key),
+        calls: (
+          await Promise.all(
+            (await this.db.list()).map((s) => this.db.calls(s.id)),
+          )
+        ).flat(),
+      },
+    );
     const offerId = this.db.newId();
     const intentContext = {
       objective: session.objective,
@@ -687,6 +713,17 @@ export class Observatory {
         .filter((t) => t.discoveryMatches.some((m) => m.status === "eligible"))
         .map((t) => t.tool),
       tools,
+      connectorTools: connectorMatch.offers,
+      candidateConnectorTools: connectorMatch.offers
+        .filter((o) => o.status === "eligible")
+        .map((o) => o.tool),
+      connectorMatching: {
+        basis: CONNECTOR_MATCHING,
+        approvedTools: connectorMatch.considered,
+        withheld: connectorMatch.withheld,
+        meaning:
+          "Approved company tools whose name, description or input fields share words with the stated need, best first. A lexical shortlist, not a judgement of fit. Call them with call_connector_tool; list_connector_tools shows every approved tool.",
+      },
       remainingBudgetMicros,
       operatorAllowance,
       meaning:

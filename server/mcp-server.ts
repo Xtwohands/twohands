@@ -106,7 +106,7 @@ export function createObservationMcp(request: BridgeRequest) {
     "discover_tools",
     {
       description:
-        "Discover suitable tools from the catalog using the recorded intent, immediate need, and provider-neutral operations. Supply relevant context and exact query/URL/options; Two Hands finds alternatives and returns costs, compatibility, availability, and separate observed/controlled reputation evidence. Discovery is free and does not call providers. " +
+        "Discover suitable tools from the catalog using the recorded intent, immediate need, and provider-neutral operations. Supply relevant context and exact query/URL/options; Two Hands finds alternatives and returns costs, compatibility, availability, and separate observed/controlled reputation evidence. It also returns connectorTools: approved company tools whose description shares words with the need, each with its input schema, estimate and matched terms; call those with call_connector_tool. A need alone is enough to find connector tools; operations are needed to price search and extraction. Discovery is free and does not call providers. " +
         providerSelectionGuidance,
       inputSchema: {
         sessionId: z.string().uuid(),
@@ -201,7 +201,7 @@ export function createObservationMcp(request: BridgeRequest) {
     "route_call",
     {
       description:
-        "Send one provider-neutral search or extraction and let octolab choose the provider. Octolab ranks the eligible tools by request estimate and observed workspace latency and reliability, records the decision with every candidate and its score, runs the chosen tool, and returns the decision with the evidence. If the chosen provider fails, it tries the next eligible tool once unless allowFallback is false. The choice is octolab's, not yours, and is not a judgement of answer quality. Use a named provider tool instead when you have a specific reason to prefer one.",
+        "Send one provider-neutral search or extraction and let octolab choose the provider. Octolab ranks the eligible tools by request estimate and observed workspace latency and reliability, records the decision with every candidate and its score, runs the chosen tool, and returns the decision with the evidence. If the chosen provider fails, it tries the next eligible tool once unless allowFallback is false. The choice is octolab's, not yours, and is not a judgement of answer quality. Use a named provider tool instead when you have a specific reason to prefer one. route_call covers search and extraction only; it never chooses a company connector tool, because those are not interchangeable. Call connector tools explicitly with call_connector_tool.",
       inputSchema: { sessionId: z.string().uuid(), ...routeInput.shape },
       annotations: {
         readOnlyHint: false,

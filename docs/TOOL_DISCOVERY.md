@@ -34,6 +34,8 @@ Every offered tool includes its capabilities, limitations, credential availabili
 
 `candidateTools` lists tools with at least one eligible operation; inspect each operation's status before calling. The server does not rank tools by popularity or invent missing reputation. The recorded offer includes normalized operations, intent/context, catalog version, rate versions inside quotes, and the candidate set. Credentials and private internal reasoning are never returned.
 
+Discovery also returns `connectorTools`: approved company connector tools whose name, description or input fields share words with the stated need, with each tool's input schema, approved estimate, status, matched terms and organic reputation. A need alone is enough to find them; `candidateConnectorTools` lists the eligible ones. They are called explicitly with `call_connector_tool`. See [company connectors](CONNECTORS.md#discovery).
+
 Discovery is a snapshot. Execution recomputes prices and enforces current keys, budget, rate limit, and call cap. This is estimated accounting, not invoice reconciliation. Provider-reported dollars and credits remain separately recorded.
 
 ## Required selection summaries
