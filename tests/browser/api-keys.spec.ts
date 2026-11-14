@@ -20,7 +20,7 @@ async function login(page: Page) {
     page.getByRole("button", { name: "Create API key", exact: true }),
   ).toBeEnabled();
   await expect(
-    page.getByRole("heading", { name: "Your keys", exact: true }),
+    page.getByRole("table", { name: "Your API keys", exact: true }),
   ).toBeVisible();
 }
 async function create(page: Page, name: string, limit = "0.008") {

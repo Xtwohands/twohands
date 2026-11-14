@@ -1,3 +1,4 @@
+import { startPolling } from "./polling";
 import { createContext, useCallback, useEffect, useRef, useState } from "react";
 import type { FundingSummary } from "../server/funding-types";
 import { api } from "./api";
@@ -17,24 +18,22 @@ export function useCustomerFunding(
     if (!enabled) return;
     const id = ++generation.current;
     try {
-      const summary = await api<FundingSummary>("/account/funding");
+      const summary = await api<FundingSummary>(
+        onCreditsPage ? "/account/funding" : "/account/funding?summary=true",
+      );
       if (id === generation.current) setState({ scope, summary, error: "" });
     } catch (error) {
       if (id === generation.current)
         setState({ scope, error: (error as Error).message });
     }
-  }, [enabled, scope]);
+  }, [enabled, scope, onCreditsPage]);
 
   useEffect(() => {
     if (!enabled) return;
-    void refresh();
-    const timer = setInterval(
-      () => void refresh(),
-      onCreditsPage ? 10000 : 60000,
-    );
+    const stop = startPolling(refresh, onCreditsPage ? 15000 : 60000);
     return () => {
       generation.current++;
-      clearInterval(timer);
+      stop();
     };
   }, [enabled, onCreditsPage, refresh]);
 

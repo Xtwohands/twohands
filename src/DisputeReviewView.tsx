@@ -14,6 +14,7 @@ import {
   DialogTitle,
 } from "./components/ui/dialog";
 import { CopyButton, Empty, InlineError, date } from "./observation-ui";
+import "./user-dashboard.css";
 import type {
   DisputeReviewDetail,
   DisputeReviewQueue,
@@ -177,7 +178,7 @@ export function DisputeReviewView() {
     }
   }
   return (
-    <div className="tool-workspace">
+    <div className="tool-workspace dispute-review">
       <div className="page-heading ws-page-heading">
         <div>
           <h1>Payment disputes</h1>
@@ -368,7 +369,7 @@ export function DisputeReviewView() {
                 </table>
               </div>
             ) : (
-              <Empty title="No matching disputes">
+              <Empty title="No matching disputes" icon={ShieldTick}>
                 Disputed Stripe test payments appear here after server
                 verification.
               </Empty>

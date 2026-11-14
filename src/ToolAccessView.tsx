@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import type { OperatorAllowance } from "../server/account-allowance";
 import { api, ApiError, money } from "./api";
-import { useAccount } from "./AccountGate";
-import { Panel, InlineError, Field } from "./observation-ui";
+import { Panel, Empty, InlineError, Field } from "./observation-ui";
 import { Button } from "./components/ui/button";
 import { Input } from "./components/ui/input";
 import { Textarea } from "./components/ui/textarea";
 import "./tool-access.css";
+import { Users01, Key01 } from "@untitledui/icons";
 type AllowanceAccount = {
   accountId: string;
   name: string;
@@ -20,49 +20,7 @@ const labels: Record<OperatorAllowance["state"], string> = {
   available: "Enabled",
   local: "Local development",
 };
-export function OperatorAllowanceNotice() {
-  const account = useAccount(),
-    [value, setValue] = useState<OperatorAllowance>(),
-    [error, setError] = useState("");
-  useEffect(() => {
-    let active = true;
-    const refresh = () =>
-      api<OperatorAllowance>("/account/operator-allowance")
-        .then((result) => {
-          if (active) {
-            setValue(result);
-            setError("");
-          }
-        })
-        .catch((e) => {
-          if (active) {
-            setValue(undefined);
-            setError(e.message);
-          }
-        });
-    void refresh();
-    const timer = setInterval(() => void refresh(), 15000);
-    return () => {
-      active = false;
-      clearInterval(timer);
-    };
-  }, [account.profile?.user.id]);
-  if (error)
-    return (
-      <p className="tool-access-notice" role="status">
-        Tool access could not be verified. Provider calls remain subject to
-        server authorization.
-      </p>
-    );
-  if (value?.state !== "paused" && value?.state !== "exhausted") return null;
-  return (
-    <p className="tool-access-notice" role="status">
-      {value.state === "paused"
-        ? "Tool access is paused for your account."
-        : "Your account has reached its tool spending limit."}
-    </p>
-  );
-}
+
 export function ToolAccessView() {
   const [items, setItems] = useState<AllowanceAccount[]>([]),
     [cursor, setCursor] = useState<string | null>(null),
@@ -223,7 +181,9 @@ export function ToolAccessView() {
           {loading && !items.length ? (
             <p role="status">Loading accounts…</p>
           ) : !items.length ? (
-            <p>No accounts are available yet.</p>
+            <Empty title="No accounts are available yet" icon={Users01}>
+              Accounts will appear here when they’re available for review.
+            </Empty>
           ) : (
             <div className="tool-access-list">
               {items.map((item) => (
@@ -252,10 +212,10 @@ export function ToolAccessView() {
         </Panel>
         <Panel title={selected ? selected.name : "Select an account"}>
           {!selected ? (
-            <p>
-              Select an account to review its allowance and enable or pause tool
+            <Empty title="Choose an account" icon={Key01}>
+              Review an account’s allowance, then enable or pause its tool
               access.
-            </p>
+            </Empty>
           ) : (
             <>
               <dl className="portal-details">

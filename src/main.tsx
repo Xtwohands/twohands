@@ -1,6 +1,7 @@
 import React, { lazy, Suspense } from "react";
 import { createRoot } from "react-dom/client";
 import { AccountGate } from "./AccountGate";
+import { ConnectAgentProvider } from "./ConnectAgentDialog";
 import { ObservationApp } from "./ObservationApp";
 import "@fontsource-variable/geist";
 import "@fontsource-variable/geist-mono";
@@ -9,6 +10,7 @@ import "./observation.css";
 import "./customer-theme.css";
 import "./design-system.css";
 import "./settings.css";
+import "./workspace-console.css";
 const Legacy = lazy(() => import("./Legacy"));
 const DevToolbar = import.meta.env.DEV
   ? lazy(() =>
@@ -40,13 +42,15 @@ createRoot(document.getElementById("root")!).render(
       </main>
     ) : (
       <AccountGate>
-        <Suspense fallback={<p>Loading Two Hands…</p>}>
-          {location.pathname.startsWith("/research") ? (
-            <Legacy />
-          ) : (
-            <ObservationApp />
-          )}
-        </Suspense>
+        <ConnectAgentProvider>
+          <Suspense fallback={<p>Loading Two Hands…</p>}>
+            {location.pathname.startsWith("/research") ? (
+              <Legacy />
+            ) : (
+              <ObservationApp />
+            )}
+          </Suspense>
+        </ConnectAgentProvider>
       </AccountGate>
     )}
     {DevToolbar && (

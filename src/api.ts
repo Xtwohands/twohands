@@ -48,10 +48,31 @@ export function setToken(value: string) {
   previewRole = null;
   previewTarget = null;
 }
-export async function api<T = any>(path: string, body?: unknown): Promise<T> {
+const pendingReads = new Map<string, Promise<unknown>>();
+// A read captured before navigation must not be reused when a view is reopened.
+if (typeof window !== "undefined") {
+  window.addEventListener("hashchange", () => pendingReads.clear());
+  window.addEventListener("popstate", () => pendingReads.clear());
+}
+export function api<T = any>(path: string, body?: unknown): Promise<T> {
+  if (body !== undefined) {
+    pendingReads.clear();
+    return request<T>(path, body).finally(() => pendingReads.clear());
+  }
+  const key = JSON.stringify([contextEpoch, accessToken, path]);
+  const existing = pendingReads.get(key);
+  if (existing) return existing as Promise<T>;
+  const work = request<T>(path).finally(() => {
+    if (pendingReads.get(key) === work) pendingReads.delete(key);
+  });
+  pendingReads.set(key, work);
+  return work;
+}
+async function request<T>(path: string, body?: unknown): Promise<T> {
   const epoch = contextEpoch,
     token = accessToken;
   const response = await fetch(`/api${path}`, {
+    ...(body === undefined ? { signal: AbortSignal.timeout(30000) } : {}),
     headers: {
       ...apiHeaders(),
       ...(body !== undefined ? { "Content-Type": "application/json" } : {}),

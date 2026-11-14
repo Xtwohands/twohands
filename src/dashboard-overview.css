@@ -1,12 +1,12 @@
-.tool-workspace[data-dashboard-section="overview"] {
+.tool-workspace[data-dashboard-section="activity"] {
   max-width: none;
 }
 
-.tool-workspace[data-dashboard-section="overview"] .ws-page-heading {
+.tool-workspace[data-dashboard-section="activity"] .ws-page-heading {
   margin-bottom: 20px;
 }
 
-[data-dashboard-section="overview"] .ws-page-heading h1 {
+[data-dashboard-section="activity"] .ws-page-heading h1 {
   font-size: 22px;
   font-weight: 400;
   line-height: 32.4px;
@@ -32,19 +32,19 @@
   margin-left: -4px;
 }
 
-.tool-workspace[data-dashboard-section="overview"] .ws-metric {
+.tool-workspace[data-dashboard-section="activity"] .ws-metric {
   min-height: 131px;
   justify-content: space-between;
   border-radius: 7px;
   padding: 18px 21px 22px;
 }
 
-.tool-workspace[data-dashboard-section="overview"] .ws-metric strong {
+.tool-workspace[data-dashboard-section="activity"] .ws-metric strong {
   margin: 0;
   font-weight: 500;
 }
 
-.tool-workspace[data-dashboard-section="overview"] .ws-metric small {
+.tool-workspace[data-dashboard-section="activity"] .ws-metric small {
   position: absolute;
   width: 1px;
   height: 1px;
@@ -87,6 +87,30 @@
 .tool-workspace .ws-overview-discover > header {
   border-bottom: 0;
   padding: 25px;
+}
+
+.ws-overview-empty {
+  min-height: 324px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 11px;
+  padding: 32px 16px 16px;
+  text-align: center;
+}
+
+.ws-overview-empty-mark {
+  display: block;
+  flex: none;
+}
+
+.ws-overview-empty h3 {
+  margin: 0;
+  color: rgb(0 0 0 / 60%);
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 18px;
 }
 
 .ws-overview-requests {
@@ -251,7 +275,7 @@
 }
 
 @media (max-width: 480px) {
-  .tool-workspace[data-dashboard-section="overview"] .ws-metric {
+  .tool-workspace[data-dashboard-section="activity"] .ws-metric {
     min-height: 105px;
     padding: 12px;
   }

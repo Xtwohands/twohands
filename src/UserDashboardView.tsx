@@ -1,3 +1,4 @@
+import { startPolling } from "./polling";
 import { ProviderLogo } from "./components/shared";
 import {
   providerCatalog,
@@ -6,12 +7,18 @@ import {
   providerLabel,
   toolOperation,
 } from "../server/provider-catalog";
-import {
-  ProviderBillingView,
-  ProviderAdaptersView,
-} from "./ProviderBillingView";
+const ProviderBillingView = lazy(() =>
+  import("./ProviderBillingView").then((m) => ({
+    default: m.ProviderBillingView,
+  })),
+);
+const ProviderAdaptersView = lazy(() =>
+  import("./ProviderBillingView").then((m) => ({
+    default: m.ProviderAdaptersView,
+  })),
+);
 import { useAccount } from "./AccountGate";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { lazy, useCallback, useEffect, useId, useRef, useState } from "react";
 import {
   Activity,
   ArrowRight,
@@ -72,8 +79,13 @@ import catalogExaMark from "./assets/catalog-exa.svg";
 import catalogFirecrawlMark from "./assets/catalog-firecrawl.png";
 import "./tool-catalog.css";
 import { ApiKeysView } from "./ApiKeysView";
-import { FundingView } from "./FundingView";
-import { AgentEnvironment } from "./components/AgentEnvironment";
+const FundingView = lazy(() =>
+  import("./FundingView").then((m) => ({ default: m.FundingView })),
+);
+import {
+  AgentConnectionInstructions,
+  useConnectAgent,
+} from "./ConnectAgentDialog";
 
 type Catalog = Awaited<ReturnType<Observatory["catalog"]>>;
 type Preview = Awaited<ReturnType<Observatory["preview"]>>;
@@ -83,36 +95,20 @@ type Connection = {
   sessionBudgetMicros: number;
   requestsPerMinute: number;
 };
-export type DashboardSection =
-  | "overview"
-  | "tools"
-  | "activity"
-  | "usage"
-  | "routing"
-  | "connections"
-  | "credits"
-  | "keys";
-export const dashboardSections = [
-  "overview",
-  "tools",
-  "activity",
-  "usage",
-  "routing",
-  "connections",
-  "credits",
-  "keys",
-] as const;
+import { type DashboardSection } from "./dashboard-routes";
+export { dashboardSections, type DashboardSection } from "./dashboard-routes";
 const labels: Record<DashboardSection, [string, string]> = {
-  overview: [
-    "My dashboard",
-    "A clear view of the tools working behind your agent.",
-  ],
+  overview: ["Home", "A clear view of the tools working behind your agent."],
   tools: [
     "Tool catalog",
     "Find the right capability. Compare what each tool returns and costs.",
   ],
   activity: [
     "Activity",
+    "A clear view of the tools working behind your agent.",
+  ],
+  requests: [
+    "Request log",
     "Inspect the requests your agent made and the evidence it received.",
   ],
   usage: [
@@ -248,15 +244,20 @@ function Loading() {
 export function UserDashboardView({
   section = "overview",
   catalog,
+  catalogLoading,
+  catalogError,
   refreshCatalog,
   connectionRevision,
 }: {
   section?: DashboardSection;
   catalog: Catalog;
+  catalogLoading: boolean;
+  catalogError: string;
   refreshCatalog: () => Promise<unknown>;
   connectionRevision: number;
 }) {
   const account = useAccount();
+  const openConnectAgent = useConnectAgent();
   const canManage = !account.enabled || !!account.profile;
   const [days, setDays] = useState("7");
   const [usage, setUsage] = useState<AccountUsage>();
@@ -285,20 +286,30 @@ export function UserDashboardView({
   const requestKey = `${days}|${query}|${provider}|${status}|${page}|${section}`;
   const currentRequest = useRef(requestKey);
   currentRequest.current = requestKey;
+  const needsUsage = section === "activity" || section === "usage";
+  const needsPolicy = section === "tools" || section === "routing";
+  const needsConnection = section === "connections" || section === "routing";
   const load = useCallback(async () => {
     const id = ++generation.current;
     try {
       const [u, p, c] = await Promise.all([
-        api<AccountUsage>(`/account/usage?days=${days}`),
-        api<RoutingPolicy>("/account/routing"),
-        api<Connection>("/account/connection"),
+        needsUsage
+          ? api<AccountUsage>(`/account/usage?days=${days}`)
+          : Promise.resolve(undefined),
+        needsPolicy
+          ? api<RoutingPolicy>("/account/routing")
+          : Promise.resolve(undefined),
+        needsConnection
+          ? api<Connection>("/account/connection")
+          : Promise.resolve(undefined),
       ]);
       if (generation.current !== id) return;
-      setUsage(u);
-      setPolicy((current) =>
-        current && current.revision > p.revision ? current : p,
-      );
-      setConnection(c);
+      if (u) setUsage(u);
+      if (p)
+        setPolicy((current) =>
+          current && current.revision > p.revision ? current : p,
+        );
+      if (c) setConnection(c);
       setError("");
     } catch (e) {
       if (generation.current === id) {
@@ -312,17 +323,24 @@ export function UserDashboardView({
     } finally {
       if (generation.current === id) setLoading(false);
     }
-  }, [days, connectionRevision]);
+  }, [days, connectionRevision, needsUsage, needsPolicy, needsConnection]);
   useEffect(() => {
+    if (!needsUsage && !needsPolicy && !needsConnection) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
-    void load();
-    const timer = setInterval(() => void load(), 10000);
+    const stop = startPolling(load, needsUsage ? 15000 : 60000);
     return () => {
-      clearInterval(timer);
+      stop();
       generation.current++;
     };
-  }, [load]);
+  }, [load, needsUsage, needsPolicy, needsConnection]);
   useEffect(() => {
+    if (!["activity", "requests"].includes(section)) {
+      setActivityLoading(false);
+      return;
+    }
     const id = ++activityGeneration.current;
     const key = requestKey;
     setActivityLoading(true);
@@ -331,10 +349,10 @@ export function UserDashboardView({
       try {
         const params = new URLSearchParams({
           days,
-          q: section === "activity" ? query : "",
-          provider: section === "activity" ? provider : "all",
-          status: section === "activity" ? status : "all",
-          page: section === "activity" ? String(page) : "1",
+          q: section === "requests" ? query : "",
+          provider: section === "requests" ? provider : "all",
+          status: section === "requests" ? status : "all",
+          page: section === "requests" ? String(page) : "1",
         });
         const data = await api<ActivityPage>(`/account/activity?${params}`);
         if (
@@ -357,11 +375,9 @@ export function UserDashboardView({
           setActivityLoading(false);
       }
     };
-    const debounce = setTimeout(() => void fetchActivity(), query ? 200 : 0);
-    const timer = setInterval(() => void fetchActivity(), 10000);
+    const stop = startPolling(fetchActivity, 15000, query ? 200 : 0);
     return () => {
-      clearTimeout(debounce);
-      clearInterval(timer);
+      stop();
       activityGeneration.current++;
     };
   }, [
@@ -407,7 +423,7 @@ export function UserDashboardView({
   const detailTool = selectedTool
     ? (catalog.find(({ tool }) => tool === selectedTool.tool) ?? selectedTool)
     : undefined;
-  const showPeriod = ["overview", "activity", "usage"].includes(section);
+  const showPeriod = ["activity", "requests", "usage"].includes(section);
   const completed = usage ? usage.succeeded + usage.failed : 0;
   if (section === "keys") {
     return (
@@ -423,7 +439,7 @@ export function UserDashboardView({
       >
         <div>
           <h1>{labels[section][0]}</h1>
-          {section !== "tools" && section !== "overview" && (
+          {!["tools", "overview", "activity"].includes(section) && (
             <p>{labels[section][1]}</p>
           )}
         </div>
@@ -448,34 +464,41 @@ export function UserDashboardView({
               </SelectContent>
             </Select>
           )}
-          {section !== "tools" && (section !== "overview" || error) && (
-            <Button
-              variant="outline"
-              size="sm"
-              aria-label="Refresh account"
-              onClick={() => {
-                void load();
-                void refreshCatalog();
-                setRefreshTick((v) => v + 1);
-              }}
-            >
-              <RefreshCw01 size={15} />
-            </Button>
-          )}
-          {(section === "tools" || section === "overview") && (
+          {!["tools", "overview"].includes(section) &&
+            (section !== "activity" || error) && (
+              <Button
+                variant="outline"
+                size="sm"
+                aria-label="Refresh account"
+                onClick={() => {
+                  void load();
+                  void refreshCatalog();
+                  setRefreshTick((v) => v + 1);
+                }}
+              >
+                <RefreshCw01 size={15} />
+              </Button>
+            )}
+          {(section === "tools" || section === "activity") && (
             <Button
               className="dashboard-connect"
               variant="brand"
               size="sm"
-              asChild
+              onClick={() => openConnectAgent()}
             >
-              <a href="#dashboard/connections">
-                <span className="ws-agent-marks" aria-hidden="true">
-                  <img src={claudeMark} alt="" />
-                  <img src={codexMark} alt="" />
-                  <img src={cursorMark} alt="" />
-                </span>
-                Connect agent
+              <span className="ws-agent-marks" aria-hidden="true">
+                <img src={claudeMark} alt="" />
+                <img src={codexMark} alt="" />
+                <img src={cursorMark} alt="" />
+              </span>
+              Connect agent
+            </Button>
+          )}
+          {section === "requests" && (
+            <Button variant="outline" size="sm" asChild>
+              <a href="#dashboard/activity">
+                <ChevronLeft />
+                Back to activity
               </a>
             </Button>
           )}
@@ -502,11 +525,15 @@ export function UserDashboardView({
           </button>
         </div>
       )}
-      {loading && !usage ? (
+      {loading &&
+      (needsUsage || needsPolicy || needsConnection) &&
+      !usage &&
+      !policy &&
+      !connection ? (
         <Loading />
       ) : (
         <>
-          {(section === "overview" || section === "usage") && (
+          {(section === "activity" || section === "usage") && (
             <>
               <div className="ws-metrics">
                 <Metric
@@ -519,7 +546,7 @@ export function UserDashboardView({
                   label="Tool requests"
                   value={usage?.requests.toLocaleString() ?? "—"}
                   hint={`${usage?.running ?? 0} running · ${usage?.failed ?? 0} failed`}
-                  href="#dashboard/activity"
+                  href="#dashboard/requests"
                 />
                 <Metric
                   label="API success rate"
@@ -533,20 +560,20 @@ export function UserDashboardView({
                       ? `${completed} completed calls · execution only`
                       : "No completed requests in this period"
                   }
-                  href="#dashboard/activity"
+                  href="#dashboard/requests"
                 />
                 <Metric
                   label="Average latency"
                   value={latency(usage?.averageLatencyMs)}
                   hint={`${usage?.latencySamples ?? 0} timed calls`}
-                  href="#dashboard/activity"
+                  href="#dashboard/requests"
                 />
               </div>
-              {section === "overview" && (
+              {section === "activity" && (
                 <div className="ws-overview-grid">
                   <Section
                     title="Usage"
-                    action={<Go section="activity">View activity</Go>}
+                    action={<Go section="requests">View requests</Go>}
                   >
                     <InlineError message={activityError} />
                     <OverviewRequests
@@ -647,7 +674,7 @@ export function UserDashboardView({
                   </div>
                 </Section>
               )}
-              {section === "overview" && (
+              {section === "activity" && (
                 <Section
                   title="Discover more tools"
                   className="ws-overview-discover"
@@ -656,9 +683,9 @@ export function UserDashboardView({
               )}
             </>
           )}
-          {section === "activity" && (
+          {section === "requests" && (
             <Section
-              title="Request log"
+              title="Requests"
               description="Every provider call, with its inputs, result, and stated selection reason."
               action={
                 <ExportActivity
@@ -760,6 +787,9 @@ export function UserDashboardView({
           {section === "tools" && (
             <CatalogView
               catalog={catalog}
+              loading={catalogLoading}
+              error={catalogError}
+              onRetry={() => void refreshCatalog()}
               enabled={enabled}
               onSelect={(tool, trigger) => {
                 catalogTrigger.current = trigger;
@@ -1036,6 +1066,67 @@ function ProviderBreakdown({ usage }: { usage?: AccountUsage }) {
     </div>
   );
 }
+function OverviewEmptyState() {
+  const markFilter = useId();
+  return (
+    <div className="ws-overview-empty">
+      <svg
+        className="ws-overview-empty-mark"
+        width="135.35"
+        height="81"
+        viewBox="0 8 52 31"
+        aria-hidden="true"
+        focusable="false"
+      >
+        <defs>
+          <filter
+            id={markFilter}
+            x="-1"
+            y="7"
+            width="54"
+            height="33"
+            filterUnits="userSpaceOnUse"
+            colorInterpolationFilters="sRGB"
+          >
+            <feColorMatrix
+              in="SourceGraphic"
+              type="matrix"
+              values="0 0 0 0 0.937255 0 0 0 0 0.937255 0 0 0 0 0.937255 0 0 0 1 0"
+              result="mark"
+            />
+            <feGaussianBlur
+              in="SourceAlpha"
+              stdDeviation="0.288"
+              result="blur"
+            />
+            <feComposite
+              in="SourceAlpha"
+              in2="blur"
+              operator="out"
+              result="edge"
+            />
+            <feFlood floodColor="black" floodOpacity="0.3" result="shadow" />
+            <feComposite in="shadow" in2="edge" operator="in" result="inset" />
+            <feMerge>
+              <feMergeNode in="mark" />
+              <feMergeNode in="inset" />
+            </feMerge>
+          </filter>
+        </defs>
+        <image
+          href="/two-hands-mark.svg"
+          x="-1.5"
+          y="-4"
+          width="55"
+          height="55"
+          filter={`url(#${markFilter})`}
+        />
+      </svg>
+      <h3>No requests yet</h3>
+    </div>
+  );
+}
+
 function OverviewRequests({
   items,
   loading,
@@ -1045,11 +1136,8 @@ function OverviewRequests({
   loading: boolean;
   onSelect: (item: ActivityItem) => void;
 }) {
-  if (loading || !items.length) {
-    return (
-      <ActivityTable items={items} loading={loading} onSelect={onSelect} />
-    );
-  }
+  if (loading) return <Loading />;
+  if (!items.length) return <OverviewEmptyState />;
   return (
     <table className="ws-overview-requests">
       <thead>
@@ -1196,18 +1284,30 @@ function ActivityTable({
   onSelect: (i: ActivityItem) => void;
   filtered?: boolean;
 }) {
+  const openConnectAgent = useConnectAgent();
   if (loading) return <Loading />;
   if (!items.length)
     return (
       <Empty
         title={filtered ? "No matching requests" : "No requests yet"}
         action={
-          <Button variant="outline" size="sm" asChild>
-            <a href={filtered ? "#dashboard/tools" : "#dashboard/connections"}>
-              {filtered ? "Explore tools" : "Connect your agent"}
+          filtered ? (
+            <Button variant="outline" size="sm" asChild>
+              <a href="#dashboard/tools">
+                Explore tools
+                <ArrowRight />
+              </a>
+            </Button>
+          ) : (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => openConnectAgent()}
+            >
+              Connect your agent
               <ArrowRight />
-            </a>
-          </Button>
+            </Button>
+          )
         }
       >
         {filtered
@@ -1361,10 +1461,16 @@ function CatalogStatus({ label }: { label: ToolAvailability | "Mixed" }) {
 
 function CatalogView({
   catalog,
+  loading,
+  error,
+  onRetry,
   enabled,
   onSelect,
 }: {
   catalog: Catalog;
+  loading: boolean;
+  error: string;
+  onRetry: () => void;
   enabled: ToolEnabled;
   onSelect: (tool: Catalog[number], trigger: HTMLButtonElement) => void;
 }) {
@@ -1373,6 +1479,8 @@ function CatalogView({
   const [availability, setAvailability] = useState("all");
   const [sort, setSort] = useState("name");
   const search = useRef<HTMLInputElement>(null);
+  const initialLoading = loading && catalog.length === 0;
+  const controlsDisabled = initialLoading || (!!error && catalog.length === 0);
 
   const providers = new Map<
     ReturnType<typeof catalogProviderId>,
@@ -1430,11 +1538,16 @@ function CatalogView({
               ref={search}
               aria-label="Search tools"
               placeholder="Search tools or providers"
+              disabled={controlsDisabled}
               value={query}
               onChange={(event) => setQuery(event.target.value)}
             />
           </label>
-          <Select value={availability} onValueChange={setAvailability}>
+          <Select
+            value={availability}
+            onValueChange={setAvailability}
+            disabled={controlsDisabled}
+          >
             <SelectTrigger aria-label="Availability" className="catalog-select">
               <SelectValue />
             </SelectTrigger>
@@ -1446,7 +1559,11 @@ function CatalogView({
               <SelectItem value="Restricted">Restricted</SelectItem>
             </SelectContent>
           </Select>
-          <Select value={sort} onValueChange={setSort}>
+          <Select
+            value={sort}
+            onValueChange={setSort}
+            disabled={controlsDisabled}
+          >
             <SelectTrigger aria-label="Sort tools" className="catalog-select">
               <SelectValue />
             </SelectTrigger>
@@ -1468,18 +1585,56 @@ function CatalogView({
               variant="ghost"
               size="xs"
               aria-pressed={category === id}
+              disabled={controlsDisabled}
               onClick={() => setCategory(id)}
             >
               {label}
             </Button>
           ))}
         </div>
-        <p className="sr-only" role="status">
-          {visible.length} {visible.length === 1 ? "provider" : "providers"}
-        </p>
+        {!loading && !error && (
+          <p className="sr-only" role="status">
+            {visible.length} {visible.length === 1 ? "provider" : "providers"}
+          </p>
+        )}
       </div>
-      {visible.length ? (
-        <div className="catalog-grid">
+      {error && (
+        <Card className="mb-4 gap-3 p-5">
+          <CardTitle>Couldn’t load tools</CardTitle>
+          <InlineError message={error} />
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="self-start"
+            aria-label="Retry loading tools"
+            onClick={onRetry}
+          >
+            Retry
+          </Button>
+        </Card>
+      )}
+      {initialLoading ? (
+        <>
+          <p role="status" className="mb-4 text-sm text-muted-foreground">
+            Loading tools…
+          </p>
+          <div className="catalog-grid" aria-hidden="true" aria-busy="true">
+            {Array.from({ length: 6 }, (_, index) => (
+              <Card key={index} className="gap-5 p-5">
+                <div className="flex items-center gap-3">
+                  <div className="size-6 rounded bg-muted" />
+                  <div className="h-5 w-28 rounded bg-muted" />
+                </div>
+                <div className="h-4 rounded bg-muted" />
+                <div className="h-16 rounded bg-muted" />
+                <div className="h-6 w-24 rounded bg-muted" />
+              </Card>
+            ))}
+          </div>
+        </>
+      ) : error && catalog.length === 0 ? null : visible.length ? (
+        <div className="catalog-grid" aria-busy={loading}>
           {visible.map(
             ({
               id,
@@ -1535,6 +1690,7 @@ function CatalogView({
                       type="button"
                       variant="secondary"
                       size="xs"
+                      aria-label={`View tool: ${label}`}
                       onClick={(event) =>
                         onSelect(
                           matchingEndpoint ?? endpoint,
@@ -1840,13 +1996,12 @@ function CallDetail({ item }: { item: ActivityItem }) {
         if (active) setError((e as Error).message);
       }
     };
-    void load();
-    const timer = setInterval(() => {
-      if (!finished) void load();
+    const stop = startPolling(async () => {
+      if (!finished) await load();
     }, 3000);
     return () => {
       active = false;
-      clearInterval(timer);
+      stop();
     };
   }, [item.id, item.sessionId]);
   return (
@@ -1934,12 +2089,6 @@ function ConnectionView({
   catalog: Catalog;
 }) {
   const account = useAccount();
-  const [client, setClient] = useState("codex");
-  const canManageKeys = !account.enabled || !!account.profile;
-  const command =
-    client === "other"
-      ? "npm run mcp:install -- project"
-      : `npm run mcp:install -- ${client}`;
   return (
     <>
       <div className="ws-connection-grid">
@@ -1947,96 +2096,7 @@ function ConnectionView({
           title="Connect your agent"
           description="Use Two Hands inside your existing conversations."
         >
-          <div
-            className="ws-client-picker"
-            role="group"
-            aria-label="Agent client"
-          >
-            {[
-              ["codex", "Codex"],
-              ["claude", "Claude"],
-              ["other", "Other MCP client"],
-            ].map(([id, label]) => (
-              <button
-                key={id}
-                aria-pressed={client === id}
-                onClick={() => setClient(id)}
-              >
-                <TerminalSquare size={17} />
-                {label}
-              </button>
-            ))}
-          </div>
-          <p className="ws-panel-note">
-            {canManageKeys ? (
-              <>
-                Use a separate scoped credential for each agent.{" "}
-                <a href="#dashboard/keys" className="ws-text-link">
-                  Manage API keys
-                </a>{" "}
-                before starting the bridge.
-              </>
-            ) : (
-              "Ask your account owner for a scoped API key before starting the bridge."
-            )}
-          </p>
-          <ol className="ws-setup-steps">
-            <li>
-              <span>1</span>
-              <div>
-                <strong>Build the local MCP bridge</strong>
-                <p>
-                  Run this in the Two Hands project folder. If you run the
-                  server locally, keep it running in a separate terminal.
-                </p>
-                <div className="command-box">
-                  <code>npm run build</code>
-                  <CopyButton text="npm run build" />
-                </div>
-              </div>
-            </li>
-            <li>
-              <span>2</span>
-              <div>
-                <strong>Add your connection settings</strong>
-                <p>
-                  Save these in the bridge project’s private .env file. Replace
-                  the placeholder with your API key. The address points to this
-                  Two Hands server, including its port.
-                </p>
-                <AgentEnvironment />
-              </div>
-            </li>
-            <li>
-              <span>3</span>
-              <div>
-                <strong>
-                  {client === "other"
-                    ? "Create the MCP configuration"
-                    : `Install the ${client === "codex" ? "Codex" : "Claude"} connection`}
-                </strong>
-                <p>
-                  {client === "other"
-                    ? "Creates .mcp.json in the project. Use its stdio server entry in your MCP client."
-                    : "The installer preserves existing settings and backs up changed files."}
-                </p>
-                <div className="command-box">
-                  <code>{command}</code>
-                  <CopyButton text={command} />
-                </div>
-              </div>
-            </li>
-            <li>
-              <span>4</span>
-              <div>
-                <strong>Restart your client and ask your agent</strong>
-                <p>
-                  “Use Two Hands to find evidence for my next task.” Your agent
-                  records intent and chooses tools under the backend policy.
-                </p>
-              </div>
-            </li>
-          </ol>
+          <AgentConnectionInstructions />
         </Section>
         <Section
           title="Connection status"
@@ -2071,7 +2131,7 @@ function ConnectionView({
             ))}
           </div>
           <Button variant="outline" size="sm" asChild>
-            <a href="#dashboard/activity">
+            <a href="#dashboard/requests">
               View request activity
               <ArrowRight />
             </a>
@@ -2098,7 +2158,7 @@ function ConnectionView({
         </div>
         <div className="ws-panel-note">
           {account.enabled && !account.profile?.isAdmin
-            ? "Octolab manages provider availability. Your API keys connect agents to this account."
+            ? "Two Hands manages provider availability. Your API keys connect agents to this account."
             : "Missing a provider? Set its API key in the server environment, then restart the server."}
           <Go section="tools">Open tool catalog</Go>
         </div>
