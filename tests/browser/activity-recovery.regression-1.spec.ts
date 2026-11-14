@@ -44,3 +44,55 @@ for (const route of ["dashboard", "dashboard/activity"]) {
       await expect(page.locator(".ws-pagination")).toContainText("0 requests");
   });
 }
+
+test("unavailable usage remains unknown instead of announcing measured zero counts", async ({
+  page,
+}) => {
+  let unavailable = true;
+  await page.route("**/api/account/usage?*", async (request) => {
+    if (unavailable) {
+      await request.fulfill({
+        status: 503,
+        json: { error: "TEST FIXTURE: usage temporarily unavailable" },
+      });
+    } else {
+      await request.fulfill({
+        json: {
+          days: 7,
+          since: "2026-11-07T00:00:00.000Z",
+          requests: 0,
+          succeeded: 0,
+          failed: 0,
+          running: 0,
+          interrupted: 0,
+          estimatedMicros: 0,
+          reportedUsd: null,
+          usdReportingCalls: 0,
+          averageLatencyMs: null,
+          latencySamples: 0,
+          series: [],
+          providers: [],
+        },
+      });
+    }
+  });
+  await page.goto("/#dashboard");
+  await expect(page.getByRole("alert")).toContainText(
+    "usage temporarily unavailable",
+  );
+  const requests = page.getByRole("link", { name: /^Tool requests/ });
+  const success = page.getByRole("link", { name: /^API success rate/ });
+  const latency = page.getByRole("link", { name: /^Average latency/ });
+  await expect(requests).toContainText("Request counts unavailable");
+  await expect(success).toContainText("Completion counts unavailable");
+  await expect(latency).toContainText("Latency samples unavailable");
+  await expect(requests).not.toContainText("0 running");
+  unavailable = false;
+  await page
+    .getByRole("button", { name: "Refresh account", exact: true })
+    .click();
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  await expect(requests).toContainText("0 running · 0 failed");
+  await expect(success).toContainText("No completed requests in this period");
+  await expect(latency).toContainText("0 timed calls");
+});

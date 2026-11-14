@@ -518,7 +518,11 @@ export function UserDashboardView({
                 <Metric
                   label="Tool requests"
                   value={usage?.requests.toLocaleString() ?? "—"}
-                  hint={`${usage?.running ?? 0} running · ${usage?.failed ?? 0} failed`}
+                  hint={
+                    usage
+                      ? `${usage.running} running · ${usage.failed} failed`
+                      : "Request counts unavailable"
+                  }
                   href="#dashboard/activity"
                 />
                 <Metric
@@ -529,16 +533,22 @@ export function UserDashboardView({
                       : "—"
                   }
                   hint={
-                    completed
-                      ? `${completed} completed calls · execution only`
-                      : "No completed requests in this period"
+                    !usage
+                      ? "Completion counts unavailable"
+                      : completed
+                        ? `${completed} completed calls · execution only`
+                        : "No completed requests in this period"
                   }
                   href="#dashboard/activity"
                 />
                 <Metric
                   label="Average latency"
                   value={latency(usage?.averageLatencyMs)}
-                  hint={`${usage?.latencySamples ?? 0} timed calls`}
+                  hint={
+                    usage
+                      ? `${usage.latencySamples} timed calls`
+                      : "Latency samples unavailable"
+                  }
                   href="#dashboard/activity"
                 />
               </div>
