@@ -58,22 +58,27 @@ export function fundingRoutes(
     };
   app.get(
     "/api/account/funding",
-    route(async (_req, res) => {
-      const summary = await service.summary();
-      const stripeDeposits = Number(
-        (await service.store.db
-          .prepare(
-            "SELECT COUNT(*) AS n FROM stripe_deposits WHERE payment_intent_id IS NOT NULL",
-          )
-          .get())!.n,
-      );
-      res.json({
-        ...summary,
-        ...(await stripe.summary()),
-        stripeDeposits,
-        totalDeposits: summary.totalDeposits + stripeDeposits,
-      });
-    }),
+    route(async (req, res) =>
+      res.json(
+        await service.store.db.read(async () => {
+          const light = req.query.summary === "true";
+          const summary = await service.summary(!light);
+          const stripeDeposits = Number(
+            (await service.store.db
+              .prepare(
+                "SELECT COUNT(*) AS n FROM stripe_deposits WHERE payment_intent_id IS NOT NULL",
+              )
+              .get())!.n,
+          );
+          return {
+            ...summary,
+            ...(light ? { stripe: stripe.status() } : await stripe.summary()),
+            stripeDeposits,
+            totalDeposits: summary.totalDeposits + stripeDeposits,
+          };
+        }),
+      ),
+    ),
   );
   app.post(
     "/api/account/funding/deposits",

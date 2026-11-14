@@ -1,3 +1,4 @@
+import { readActivity, readUsage } from "./account-reads.js";
 import { providerIds } from "./provider-catalog.js";
 import { providerManagementRoutes } from "./provider-management-api.js";
 import { ApiKeyError } from "./api-keys.js";
@@ -12,36 +13,11 @@ const period = z.coerce
   .number()
   .pipe(z.union([z.literal(7), z.literal(30), z.literal(90)]))
   .default(7);
-const nonnegative = (v: unknown): number | null =>
-  typeof v === "number" && Number.isFinite(v) && v >= 0 ? v : null;
 export async function accountActivity(
   obs: Observatory,
   since: string,
 ): Promise<ActivityItem[]> {
-  return (
-    await Promise.all(
-      (await obs.db.list()).flatMap(async (session) =>
-        (await obs.db.calls(session.id))
-          .filter((call) => call.startedAt >= since)
-          .map(({ result, ...call }) => {
-            const usage = result?.usage as Record<string, unknown> | undefined;
-            return {
-              ...call,
-              sessionTitle: session.title,
-              host: session.host,
-              model: session.model,
-              reportedUsd: nonnegative(usage?.providerReportedUsd),
-              reportedCredits: nonnegative(usage?.credits ?? result?.credits),
-            };
-          }),
-      ),
-    )
-  )
-    .flat()
-    .sort(
-      (a, b) =>
-        b.startedAt.localeCompare(a.startedAt) || b.id.localeCompare(a.id),
-    );
+  return (await readActivity(obs, since)).items;
 }
 export function accountUsage(
   items: ActivityItem[],
@@ -162,7 +138,7 @@ export function accountDataRoutes(app: Express, obs: Observatory) {
     route(async (req, res) => {
       const days = period.parse(req.query.days);
       const start = since(days);
-      res.json(accountUsage(await accountActivity(obs, start), days, start));
+      res.json(await readUsage(obs, days, start));
     }),
   );
   app.get(
@@ -180,29 +156,13 @@ export function accountDataRoutes(app: Express, obs: Observatory) {
           export: z.literal("true").optional(),
         })
         .parse(req.query);
-      const query = input.q.trim().toLowerCase();
-      const items = (await accountActivity(obs, since(input.days))).filter(
-        (i) =>
-          (input.provider === "all" || i.provider === input.provider) &&
-          (input.status === "all" || i.status === input.status) &&
-          (!query ||
-            `${i.sessionTitle} ${i.tool} ${i.arguments.query ?? i.arguments.url ?? ""} ${i.host}`
-              .toLowerCase()
-              .includes(query)),
-      );
-      if (input.export && items.length > 10000)
+      const result = await readActivity(obs, since(input.days), input);
+      if (input.export && result.total > 10000)
         throw new ObservationError(
           413,
           "Exports support up to 10,000 requests. Narrow the date range or filters.",
         );
-      res.json({
-        items: input.export
-          ? items
-          : items.slice((input.page - 1) * 20, input.page * 20),
-        total: items.length,
-        page: input.page,
-        pageSize: input.export ? items.length : 20,
-      });
+      res.json(result);
     }),
   );
   app.get(

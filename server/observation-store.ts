@@ -80,6 +80,51 @@ export class ObservationStore {
         .all()
     ).map((r) => JSON.parse(r.body as string));
   }
+  /** Metrics never need captured pages, query arguments, or full answer text. */
+  async metricCalls(): Promise<
+    Omit<ObservedCall, "arguments" | "statedReason" | "result">[]
+  > {
+    const projection =
+      this.store.db.dialect === "postgres"
+        ? "(body::jsonb - ARRAY['result','arguments','statedReason'])::text"
+        : "json_remove(body,'$.result','$.arguments','$.statedReason')";
+    return (
+      await this.store.db
+        .prepare(`SELECT ${projection} AS body FROM observation_calls`)
+        .all()
+    ).map((r) => JSON.parse(r.body as string));
+  }
+  async reviewSessions() {
+    const last =
+      this.store.db.dialect === "postgres"
+        ? "body::jsonb->'outcomes'->-1->>'id'"
+        : "json_extract(body,'$.outcomes[#-1].id')";
+    return (
+      await this.store.db
+        .prepare(
+          `SELECT id,
+      json_extract(body,'$.model') AS model,
+      json_extract(body,'$.approvedAt') AS approved,
+      json_extract(body,'$.spentMicros') AS spent,
+      json_extract(body,'$.commercialConsent') AS consent,
+      json_extract(body,'$.evaluations') AS evaluations,
+      json_extract(body,'$.cases') AS cases, ${last} AS outcome
+      FROM observation_sessions ORDER BY rowid DESC`,
+        )
+        .all()
+    ).map((r) => ({
+      id: String(r.id),
+      model: String(r.model),
+      approvedAt: r.approved,
+      spentMicros: Number(r.spent),
+      commercialConsent: r.consent === 1 || r.consent === "true",
+      evaluations: JSON.parse(
+        r.evaluations as string,
+      ) as ObservationSession["evaluations"],
+      cases: JSON.parse(r.cases as string) as ObservationSession["cases"],
+      outcomeId: r.outcome as string | null,
+    }));
+  }
   async calls(id: string): Promise<ObservedCall[]> {
     return (
       await this.store.db

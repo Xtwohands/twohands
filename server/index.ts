@@ -57,6 +57,7 @@ const workspaceIds =
     : [store.legacyWorkspaceId];
 for (const id of workspaceIds)
   await store.scope.run(id, async () => {
+    await app.locals.funding.ledger.importHistorical();
     await store.recover();
     await observatory.db.applySharingPolicy();
     await observatory.db.recover();

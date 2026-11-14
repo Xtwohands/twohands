@@ -12,10 +12,13 @@ export class FundingLedger {
       .run();
   }
   async balance() {
-    await this.importHistorical();
     return Number(
       (await this.store.db
-        .prepare("SELECT COALESCE(SUM(delta_units),0) AS n FROM funding_ledger")
+        .prepare(
+          `SELECT COALESCE((SELECT SUM(delta_units) FROM funding_ledger),0) +
+          COALESCE((SELECT SUM(amount_units) FROM funding_credits c WHERE NOT EXISTS
+            (SELECT 1 FROM funding_ledger l WHERE l.source='onchain' AND l.source_id=c.intent_id)),0) AS n`,
+        )
         .get())!.n,
     );
   }

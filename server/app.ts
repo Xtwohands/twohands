@@ -1,3 +1,4 @@
+import { staticAssets } from "./static-assets.js";
 import {
   providerEntry,
   providerIds,
@@ -917,16 +918,13 @@ export function createApp(
   app.use("/api", (_req, res) =>
     res.status(404).json({ error: "API endpoint not found" }),
   );
-  app.use(
-    express.static("dist", {
-      setHeaders: (res) =>
-        res.setHeader("Cache-Control", "public, max-age=300"),
-    }),
-  );
+  staticAssets(app);
   app.get("/{*path}", (_req, res, next) =>
-    res.sendFile("index.html", { root: "dist" }, (err) =>
-      err ? next(err) : undefined,
-    ),
+    res
+      .set("Cache-Control", "no-cache")
+      .sendFile("index.html", { root: "dist" }, (err) =>
+        err ? next(err) : undefined,
+      ),
   );
   app.use(
     (

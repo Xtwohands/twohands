@@ -11,6 +11,7 @@ export interface Database {
   readonly dialect: "sqlite" | "postgres";
   prepare(sql: string): Statement;
   exec(sql: string): Promise<void>;
+  read<T>(fn: () => T | Promise<T>): Promise<T>;
   transaction<T>(fn: () => T | Promise<T>): Promise<T>;
   atomic<T>(fn: () => T | Promise<T>): Promise<T>;
   close(): Promise<void>;
@@ -41,6 +42,9 @@ export class SqliteDatabase implements Database {
   async exec(sql: string) {
     await this.exclusive(() => this.native.exec(sql));
   }
+  read<T>(fn: () => T | Promise<T>): Promise<T> {
+    return this.exclusive(fn);
+  }
   transaction<T>(fn: () => T | Promise<T>): Promise<T> {
     if (this.current.getStore())
       throw new Error("Nested storage transactions are not supported.");
@@ -69,7 +73,10 @@ export class SqliteDatabase implements Database {
 export class PostgresDatabase implements Database {
   readonly dialect = "postgres";
   readonly pool: pg.Pool;
-  private current = new AsyncLocalStorage<PoolClient>();
+  private current = new AsyncLocalStorage<{
+    client: PoolClient;
+    workspaceId: string;
+  }>();
   private roleCheck?: Promise<void>;
   constructor(
     url: string,
@@ -116,10 +123,15 @@ export class PostgresDatabase implements Database {
   }
   private async connection<T>(
     fn: (client: PoolClient) => Promise<T>,
+    readOnly = false,
   ): Promise<T> {
     const existing = this.current.getStore();
-    if (existing) return fn(existing);
     const id = this.workspaceId();
+    if (existing) {
+      if (existing.workspaceId !== id)
+        throw new Error("Cannot change workspace inside a database operation.");
+      return fn(existing.client);
+    }
     const client = await this.pool.connect();
     try {
       this.roleCheck ??= client
@@ -148,13 +160,16 @@ export class PostgresDatabase implements Database {
             );
         });
       await this.roleCheck;
-      await client.query("BEGIN");
-      await client.query("SET LOCAL ROLE octolab_runtime");
-      await client.query("SET LOCAL search_path TO octolab, pg_catalog");
-      await client.query("SELECT set_config('octolab.workspace_id',$1,true)", [
-        id,
-      ]);
-      const value = await this.current.run(client, () => fn(client));
+      // Static setup plus a driver-escaped literal stays one wire round trip.
+      // All settings remain transaction-local, including on pooled connections.
+      await client.query(
+        `${readOnly ? "BEGIN READ ONLY" : "BEGIN"}; SET LOCAL ROLE octolab_runtime; ` +
+          `SET LOCAL search_path TO octolab, pg_catalog; ` +
+          `SET LOCAL octolab.workspace_id TO ${pg.escapeLiteral(id)}`,
+      );
+      const value = await this.current.run({ client, workspaceId: id }, () =>
+        fn(client),
+      );
       await client.query("COMMIT");
       return value;
     } catch (error) {
@@ -204,6 +219,9 @@ export class PostgresDatabase implements Database {
   }
   async exec(sql: string) {
     await this.connection((c) => c.query(sql).then(() => {}));
+  }
+  read<T>(fn: () => T | Promise<T>): Promise<T> {
+    return this.connection(async () => fn(), true);
   }
   transaction<T>(fn: () => T | Promise<T>): Promise<T> {
     if (this.current.getStore())
