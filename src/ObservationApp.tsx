@@ -1017,7 +1017,10 @@ export function ObservationApp() {
               <Panel
                 title="Activity"
                 action={
-                  <span className="subtle">{sessions.length} sessions</span>
+                  <span className="subtle">
+                    {sessions.length}{" "}
+                    {sessions.length === 1 ? "session" : "sessions"}
+                  </span>
                 }
               >
                 <div className="list-toolbar">
@@ -1072,8 +1075,11 @@ export function ObservationApp() {
                           <div>
                             <strong>{s.title}</strong>
                             <span>
-                              {s.criteria.length} criteria ·{" "}
-                              {money(s.spentMicros)} estimated
+                              {s.criteria.length}{" "}
+                              {s.criteria.length === 1
+                                ? "criterion"
+                                : "criteria"}{" "}
+                              · {money(s.spentMicros)} estimated
                             </span>
                           </div>
                         </div>
