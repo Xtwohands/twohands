@@ -662,7 +662,9 @@ export function ObservationApp() {
         links={[]}
         adminPage="tool-access"
       >
-        <ToolAccessView />
+        <Suspense fallback={<p role="status">Loading tool access…</p>}>
+          <ToolAccessView />
+        </Suspense>
       </PortalShell>
     );
   if (
@@ -677,7 +679,9 @@ export function ObservationApp() {
         links={[]}
         adminPage="tool-settings"
       >
-        <ToolSettingsView />
+        <Suspense fallback={<p role="status">Loading tool settings…</p>}>
+          <ToolSettingsView />
+        </Suspense>
       </PortalShell>
     );
   const surface =
@@ -944,20 +948,28 @@ export function ObservationApp() {
             </div>
           )}
           {route.page === "company" && (
-            <CompanyView
-              key={connectionRevision}
-              provider={isProviderId(route.id) ? route.id : providerIds[0]}
-              section={route.section}
-            />
+            <Suspense fallback={<p role="status">Loading company…</p>}>
+              <CompanyView
+                key={connectionRevision}
+                provider={isProviderId(route.id) ? route.id : providerIds[0]}
+                section={route.section}
+              />
+            </Suspense>
           )}
-          {route.page === "disputes" && <DisputeReviewView />}
+          {route.page === "disputes" && (
+            <Suspense fallback={<p role="status">Loading disputes…</p>}>
+              <DisputeReviewView />
+            </Suspense>
+          )}
           {route.page === "lab" && (
-            <ProviderLabView
-              key={connectionRevision}
-              runId={route.id}
-              providerFilter={route.labProvider}
-              evidenceFilter={route.labFinding}
-            />
+            <Suspense fallback={<p role="status">Loading tests…</p>}>
+              <ProviderLabView
+                key={connectionRevision}
+                runId={route.id}
+                providerFilter={route.labProvider}
+                evidenceFilter={route.labFinding}
+              />
+            </Suspense>
           )}
           {route.page === "dashboard" &&
             account.enabled &&
