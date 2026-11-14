@@ -30,8 +30,6 @@ type AdapterStatus = {
   accountReference: string | null;
   accountManagedByServer: boolean;
 };
-const label = (provider: string) =>
-  provider.charAt(0).toUpperCase() + provider.slice(1);
 export function ProviderAdaptersView() {
   const [adapters, setAdapters] = useState<AdapterStatus[]>(),
     [error, setError] = useState("");
@@ -85,7 +83,7 @@ export function ProviderAdaptersView() {
           <tbody>
             {adapters?.map((a) => (
               <tr key={a.tool}>
-                <td>{label(a.provider)}</td>
+                <td>{providerLabel(a.provider)}</td>
                 <td>{a.version}</td>
                 <td>
                   {a.credential.configured
@@ -354,7 +352,7 @@ export function ProviderBillingView({ days }: { days: string }) {
               {data.batches.map((batch) => (
                 <tr key={batch.id}>
                   <td>
-                    {label(batch.provider)}
+                    {providerLabel(batch.provider)}
                     <small className="billing-subtext">
                       {batch.sourceReference}
                     </small>
@@ -434,7 +432,7 @@ export function ProviderBillingView({ days }: { days: string }) {
             <DialogTitle>Review billing import</DialogTitle>
             <DialogDescription>
               {selected
-                ? `${label(selected.provider)} · ${selected.sourceReference} · ${selected.accountReference}`
+                ? `${providerLabel(selected.provider)} · ${selected.sourceReference} · ${selected.accountReference}`
                 : ""}
             </DialogDescription>
           </DialogHeader>

@@ -178,18 +178,22 @@ function Section({
   action,
   children,
   className = "",
+  headingRef,
 }: {
   title: string;
   description?: string;
   action?: React.ReactNode;
   children?: React.ReactNode;
   className?: string;
+  headingRef?: React.Ref<HTMLHeadingElement>;
 }) {
   return (
     <section className={`ws-panel ${className}`}>
       <header>
         <div>
-          <h2>{title}</h2>
+          <h2 ref={headingRef} tabIndex={headingRef ? -1 : undefined}>
+            {title}
+          </h2>
           {description && <p>{description}</p>}
         </div>
         {action}
@@ -289,6 +293,9 @@ export function UserDashboardView({
   );
   const [selectedTool, setSelectedTool] = useState<Catalog[number]>();
   const catalogTrigger = useRef<HTMLButtonElement>(null);
+  const activitySearch = useRef<HTMLInputElement>(null);
+  const activityHeading = useRef<HTMLHeadingElement>(null);
+  const activityRetryFocus = useRef<string | null>(null);
   const generation = useRef(0);
   const activityGeneration = useRef(0);
   const requestKey = `${days}|${query}|${provider}|${status}|${page}|${section}`;
@@ -297,6 +304,10 @@ export function UserDashboardView({
   const needsUsage = section === "activity" || section === "usage";
   const needsPolicy = section === "tools" || section === "routing";
   const needsConnection = section === "connections" || section === "routing";
+  const retryActivity = () => {
+    activityRetryFocus.current = requestKey;
+    setRefreshTick((tick) => tick + 1);
+  };
   const load = useCallback(async () => {
     const id = ++generation.current;
     try {
@@ -379,8 +390,19 @@ export function UserDashboardView({
           setActivity(undefined);
         }
       } finally {
-        if (id === activityGeneration.current && key === currentRequest.current)
+        if (
+          id === activityGeneration.current &&
+          key === currentRequest.current
+        ) {
           setActivityLoading(false);
+          if (activityRetryFocus.current === key) {
+            activityRetryFocus.current = null;
+            requestAnimationFrame(() => {
+              if (currentRequest.current === key)
+                activityHeading.current?.focus();
+            });
+          }
+        }
       }
     };
     const stop = startPolling(fetchActivity, 15000, query ? 200 : 0);
@@ -552,7 +574,11 @@ export function UserDashboardView({
                 <Metric
                   label="Tool requests"
                   value={usage?.requests.toLocaleString() ?? "—"}
-                  hint={`${usage?.running ?? 0} running · ${usage?.failed ?? 0} failed`}
+                  hint={
+                    usage
+                      ? `${usage.running} running · ${usage.failed} failed`
+                      : "Request counts unavailable"
+                  }
                   href="#dashboard/requests"
                 />
                 <Metric
@@ -563,16 +589,22 @@ export function UserDashboardView({
                       : "—"
                   }
                   hint={
-                    completed
-                      ? `${completed} completed calls · execution only`
-                      : "No completed requests in this period"
+                    !usage
+                      ? "Completion counts unavailable"
+                      : completed
+                        ? `${completed} completed calls · execution only`
+                        : "No completed requests in this period"
                   }
                   href="#dashboard/requests"
                 />
                 <Metric
                   label="Average latency"
                   value={latency(usage?.averageLatencyMs)}
-                  hint={`${usage?.latencySamples ?? 0} timed calls`}
+                  hint={
+                    usage
+                      ? `${usage.latencySamples} timed calls`
+                      : "Latency samples unavailable"
+                  }
                   href="#dashboard/requests"
                 />
               </div>
@@ -580,14 +612,19 @@ export function UserDashboardView({
                 <div className="ws-overview-grid">
                   <Section
                     title="Usage"
+                    headingRef={activityHeading}
                     action={<Go section="requests">View requests</Go>}
                   >
                     <InlineError message={activityError} />
-                    <OverviewRequests
-                      items={activity?.items.slice(0, 5) ?? []}
-                      loading={activityLoading && !activity}
-                      onSelect={setSelectedCall}
-                    />
+                    {activityError ? (
+                      <ActivityUnavailable onRetry={retryActivity} />
+                    ) : (
+                      <OverviewRequests
+                        items={activity?.items.slice(0, 5) ?? []}
+                        loading={activityLoading && !activity}
+                        onSelect={setSelectedCall}
+                      />
+                    )}
                   </Section>
                   <Section
                     title="By provider"
@@ -620,7 +657,6 @@ export function UserDashboardView({
                   <Section
                     title="Usage by provider"
                     description="Requests in this period"
-                    action={<Go section="usage">Details</Go>}
                   >
                     <ProviderBreakdown usage={usage} />
                   </Section>
@@ -693,6 +729,7 @@ export function UserDashboardView({
           {section === "requests" && (
             <Section
               title="Requests"
+              headingRef={activityHeading}
               description="Every provider call, with its inputs, result, and stated selection reason."
               action={
                 <ExportActivity
@@ -708,6 +745,7 @@ export function UserDashboardView({
                 <div className="search-input">
                   <SearchLg />
                   <Input
+                    ref={activitySearch}
                     aria-label="Search requests"
                     placeholder="Search requests, tools, or sessions…"
                     value={query}
@@ -748,47 +786,58 @@ export function UserDashboardView({
                 />
               </div>
               <InlineError message={activityError} />
-              {activityLoading ? (
+              {activityError ? (
+                <ActivityUnavailable onRetry={retryActivity} />
+              ) : activityLoading ? (
                 <Loading />
               ) : (
                 <ActivityTable
                   items={activity?.items ?? []}
                   onSelect={setSelectedCall}
                   filtered={!!query || provider !== "all" || status !== "all"}
+                  onClearFilters={() => {
+                    setQuery("");
+                    setProvider("all");
+                    setStatus("all");
+                    setPage(1);
+                    activitySearch.current?.focus();
+                  }}
                 />
               )}
-              <div className="ws-pagination">
-                <span>
-                  {activity?.total ?? 0} requests · Times shown in your local
-                  timezone
-                </span>
-                <div>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    disabled={page === 1 || activityLoading}
-                    onClick={() => setPage((p) => p - 1)}
-                  >
-                    <ChevronLeft />
-                    Previous
-                  </Button>
+              {activity && !activityError && !activityLoading && (
+                <div className="ws-pagination">
                   <span>
-                    Page {page} of{" "}
-                    {Math.max(1, Math.ceil((activity?.total ?? 0) / 20))}
+                    {activity?.total ?? 0} requests · Times shown in your local
+                    timezone
                   </span>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    disabled={
-                      activityLoading || page * 20 >= (activity?.total ?? 0)
-                    }
-                    onClick={() => setPage((p) => p + 1)}
-                  >
-                    Next
-                    <ChevronRight />
-                  </Button>
+                  <div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      disabled={page === 1 || activityLoading}
+                      onClick={() => setPage((p) => p - 1)}
+                    >
+                      <ChevronLeft />
+                      Previous
+                    </Button>
+                    <span>
+                      Page {page} of{" "}
+                      {Math.max(1, Math.ceil((activity?.total ?? 0) / 20))}
+                    </span>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      disabled={
+                        activityLoading || page * 20 >= (activity?.total ?? 0)
+                      }
+                      onClick={() => setPage((p) => p + 1)}
+                    >
+                      Next
+                      <ChevronRight />
+                    </Button>
+                  </div>
                 </div>
-              </div>
+              )}
             </Section>
           )}
           {section === "tools" && (
@@ -1143,6 +1192,21 @@ function OverviewEmptyState() {
     </div>
   );
 }
+function ActivityUnavailable({ onRetry }: { onRetry: () => void }) {
+  return (
+    <Empty
+      title="Activity unavailable"
+      action={
+        <Button variant="outline" size="sm" onClick={onRetry}>
+          <RefreshCw01 />
+          Retry activity
+        </Button>
+      }
+    >
+      We couldn’t load your request history. Try again.
+    </Empty>
+  );
+}
 
 function OverviewRequests({
   items,
@@ -1295,11 +1359,13 @@ function ActivityTable({
   loading,
   onSelect,
   filtered,
+  onClearFilters,
 }: {
   items: ActivityItem[];
   loading?: boolean;
   onSelect: (i: ActivityItem) => void;
   filtered?: boolean;
+  onClearFilters?: () => void;
 }) {
   const openConnectAgent = useConnectAgent();
   if (loading) return <Loading />;
@@ -1308,7 +1374,11 @@ function ActivityTable({
       <Empty
         title={filtered ? "No matching requests" : "No requests yet"}
         action={
-          filtered ? (
+          filtered && onClearFilters ? (
+            <Button variant="outline" size="sm" onClick={onClearFilters}>
+              Clear filters
+            </Button>
+          ) : filtered ? (
             <Button variant="outline" size="sm" asChild>
               <a href="#dashboard/tools">
                 Explore tools

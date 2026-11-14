@@ -6,9 +6,10 @@
   margin-bottom: 28px;
   align-items: center;
 }
-.ws-page-heading h1 {
-  font-size: 27px;
-  font-weight: 550;
+.tool-workspace .ws-page-heading h1 {
+  font-size: 22px;
+  font-weight: 400;
+  line-height: 32px;
   letter-spacing: -0.8px;
 }
 .ws-page-heading p {
@@ -334,6 +335,7 @@
   margin: 5px 0;
 }
 .ws-table-scroll {
+  position: relative;
   overflow-x: auto;
 }
 .ws-table {
@@ -1165,7 +1167,7 @@
     margin-bottom: 20px;
   }
   .ws-page-heading h1 {
-    font-size: 25px;
+    font-size: 22px;
   }
   .ws-heading-actions {
     width: 100%;
