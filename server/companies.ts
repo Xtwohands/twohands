@@ -305,10 +305,12 @@ export class Companies {
       })
       .strict()
       .parse(raw);
-    if (input.status === "approved" && !input.providerId)
+    // A company may be approved for its own MCP connectors alone; aggregate
+    // insights still describe a built-in provider, so they need one.
+    if (input.insightsEnabled && !input.providerId)
       throw new AccountError(
         400,
-        "Choose the integrated provider this company owns.",
+        "Choose the integrated provider this company owns before releasing insights.",
       );
     if (input.insightsEnabled && input.status !== "approved")
       throw new AccountError(

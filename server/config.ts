@@ -35,6 +35,16 @@ export const config = {
   allowKeylessFirecrawl: process.env.FIRECRAWL_ALLOW_KEYLESS === "true",
   timeoutMs: integer("PROVIDER_TIMEOUT_MS", 20000, 100, 120000),
   rpm: integer("PROVIDER_RPM", 20, 1, 1000),
+  connectors: {
+    /** 32-byte key (base64 or hex) that encrypts company connector tokens. */
+    secretKey: process.env.CONNECTOR_SECRET_KEY || "",
+    timeoutMs: integer("CONNECTOR_TIMEOUT_MS", 20000, 100, 120000),
+    rpm: integer("CONNECTOR_RPM", 30, 1, 1000),
+    /** Plain HTTP to loopback endpoints, for local testing only. Ignored in production. */
+    allowLoopback:
+      process.env.CONNECTOR_ALLOW_LOOPBACK === "true" &&
+      process.env.NODE_ENV !== "production",
+  },
   agentSessionBudgetMicros: integer(
     "AGENT_SESSION_BUDGET_MICROS",
     100000,

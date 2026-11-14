@@ -299,14 +299,34 @@ export class ApiKeyService {
       throw new ApiKeyError(403, "This API key cannot execute this tool.");
     return key;
   }
+  /**
+   * Company connector tools are not in a key's tool list. A key may call them
+   * only when it can execute and is unrestricted across every built-in tool;
+   * a key limited to particular tools never reaches third-party servers.
+   */
+  async connectorAccess(id: string) {
+    const key = await this.active(id);
+    if (
+      !key.scopes.includes("tools:execute") ||
+      API_KEY_TOOLS.some((tool) => !key.allowedTools.includes(tool))
+    )
+      throw new ApiKeyError(
+        403,
+        "This API key cannot call company connector tools. Use a key that allows every tool.",
+      );
+    return key;
+  }
   /** Called inside the same transaction that creates the provider call receipt. */
   async reserve(
     id: string,
     callId: string,
-    tool: (typeof API_KEY_TOOLS)[number],
+    tool: (typeof API_KEY_TOOLS)[number] | { connector: true },
     amount: number,
   ) {
-    const key = await this.toolAccess(id, tool);
+    const key =
+      typeof tool === "string"
+        ? await this.toolAccess(id, tool)
+        : await this.connectorAccess(id);
     if (!Number.isSafeInteger(amount) || amount < 0)
       throw new Error("Invalid key reservation");
     if (key.spentMicros + key.reservedMicros + amount > key.limitMicros)
@@ -348,7 +368,12 @@ export function requiredApiKeyScope(
   method: string,
   path: string,
 ): ApiKeyScope | null {
-  if (method === "GET" && path === "/api/observations/catalog")
+  if (
+    method === "GET" &&
+    ["/api/observations/catalog", "/api/observations/connector-tools"].includes(
+      path,
+    )
+  )
     return "tools:discover";
   if (method === "POST" && path === "/api/account/preview")
     return "tools:discover";
@@ -383,7 +408,9 @@ export function requiredApiKeyScope(
     return "tools:discover";
   if (
     method === "POST" &&
-    new RegExp(`^/api/observations/${session}/(?:call|route)$`).test(path)
+    new RegExp(
+      `^/api/observations/${session}/(?:call|route|connector-call)$`,
+    ).test(path)
   )
     return "tools:execute";
   if (

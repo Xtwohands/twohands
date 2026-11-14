@@ -87,6 +87,17 @@ export interface ObservedCall {
     domains?: string[];
     maxResults?: number;
     searchDepth?: "basic" | "advanced";
+    /** Arguments sent to a company connector tool, validated against its schema. */
+    input?: Record<string, unknown>;
+  };
+  /** Present when the call went to a company-supplied MCP connector. */
+  connector?: {
+    id: string;
+    slug: string;
+    company: string;
+    tool: string;
+    schemaHash: string;
+    snapshotVersion: number;
   };
   adapter?: {
     tool: string;
