@@ -75,7 +75,7 @@ test("the link button variant uses the unmodified accent in every pointer state"
 }) => {
   await page.goto("/#dashboard/tools");
   await expect(
-    page.locator('[data-slot="button"][data-variant="brand"]').first(),
+    page.locator('[data-slot="button"][data-variant="brand"]:visible').first(),
   ).toBeVisible();
   // Exercise the shared Button DOM/CSS contract; no current page uses this variant.
   await page.evaluate(() => {

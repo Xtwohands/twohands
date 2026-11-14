@@ -4,10 +4,12 @@ test("a failed route download offers reload and recovers the selected page", asy
   page,
 }) => {
   let downloads = 0;
+  let allowDownload = false;
   await page.route(
     /\/assets\/UserDashboardView-[^/]+\.js(?:\?.*)?$/,
     async (route) => {
-      if (++downloads === 1) await route.abort("failed");
+      downloads++;
+      if (!allowDownload) await route.abort("failed");
       else await route.continue();
     },
   );
@@ -18,6 +20,7 @@ test("a failed route download offers reload and recovers the selected page", asy
   await expect(page.getByText("Reload the page to try again.")).toBeVisible();
   await expect(page).toHaveURL(/#dashboard\/tools$/);
 
+  allowDownload = true;
   await page.getByRole("button", { name: "Reload page", exact: true }).click();
   await expect(
     page.getByRole("heading", { name: "Tool catalog", exact: true }),

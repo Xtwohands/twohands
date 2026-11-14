@@ -920,7 +920,8 @@ export function ObservationApp() {
         </header>
         <main id="main-content" tabIndex={-1} className="obs-main">
           <InlineError message={error} />
-          {error && (
+          {(error ||
+            (!account.enabled && customerSidebar && route.id && !token)) && (
             <Button
               variant="outline"
               onClick={() =>
