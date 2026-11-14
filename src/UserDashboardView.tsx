@@ -586,7 +586,6 @@ export function UserDashboardView({
                   <Section
                     title="Usage by provider"
                     description="Requests in this period"
-                    action={<Go section="usage">Details</Go>}
                   >
                     <ProviderBreakdown usage={usage} />
                   </Section>
