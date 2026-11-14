@@ -12,3 +12,8 @@
 - Keep provider credentials server-side. Commercial aggregate sharing is enabled for all observation sessions by workspace policy. Preserve historical consent events, exclude raw content from commercial exports, show company usage from the first eligible recorded activity without a workspace/session cohort gate, retain independent answer-review sample requirements, and do not automatically publish data.
 - Preserve earlier research under `/research/`. Test fixtures must not enter the production workspace or provider/model statistics.
 - Run `npm run check` and browser tests appropriate to changed behavior. Live provider checks require a bounded backend-authorized or operator-accepted session budget and must be reported separately from fixtures.
+
+## Product knowledge base
+
+- Use `research/README.md` as the index of saved product references and earlier research. Consult it and relevant notes for product, positioning, competitor, and provider-needs discussions.
+- When asked to save an interesting link or idea, follow the capture workflow in `research/README.md`, use `research/_template.md`, and update the index. Keep source observations separate from interpretation and record a revisit trigger. Preserve earlier notes; a saved reference is not an adopted product decision.
