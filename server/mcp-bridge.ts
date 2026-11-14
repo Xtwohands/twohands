@@ -6,6 +6,8 @@ export interface BridgeConfiguration {
 export interface BridgeClient {
   clientName: string;
   clientVersion: string;
+  /** Omitted for the stdio bridge, which is the recorded default. */
+  transport?: "streamable-http";
 }
 const invalidUrl =
   "APILAYER_URL must be loopback HTTP or explicit HTTPS, ending in /api, without URL credentials, query strings or fragments.";
@@ -45,16 +47,41 @@ export function bridgeConfiguration(
 export function bridgeClientIdentity(
   name?: string,
   version?: string,
+  transport?: BridgeClient["transport"],
 ): BridgeClient {
   return {
     clientName: name?.trim().slice(0, 160) || "Unknown MCP client",
     clientVersion: version?.trim().slice(0, 100) || "Unknown",
+    ...(transport ? { transport } : {}),
   };
 }
 function transportFailure(settings: BridgeConfiguration) {
   return new Error(
     `${settings.https ? "The configured Two Hands HTTPS server could not be reached or the request timed out. Check APILAYER_URL and server availability." : "The local Two Hands server could not be reached or the request timed out. Keep npm start running and check APILAYER_URL."} A submitted operation may still have run: inspect its saved receipt and reuse the same request key and arguments if retrying.`,
   );
+}
+/** Same-process callers may surface the server's own bounded error text. */
+async function serverStatusFailure(response: Response) {
+  let detail = "";
+  try {
+    const text = (await response.text()).slice(0, 8000);
+    const body = JSON.parse(text);
+    if (body && typeof body.error === "string")
+      detail = body.error
+        .replace(/[\u0000-\u001f\u007f]+/g, " ")
+        .trim()
+        .slice(0, 500);
+    if (
+      detail &&
+      typeof body.code === "string" &&
+      /^[a-z0-9_]{1,64}$/i.test(body.code)
+    )
+      detail += ` [${body.code}]`;
+  } catch {
+    detail = "";
+  }
+  if (!detail) return statusFailure(response.status);
+  return new Error(`${detail} HTTP ${response.status}.`);
 }
 function statusFailure(status: number) {
   const message =
@@ -78,6 +105,8 @@ export function createBridgeRequest(
     fetch?: typeof fetch;
     timeoutMs?: number;
     maxResponseBytes?: number;
+    /** Only for the in-process HTTP MCP endpoint, whose server is this process. */
+    exposeServerErrors?: boolean;
   } = {},
 ) {
   const fetcher = options.fetch ?? fetch;
@@ -109,7 +138,11 @@ export function createBridgeRequest(
       throw new Error("Bridge request exceeds its size limit.");
     const reported = client();
     const identity = reported
-      ? bridgeClientIdentity(reported.clientName, reported.clientVersion)
+      ? bridgeClientIdentity(
+          reported.clientName,
+          reported.clientVersion,
+          reported.transport,
+        )
       : undefined;
     const signal = AbortSignal.timeout(timeoutMs);
     let response: Response;
@@ -137,6 +170,7 @@ export function createBridgeRequest(
       throw transportFailure(settings);
     }
     if (!response.ok) {
+      if (options.exposeServerErrors) throw await serverStatusFailure(response);
       await response.body?.cancel().catch(() => {});
       throw statusFailure(response.status);
     }
