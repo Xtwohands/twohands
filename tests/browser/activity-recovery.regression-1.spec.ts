@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-for (const route of ["dashboard", "dashboard/activity"]) {
+for (const route of ["dashboard/activity", "dashboard/requests"]) {
   test(`${route} distinguishes unavailable activity from empty history and retries`, async ({
     page,
   }) => {
@@ -40,7 +40,7 @@ for (const route of ["dashboard", "dashboard/activity"]) {
       page.getByRole("heading", { name: "No requests yet", exact: true }),
     ).toBeVisible();
     expect(requests).toBeGreaterThan(failedRequests);
-    if (route.endsWith("/activity"))
+    if (route.endsWith("/requests"))
       await expect(page.locator(".ws-pagination")).toContainText("0 requests");
   });
 }
@@ -76,7 +76,7 @@ test("unavailable usage remains unknown instead of announcing measured zero coun
       });
     }
   });
-  await page.goto("/#dashboard");
+  await page.goto("/#dashboard/activity");
   await expect(page.getByRole("alert")).toContainText(
     "usage temporarily unavailable",
   );
@@ -107,7 +107,7 @@ test("empty filtered activity clears filters in place and restores search focus"
       json: { items: [], total: 0, page: 1, pageSize: 20 },
     });
   });
-  await page.goto("/#dashboard/activity");
+  await page.goto("/#dashboard/requests");
   const search = page.getByRole("textbox", {
     name: "Search requests",
     exact: true,
@@ -125,7 +125,7 @@ test("empty filtered activity clears filters in place and restores search focus"
   await page
     .getByRole("button", { name: "Clear filters", exact: true })
     .click();
-  await expect(page).toHaveURL(/#dashboard\/activity$/);
+  await expect(page).toHaveURL(/#dashboard\/requests$/);
   await expect(search).toHaveValue("");
   await expect(search).toBeFocused();
   await expect(

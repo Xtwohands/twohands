@@ -18,7 +18,7 @@ const call = {
   model: "fixture-model",
 };
 
-for (const route of ["dashboard", "dashboard/activity"]) {
+for (const route of ["dashboard/activity", "dashboard/requests"]) {
   test(`${route} request details return keyboard focus to the exact invoking control`, async ({
     page,
   }) => {
@@ -54,7 +54,7 @@ for (const route of ["dashboard", "dashboard/activity"]) {
   });
 }
 
-for (const route of ["dashboard", "dashboard/activity"]) {
+for (const route of ["dashboard/activity", "dashboard/requests"]) {
   test(`${route} retry completion keeps keyboard position in the request history`, async ({
     page,
   }) => {
@@ -83,7 +83,7 @@ for (const route of ["dashboard", "dashboard/activity"]) {
     ).toBeVisible();
     await expect(
       page.getByRole("heading", {
-        name: route === "dashboard" ? "Usage" : "Request log",
+        name: route === "dashboard/activity" ? "Usage" : "Requests",
         exact: true,
       }),
     ).toBeFocused();

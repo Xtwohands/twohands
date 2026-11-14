@@ -3,7 +3,7 @@ import { test, expect } from "@playwright/test";
 test("provider details leads from the dashboard to usage without a redundant self-link", async ({
   page,
 }) => {
-  await page.goto("/#dashboard");
+  await page.goto("/#dashboard/activity");
   const overview = page.locator(".ws-panel").filter({
     has: page.getByRole("heading", { name: "By provider", exact: true }),
   });

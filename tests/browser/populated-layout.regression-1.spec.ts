@@ -96,7 +96,7 @@ for (const width of [375, 768]) {
         json: { items: [activity], total: 1, page: 1, pageSize: 20 },
       }),
     );
-    await page.goto("/#dashboard/activity");
+    await page.goto("/#dashboard/requests");
     const region = page.getByRole("region", {
       name: "Scrollable request and usage table",
       exact: true,
