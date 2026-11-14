@@ -10,6 +10,8 @@ The local MCP server works with Claude desktop and Codex CLI. Both have complete
 
 The [product direction](docs/PRODUCT_DIRECTION.md) connects this evidence to future model evaluation, refund review, and aggregate tool-company feedback, and identifies what still needs to be established for each.
 
+The [product knowledge base](research/README.md) collects interesting products, articles, and ideas to revisit, with source notes, relevance to Two Hands, and prompts for the next discussion.
+
 PostgreSQL accounts have separate **User dashboard**, **Tool company**, and **Administration** areas. Users connect agents and manage their usage; tool company owners register for review, manage analyst access, and see only approved aggregate insights; allowlisted administrators review companies and operate the service. See [role journeys and company access](docs/ROLE_JOURNEYS.md). The illustrative company demo and controlled [provider lab](docs/PROVIDER_LAB.md) remain operator tooling, separate from the company-owner portal.
 
 ## Run locally
@@ -27,6 +29,18 @@ npm start
 Open [the user dashboard](http://127.0.0.1:3001/#dashboard), or [the operator console](http://127.0.0.1:3001/#sessions). Exa and Tavily provide search; Firecrawl extracts a known public HTTPS page. Missing providers stay unavailable. Intent recording, review, and history work without provider keys.
 
 For development, run `npm run dev` from this project's main checkout and open **http://127.0.0.1:5175**. The API uses `PORT` (default 3001); Vite's API proxy follows the same configured `PORT`. Port 5175 is fixed: startup fails if another preview owns it, rather than silently opening a different port. `npm run demo:dashboard` is a separate, optional prototype on port 5174.
+
+The browser uses relative `/api` URLs in both development and production. Vite preserves the browser's host when forwarding development API requests, so the backend applies the same origin checks in both modes. Keep those checks enabled; changing the proxy to rewrite the host causes legitimate saves to fail with “Cross-origin writes are not allowed.”
+
+To run the production build locally, stop `npm run dev` and run:
+
+```bash
+npm run preview:production
+```
+
+Open the backend URL printed at startup (`http://127.0.0.1:3001` by default, or your configured `PORT`). This rebuilds the app and serves the compiled frontend and API from the same server, using the production entry point with `NODE_ENV=production`. It uses your existing `.env` and database; it does not create a separate test environment. There is no hot reload. Use `npm run dev` while editing and this command to check the built app before deployment.
+
+Keep one browser address per environment. Configure Supabase's allowed authentication redirect URLs for that address, and set `PUBLIC_APP_URL` to the same browser origin when testing Stripe returns. Development normally uses `http://127.0.0.1:5175`; the local production preview uses the backend port. A separate staging environment should use the production build, HTTPS, and its own Supabase project/database and test payment settings to verify hosted authentication and redirects without mixing test records into production.
 
 SQLite remains the default local backend. PostgreSQL mode uses [Supabase Auth accounts](docs/AUTH.md), with signup, email confirmation, sign-in, password recovery, automatic private account setup, and sign-out. Personal data follows the verified account. Follow the [PostgreSQL migration guide](docs/POSTGRES_MIGRATION.md) for schema setup, account bootstrap, explicit legacy-owner assignment, verified import, and rollback. `DATABASE_URL` alone does not switch storage. The PostgreSQL runtime can start for signup before importing history; signup never claims existing records. `API_TOKEN` and `ADMIN_API_TOKEN` apply only to SQLite/local mode.
 
@@ -102,6 +116,8 @@ Earlier deterministic routing runs remain available at [Research tools](http://1
 
 Preserved historical notes include the [observation plan](docs/OBSERVATION_PLAN.md), [November 3 accepted scope](docs/PENDING_IMPROVEMENTS.md), and [that implementation checkpoint](docs/IMPLEMENTATION_2026-11-03.md). Their dates and validation counts describe those earlier revisions.
 
+See [loading and performance](docs/PERFORMANCE.md) for refresh behavior, compressed assets, and isolated database performance checks.
+
 ## Verify
 
 ```bash
@@ -123,7 +139,7 @@ npm run build
 npm run test:e2e -- tests/browser/observation.spec.ts --project=desktop
 ```
 
-Browser tests start the built server with `npm start`, so rebuild after source changes. They also start isolated fixture servers on ports 3102, 3106, and 3107; leave those ports and the application test port 3101 free. Focused checks supplement the full verification commands above.
+Browser tests start the built server with `npm start`, so rebuild after source changes. They also start isolated fixture servers on ports 3102, 3106, 3107, and 3108, and Vite on port 3110; leave those ports and the application test port 3101 free. `tests/browser/dev-proxy.spec.ts` checks real browser writes through both the production server and the development proxy, including rejection of unrelated origins. These checks use the isolated in-memory test backend and make no provider calls. Focused checks supplement the full verification commands above.
 
 A reproducible durability workload is available without any external provider calls:
 
