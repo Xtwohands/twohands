@@ -158,14 +158,114 @@ function Brand() {
 function Header() {
   const { enabled, profile } = useAccount();
   const canSignIn = enabled && !profile;
-  const [compact, setCompact] = useState(false);
+  const header = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    function sync() {
-      setCompact((current) => window.scrollY > (current ? 120 : 168));
+    if (!header.current) return;
+    const element = header.current;
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const brand = element.querySelector<HTMLElement>(".th-header-brand")!;
+    const actions = element.querySelector<HTMLElement>(".th-header-actions")!;
+    const surface = element.querySelector<HTMLElement>(".th-header-surface")!;
+    const dock = element.querySelector<HTMLElement>(".th-header-dock")!;
+    let animations: Animation[] = [];
+    let frame = 0;
+    let previousTime = 0;
+    const scrollProgress = () =>
+      Math.min(1, Math.max(0, (window.scrollY - 32) / 388));
+    let progress = scrollProgress();
+
+    function render() {
+      for (const animation of animations)
+        animation.currentTime = progress * 1000;
     }
-    sync();
+
+    function tick(time: number) {
+      const target = scrollProgress();
+      const elapsed = previousTime
+        ? Math.min(time - previousTime, 64)
+        : 1000 / 60;
+      previousTime = time;
+      // Time-based damping smooths wheel steps equally at 60 Hz and 120 Hz.
+      progress += (target - progress) * (1 - Math.exp(-elapsed / 80));
+      if (Math.abs(target - progress) < 0.0001) progress = target;
+      render();
+      frame = progress === target ? 0 : requestAnimationFrame(tick);
+      if (!frame) previousTime = 0;
+    }
+
+    function sync() {
+      if (!reducedMotion.matches && !frame) frame = requestAnimationFrame(tick);
+    }
+
+    function measure() {
+      cancelAnimationFrame(frame);
+      frame = 0;
+      previousTime = 0;
+      for (const animation of animations) animation.cancel();
+      animations = [];
+      if (reducedMotion.matches) return;
+      const width = element.getBoundingClientRect().width;
+      const dockWidth = Math.min(width, 520);
+      const inset = (surface.getBoundingClientRect().width - dockWidth) / 2;
+      const travel = window.innerWidth > 680 ? (width - dockWidth) / 2 + 16 : 0;
+      const options = {
+        duration: 1000,
+        fill: "both" as const,
+        easing: "cubic-bezier(0.77, 0, 0.175, 1)",
+      };
+      animations = [
+        brand.animate(
+          [
+            { transform: "translate3d(0, 0, 0)" },
+            { transform: `translate3d(${travel}px, 12px, 0)` },
+          ],
+          options,
+        ),
+        actions.animate(
+          [
+            { transform: "translate3d(0, 0, 0)" },
+            { transform: `translate3d(${-travel}px, 12px, 0)` },
+          ],
+          options,
+        ),
+        surface.animate(
+          [
+            {
+              transform: "translate3d(0, 0, 0)",
+              clipPath: "inset(0 0 round 0px)",
+            },
+            {
+              transform: "translate3d(0, 12px, 0)",
+              clipPath: `inset(0 ${inset}px round 12px)`,
+            },
+          ],
+          options,
+        ),
+        dock.animate(
+          [
+            { transform: "translate3d(0, 0, 0)", opacity: 0 },
+            { transform: "translate3d(0, 12px, 0)", opacity: 1 },
+          ],
+          options,
+        ),
+      ];
+      for (const animation of animations) animation.pause();
+      render();
+      sync();
+    }
+
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    measure();
     window.addEventListener("scroll", sync, { passive: true });
-    return () => window.removeEventListener("scroll", sync);
+    reducedMotion.addEventListener("change", measure);
+    return () => {
+      cancelAnimationFrame(frame);
+      observer.disconnect();
+      window.removeEventListener("scroll", sync);
+      reducedMotion.removeEventListener("change", measure);
+      for (const animation of animations) animation.cancel();
+    };
   }, []);
 
   return (
@@ -180,7 +280,9 @@ function Header() {
       >
         Skip to content
       </a>
-      <div className="th-header-inner th-wrap" data-compact={compact}>
+      <div className="th-header-inner th-wrap" ref={header}>
+        <span className="th-header-surface" aria-hidden="true" />
+        <span className="th-header-dock" aria-hidden="true" />
         <div className="th-header-brand">
           <Brand />
         </div>
