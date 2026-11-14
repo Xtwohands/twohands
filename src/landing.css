@@ -1,7 +1,6 @@
 .th-landing {
   --th-margin: clamp(24px, 4.17vw, 76px);
   --th-line: color-mix(in srgb, var(--th-blue) 25%, white);
-  --th-mono: "Geist Mono Variable", ui-monospace, monospace;
   --th-blue: var(--brand-accent);
   --th-blue-ink: var(--primary);
   --th-ice: color-mix(in srgb, var(--th-blue) 11%, white);
@@ -57,132 +56,30 @@
   pointer-events: none;
 }
 
-.th-header-inner::before,
-.th-header-inner::after {
+.th-header-surface,
+.th-header-dock {
   position: absolute;
   z-index: -1;
   inset: 0;
-  background: rgb(255 255 255 / 94%);
-  content: "";
-  transition: opacity 280ms ease;
+  pointer-events: none;
 }
 
-.th-header-inner::before {
+.th-header-surface {
   inset-inline: calc(-1 * var(--th-margin));
+  background: rgb(255 255 255 / 65%);
 }
 
-.th-header-inner::after {
+.th-header-dock {
   width: min(100%, 520px);
   margin-inline: auto;
-  border: 1px solid var(--th-line);
   border-radius: 12px;
   opacity: 0;
-  transform: translateY(12px);
-  backdrop-filter: blur(10px);
-}
-
-.th-header-inner[data-compact="true"]::before {
-  opacity: 0;
-}
-.th-header-inner[data-compact="true"]::after {
-  opacity: 1;
+  backdrop-filter: blur(16px);
 }
 
 .th-header-brand,
 .th-header-actions {
   pointer-events: auto;
-  transition: transform 280ms cubic-bezier(0.77, 0, 0.175, 1);
-}
-
-.th-header-brand {
-  --header-compact-x: calc(
-    (
-        min(100vw - 2 * var(--th-margin), 1520px) -
-          min(100vw - 2 * var(--th-margin), 520px)
-      ) /
-      2 + 16px
-  );
-}
-
-.th-header-actions {
-  --header-compact-x: calc(
-    (
-        min(100vw - 2 * var(--th-margin), 520px) -
-          min(100vw - 2 * var(--th-margin), 1520px)
-      ) /
-      2 - 16px
-  );
-}
-
-.th-header-inner[data-compact="true"]
-  :is(.th-header-brand, .th-header-actions) {
-  transform: translate(var(--header-compact-x), 12px);
-}
-
-/* Follow the scroll directly so gathering and reversing have no threshold jump.
-   The transitions above remain the fallback for browsers without scroll timelines. */
-@supports (animation-timeline: scroll(root)) {
-  @media (prefers-reduced-motion: no-preference) {
-    .th-header-brand,
-    .th-header-actions {
-      animation: th-header-gather auto linear both;
-      animation-timeline: scroll(root);
-      animation-range: 32px 240px;
-      transition: none;
-    }
-
-    .th-header-inner::before {
-      animation: th-header-surface auto linear both;
-      animation-timeline: scroll(root);
-      animation-range: 32px 240px;
-      transition: none;
-    }
-
-    .th-header-inner::after {
-      animation: th-header-dock auto linear both;
-      animation-timeline: scroll(root);
-      animation-range: 32px 240px;
-      transition: none;
-    }
-  }
-}
-
-@keyframes th-header-gather {
-  from {
-    transform: translate(0, 0);
-  }
-  to {
-    transform: translate(var(--header-compact-x), 12px);
-  }
-}
-
-@keyframes th-header-surface {
-  from {
-    opacity: 1;
-    transform: translateY(0);
-    clip-path: inset(0 round 0);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(12px);
-    clip-path: inset(
-      0 max(var(--th-margin), calc((100% - 520px) / 2)) round 12px
-    );
-  }
-}
-
-@keyframes th-header-dock {
-  from {
-    opacity: 0;
-    transform: translateY(0);
-  }
-  85% {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-    transform: translateY(12px);
-  }
 }
 
 .th-brand {
@@ -330,8 +227,9 @@
 }
 
 .th-provider-endpoints code,
+.th-landing pre,
 .th-landing code {
-  font-family: var(--th-mono);
+  font-family: var(--font-sans);
 }
 
 .th-architecture {
@@ -417,7 +315,6 @@
   gap: 10px;
   padding-left: calc(var(--th-margin) - 20px);
   color: var(--th-muted);
-  font-family: var(--th-mono);
   font-size: 13px;
   text-align: left;
   pointer-events: auto;
@@ -1207,11 +1104,6 @@
     gap: 12px;
   }
 
-  .th-header-brand,
-  .th-header-actions {
-    --header-compact-x: 0px;
-  }
-
   .th-header-actions {
     gap: 4px;
   }
@@ -1376,10 +1268,6 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .th-header-inner::before,
-  .th-header-inner::after,
-  .th-header-brand,
-  .th-header-actions,
   .th-stack-layer,
   .th-stack-face,
   .th-stage-detail {

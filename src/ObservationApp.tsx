@@ -51,7 +51,14 @@ const PortalShell = lazy(() =>
 );
 import "./provider.css";
 import "./customer-navigation.css";
-import { lazy, useCallback, useEffect, useRef, useState } from "react";
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import {
   Grid01,
   HomeLine,
@@ -655,7 +662,9 @@ export function ObservationApp() {
         links={[]}
         adminPage="tool-access"
       >
-        <ToolAccessView />
+        <Suspense fallback={<p role="status">Loading tool access…</p>}>
+          <ToolAccessView />
+        </Suspense>
       </PortalShell>
     );
   if (
@@ -670,7 +679,9 @@ export function ObservationApp() {
         links={[]}
         adminPage="tool-settings"
       >
-        <ToolSettingsView />
+        <Suspense fallback={<p role="status">Loading tool settings…</p>}>
+          <ToolSettingsView />
+        </Suspense>
       </PortalShell>
     );
   const surface =
@@ -913,7 +924,8 @@ export function ObservationApp() {
         </header>
         <main id="main-content" tabIndex={-1} className="obs-main">
           <InlineError message={error} />
-          {error && (
+          {(error ||
+            (!account.enabled && customerSidebar && route.id && !token)) && (
             <Button
               variant="outline"
               onClick={() =>
@@ -936,20 +948,28 @@ export function ObservationApp() {
             </div>
           )}
           {route.page === "company" && (
-            <CompanyView
-              key={connectionRevision}
-              provider={isProviderId(route.id) ? route.id : providerIds[0]}
-              section={route.section}
-            />
+            <Suspense fallback={<p role="status">Loading company…</p>}>
+              <CompanyView
+                key={connectionRevision}
+                provider={isProviderId(route.id) ? route.id : providerIds[0]}
+                section={route.section}
+              />
+            </Suspense>
           )}
-          {route.page === "disputes" && <DisputeReviewView />}
+          {route.page === "disputes" && (
+            <Suspense fallback={<p role="status">Loading disputes…</p>}>
+              <DisputeReviewView />
+            </Suspense>
+          )}
           {route.page === "lab" && (
-            <ProviderLabView
-              key={connectionRevision}
-              runId={route.id}
-              providerFilter={route.labProvider}
-              evidenceFilter={route.labFinding}
-            />
+            <Suspense fallback={<p role="status">Loading tests…</p>}>
+              <ProviderLabView
+                key={connectionRevision}
+                runId={route.id}
+                providerFilter={route.labProvider}
+                evidenceFilter={route.labFinding}
+              />
+            </Suspense>
           )}
           {route.page === "dashboard" &&
             account.enabled &&
@@ -961,19 +981,21 @@ export function ObservationApp() {
                 focusPaymentMethods: route.focusPaymentMethods,
               }}
             >
-              <UserDashboardView
-                key={connectionRevision}
-                section={
-                  dashboardSections.includes(route.id as DashboardSection)
-                    ? (route.id as DashboardSection)
-                    : "overview"
-                }
-                catalog={catalog}
-                catalogLoading={catalogStatus === "loading"}
-                catalogError={catalogStatus === "error" ? catalogError : ""}
-                refreshCatalog={refresh}
-                connectionRevision={connectionRevision}
-              />
+              <Suspense fallback={<p role="status">Loading page…</p>}>
+                <UserDashboardView
+                  key={connectionRevision}
+                  section={
+                    dashboardSections.includes(route.id as DashboardSection)
+                      ? (route.id as DashboardSection)
+                      : "overview"
+                  }
+                  catalog={catalog}
+                  catalogLoading={catalogStatus === "loading"}
+                  catalogError={catalogStatus === "error" ? catalogError : ""}
+                  refreshCatalog={refresh}
+                  connectionRevision={connectionRevision}
+                />
+              </Suspense>
             </CustomerFunding.Provider>
           )}
           {route.page === "sessions" && !route.id && (

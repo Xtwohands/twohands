@@ -86,7 +86,7 @@
   }
 }
 [data-slot="button"][data-variant="link"] {
-  color: var(--brand-accent-text);
+  color: var(--brand-accent);
 }
 [data-slot="button"][data-variant="outline"],
 [data-slot="button"][data-variant="secondary"] {

@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { captureJourney } from "./helpers/launch-screenshots";
-import AxeBuilder from "@axe-core/playwright";
+import AxeBuilder from "./helpers/accessibility";
 import { extractProviderIds, providerIds } from "../../server/provider-catalog";
 
 const fixture = "http://127.0.0.1:3102";

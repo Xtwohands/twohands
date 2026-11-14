@@ -1,5 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
-import AxeBuilder from "@axe-core/playwright";
+import AxeBuilder from "./helpers/accessibility";
 import { captureJourney } from "./helpers/launch-screenshots";
 
 const origin = "http://127.0.0.1:3102";

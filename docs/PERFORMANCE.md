@@ -1,6 +1,6 @@
 # Loading and performance
 
-Dashboard refreshes wait for the previous request to finish. They pause while the document is hidden and resume when it becomes visible. Data is fetched for the active section: overview/usage load usage totals, overview/activity load request history, and tool/routing/connection sections load their relevant metadata. The catalog refreshes once per minute; live activity refreshes every fifteen seconds. These displays are observations, not a live agent heartbeat.
+Dashboard refreshes wait for the previous request to finish. They pause while the document is hidden and resume when it becomes visible. Data is fetched for the active section: Activity and Usage load usage totals, Activity and Request log load request history, and tool/routing/connection sections load their relevant metadata. Home remains clear for its new design and does not load these dashboard datasets. The customer catalog refreshes once per minute; operator areas refresh every ten seconds, and live activity refreshes every fifteen seconds. These displays are observations, not a live agent heartbeat.
 
 Concurrent identical GETs share an in-flight request within the current account/preview context. Completed responses are not cached by the API helper. Navigation and mutations invalidate pending read reuse so a reopened session or a refreshed receipt obtains current data. GETs have a thirty-second timeout; mutations retain their existing idempotency and retry behavior.
 

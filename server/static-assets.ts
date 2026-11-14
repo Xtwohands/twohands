@@ -12,10 +12,9 @@ export function staticAssets(app: Express) {
     res.vary("Accept-Encoding");
     const encoding = req.acceptsEncodings("br", "gzip", "identity");
     if (encoding !== "br" && encoding !== "gzip") return next();
-    const file = resolve(
-      "dist/assets",
-      req.path.slice(1) + (encoding === "br" ? ".br" : ".gz"),
-    );
+    const root = resolve("dist/assets");
+    const name = req.path.slice(1) + (encoding === "br" ? ".br" : ".gz");
+    const file = resolve(root, name);
     try {
       await stat(file);
     } catch {
@@ -25,8 +24,15 @@ export function staticAssets(app: Express) {
       "Content-Encoding": encoding,
       "Cache-Control": "public, max-age=31536000, immutable",
     });
-    res.sendFile(file, (error) => {
-      if (error) next(error);
+    res.sendFile(name, { root }, (error) => {
+      if (error) {
+        if (!res.headersSent) {
+          res.removeHeader("Content-Encoding");
+          res.removeHeader("Content-Length");
+          res.set("Cache-Control", "no-store");
+        }
+        next(error);
+      }
     });
   });
   app.use(
@@ -44,4 +50,5 @@ export function staticAssets(app: Express) {
       },
     }),
   );
+  app.use("/assets", (_req, res) => res.sendStatus(404));
 }

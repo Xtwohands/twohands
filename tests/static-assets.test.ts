@@ -1,10 +1,13 @@
 import express from "express";
 import { once } from "node:events";
+import { writeFile, unlink } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
 import type { AddressInfo } from "node:net";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { staticAssets } from "../server/static-assets";
 const app = express();
 staticAssets(app);
+app.get("/{*path}", (_req, res) => res.type("html").send("SPA fallback"));
 const server = app.listen(0, "127.0.0.1");
 let base: string;
 beforeAll(async () => {
@@ -42,4 +45,36 @@ it("serves the same JavaScript with gzip/Brotli, correct MIME, Vary, and immutab
   });
   expect(missing.status).toBe(404);
   expect(missing.headers.get("content-encoding")).toBeNull();
+  expect(await missing.text()).not.toContain("SPA fallback");
+});
+
+it("serves compressed HEAD requests without a response body", async () => {
+  const html = await fetch(base);
+  const path = (await html.text()).match(/src="([^\"]+\.js)"/)![1];
+  const response = await fetch(base + path, {
+    method: "HEAD",
+    headers: { "Accept-Encoding": "br" },
+  });
+  expect(response.status).toBe(200);
+  expect(response.headers.get("content-encoding")).toBe("br");
+  expect(Number(response.headers.get("content-length"))).toBeGreaterThan(0);
+  expect(await response.text()).toBe("");
+});
+
+it("falls back to the original asset when no compressed sibling exists", async () => {
+  const name = `identity-${randomUUID()}.js`;
+  const file = `dist/assets/${name}`;
+  const body = "console.log('identity fallback');";
+  await writeFile(file, body);
+  try {
+    const response = await fetch(`${base}/assets/${name}`, {
+      headers: { "Accept-Encoding": "br, gzip" },
+    });
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-encoding")).toBeNull();
+    expect(response.headers.get("content-type")).toContain("javascript");
+    expect(await response.text()).toBe(body);
+  } finally {
+    await unlink(file);
+  }
 });

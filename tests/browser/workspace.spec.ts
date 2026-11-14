@@ -1,4 +1,4 @@
-import AxeBuilder from "@axe-core/playwright";
+import AxeBuilder from "./helpers/accessibility";
 import { test, expect } from "@playwright/test";
 test("saves explicit intent, persists it, inspects trace, and shows empty analytics without hiding sections", async ({
   page,

@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import AxeBuilder from "@axe-core/playwright";
+import AxeBuilder from "./helpers/accessibility";
 
 test("account menu opens upward, restores focus, and keeps settings reachable locally", async ({
   page,

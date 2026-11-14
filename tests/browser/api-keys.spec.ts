@@ -1,6 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
 import { captureJourney } from "./helpers/launch-screenshots";
-import AxeBuilder from "@axe-core/playwright";
+import AxeBuilder from "./helpers/accessibility";
 const base = "http://127.0.0.1:3107";
 const owner = "fixture-owner-token-0000000000001";
 async function login(page: Page) {

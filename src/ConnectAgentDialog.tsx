@@ -18,6 +18,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "./components/ui/dialog";
+import "./user-dashboard.css";
 import "./connect-agent.css";
 
 const ConnectAgentContext = createContext<

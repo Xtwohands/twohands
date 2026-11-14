@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import AxeBuilder from "@axe-core/playwright";
+import AxeBuilder from "./helpers/accessibility";
 import { providerCatalog, providerIds } from "../../server/provider-catalog";
 
 // This fixture server configures every catalog provider with synthetic keys

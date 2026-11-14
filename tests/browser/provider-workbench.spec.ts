@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import AxeBuilder from "@axe-core/playwright";
+import AxeBuilder from "./helpers/accessibility";
 test.use({
   baseURL: process.env.OCTOLAB_WORKBENCH_BROWSER_URL ?? "http://127.0.0.1:3102",
 });

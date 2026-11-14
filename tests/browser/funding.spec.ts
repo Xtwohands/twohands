@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { captureJourney } from "./helpers/launch-screenshots";
-import AxeBuilder from "@axe-core/playwright";
+import AxeBuilder from "./helpers/accessibility";
 
 test("test funding remains disabled by default with clear setup instructions", async ({
   page,

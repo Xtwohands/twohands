@@ -12,7 +12,7 @@
   width: max-content;
   margin: 0;
   transform: translateX(-50%);
-  font: 12px / 13px var(--th-mono);
+  font: 12px / 13px var(--font-sans);
   letter-spacing: 0.5px;
   user-select: none;
 }

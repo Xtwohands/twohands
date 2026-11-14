@@ -1,6 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
 import { captureJourney } from "./helpers/launch-screenshots";
-import AxeBuilder from "@axe-core/playwright";
+import AxeBuilder from "./helpers/accessibility";
 import { providerIds } from "../../server/provider-catalog";
 const authBrowserUrl =
   process.env.OCTOLAB_AUTH_BROWSER_URL || "http://127.0.0.1:3102";
@@ -389,7 +389,8 @@ test("email sign-in, persisted session, and sign-out clear the private workspace
   page,
 }) => {
   await mockAuth(page);
-  await login(page);
+  // Private receipt rows and manual refresh live in Request log.
+  await login(page, "/#dashboard/requests");
   await expect(page.locator(".ws-activity-table")).toContainText(
     "Private A receipt",
   );
@@ -413,7 +414,8 @@ test("new accounts start automatically and expired access removes private conten
   page,
 }) => {
   const state = await mockAuth(page, true);
-  await login(page);
+  // Private receipt rows and manual refresh live in Request log.
+  await login(page, "/#dashboard/requests");
   await expect(page.getByLabel("Workspace name")).toHaveCount(0);
   await expect(
     page.getByRole("button", { name: "Create workspace", exact: true }),
@@ -496,7 +498,8 @@ test("a delayed profile response cannot restore the previous account after sign-
     });
     finished = true;
   });
-  await login(page);
+  // Private receipt rows and manual refresh live in Request log.
+  await login(page, "/#dashboard/requests");
   await expect.poll(() => waiting).toBe(true);
   await page.evaluate(() =>
     window.dispatchEvent(new Event("octolab-session-invalid")),
@@ -824,7 +827,8 @@ test("admin switches selected companies, drops late reports, and retains return 
   );
   state.companies = [a, b];
   let release = () => {},
-    waiting = false;
+    waiting = false,
+    finished = false;
   const gate = new Promise<void>((resolve) => {
     release = resolve;
   });
@@ -847,6 +851,7 @@ test("admin switches selected companies, drops late reports, and retains return 
         },
       },
     });
+    finished = true;
   });
   await login(page);
   await openNav(page);
@@ -856,17 +861,21 @@ test("admin switches selected companies, drops late reports, and retains return 
   await captureJourney(page, "company-preview-picker");
   await page.getByRole("button", { name: "Open company preview" }).click();
   await expect(
-    page.getByRole("banner").filter({ hasText: a.name }),
+    page.getByRole("heading", { name: `${a.name} dashboard`, exact: true }),
   ).toBeVisible();
   await expect.poll(() => waiting).toBe(true);
   await page
     .getByLabel("Preview company", { exact: true })
     .selectOption(`company:${b.id}`);
   await expect(
-    page.getByRole("banner").filter({ hasText: b.name }),
+    page.getByRole("heading", { name: `${b.name} dashboard`, exact: true }),
   ).toBeVisible();
+  await expect(page.getByLabel("Preview company", { exact: true })).toHaveValue(
+    `company:${b.id}`,
+  );
   release();
-  await expect(page.getByText("987654", { exact: true })).toHaveCount(0);
+  await expect.poll(() => finished).toBe(true);
+  await expect(page.locator("body")).not.toContainText(/987[,\s]?654/);
   await expect(
     page.getByRole("heading", { name: "No usage available yet", exact: true }),
   ).toBeVisible();
@@ -892,7 +901,7 @@ test("admin switches selected companies, drops late reports, and retains return 
     page.getByRole("heading", { name: "No usage yet", exact: true }),
   ).toBeVisible();
   await captureJourney(page, "company-preview-provider");
-  await expect(page.locator("body")).not.toContainText("987654");
+  await expect(page.locator("body")).not.toContainText(/987[,\s]?654/);
   await page
     .getByRole("button", { name: "Return to admin", exact: true })
     .click();

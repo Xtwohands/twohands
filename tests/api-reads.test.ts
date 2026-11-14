@@ -48,3 +48,39 @@ it("keeps pending reads separate across account and preview changes", async () =
   resolvers[3](new Response("{}"));
   await preview;
 });
+
+it("lets a failed shared read be retried instead of reusing its rejection", async () => {
+  const fetch = vi
+    .fn()
+    .mockRejectedValueOnce(new TypeError("Network unavailable"))
+    .mockResolvedValueOnce(new Response('{"requests":2}'));
+  vi.stubGlobal("fetch", fetch);
+  setAccountSession("retry-token", "retry-user");
+  const first = api("/account/usage"),
+    concurrent = api("/account/usage");
+  await expect(first).rejects.toThrow("Network unavailable");
+  await expect(concurrent).rejects.toThrow("Network unavailable");
+  expect(fetch).toHaveBeenCalledTimes(1);
+  await expect(api("/account/usage")).resolves.toEqual({ requests: 2 });
+  expect(fetch).toHaveBeenCalledTimes(2);
+});
+
+it("does not reuse a pre-mutation read or let it evict a newer pending read", async () => {
+  const resolvers: Array<(value: Response) => void> = [];
+  const fetch = vi.fn(() => new Promise<Response>((r) => resolvers.push(r)));
+  vi.stubGlobal("fetch", fetch);
+  setAccountSession("mutation-token", "mutation-user");
+  const old = api("/account/routing");
+  const mutation = api("/account/routing", { disabledTools: [] });
+  resolvers[1](new Response('{"saved":true}'));
+  await mutation;
+  const fresh = api("/account/routing");
+  expect(fetch).toHaveBeenCalledTimes(3);
+  resolvers[0](new Response('{"revision":0}'));
+  await old;
+  const concurrent = api("/account/routing");
+  expect(fetch).toHaveBeenCalledTimes(3);
+  resolvers[2](new Response('{"revision":1}'));
+  await expect(fresh).resolves.toEqual({ revision: 1 });
+  await expect(concurrent).resolves.toEqual({ revision: 1 });
+});
