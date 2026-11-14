@@ -248,7 +248,7 @@
   font-variant-numeric: tabular-nums;
 }
 
-.catalog-card-footer {
+.tool-catalog .ws-tool-card .catalog-card-footer {
   align-items: flex-end;
   margin: 0;
   padding: 0;
