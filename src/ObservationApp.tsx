@@ -30,7 +30,13 @@ import {
 } from "./UserDashboardView";
 import "./provider.css";
 import "./customer-navigation.css";
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import {
   Grid01,
   BarChartSquare02,
@@ -219,6 +225,9 @@ function readRoute() {
 }
 function navigate(page: Page, id?: string) {
   location.hash = `${page}${id ? `/${id}` : ""}`;
+  window.dispatchEvent(
+    new CustomEvent("twohands:navigate", { detail: location.hash }),
+  );
 }
 function eventLabel(e: ObservationEvent) {
   return (
@@ -358,6 +367,7 @@ export function ObservationApp() {
   const [connectOpen, setConnectOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const navigatingFromMenu = useRef(false);
+  const scrollToRoute = useRef<string | undefined>(undefined);
   const [filter, setFilter] = useState("all");
   const [query, setQuery] = useState("");
   const [token, setTokenInput] = useState("");
@@ -379,17 +389,64 @@ export function ObservationApp() {
   const selectedId = useRef<string | undefined>(route.id);
   selectedId.current = route.page === "sessions" ? route.id : undefined;
   useEffect(() => {
+    const onNavigate = (event: Event) => {
+      scrollToRoute.current = (event as CustomEvent<string>).detail;
+    };
+    const onRouteClick = (event: MouseEvent) => {
+      if (
+        event.defaultPrevented ||
+        event.button !== 0 ||
+        event.metaKey ||
+        event.ctrlKey ||
+        event.shiftKey ||
+        event.altKey
+      )
+        return;
+      const link =
+        event.target instanceof Element
+          ? event.target.closest<HTMLAnchorElement>("a[href]")
+          : null;
+      if (
+        !link ||
+        link.hasAttribute("download") ||
+        (link.target && link.target !== "_self")
+      )
+        return;
+      const next = new URL(link.href, location.href);
+      if (
+        next.origin === location.origin &&
+        next.pathname === location.pathname &&
+        next.search === location.search &&
+        next.hash &&
+        next.hash !== location.hash &&
+        next.hash !== "#main-content" &&
+        !next.hash.startsWith("#home")
+      )
+        scrollToRoute.current = next.hash;
+    };
     const onRoute = () => {
+      if (scrollToRoute.current !== location.hash)
+        scrollToRoute.current = undefined;
       setRoute(readRoute());
       setMenuOpen(false);
     };
+    document.addEventListener("click", onRouteClick);
+    window.addEventListener("twohands:navigate", onNavigate);
     window.addEventListener("hashchange", onRoute);
     window.addEventListener("popstate", onRoute);
     return () => {
+      document.removeEventListener("click", onRouteClick);
+      window.removeEventListener("twohands:navigate", onNavigate);
       window.removeEventListener("hashchange", onRoute);
       window.removeEventListener("popstate", onRoute);
     };
   }, []);
+  useLayoutEffect(() => {
+    if (scrollToRoute.current !== location.hash) return;
+    scrollToRoute.current = undefined;
+    // Reset a new destination after render; history traversal keeps native restoration.
+    window.scrollTo({ top: 0, left: 0, behavior: "instant" });
+  }, [route]);
   const independentArea =
     account.enabled &&
     (route.page === "company" ||
