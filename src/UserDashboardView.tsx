@@ -174,18 +174,22 @@ function Section({
   action,
   children,
   className = "",
+  headingRef,
 }: {
   title: string;
   description?: string;
   action?: React.ReactNode;
   children?: React.ReactNode;
   className?: string;
+  headingRef?: React.Ref<HTMLHeadingElement>;
 }) {
   return (
     <section className={`ws-panel ${className}`}>
       <header>
         <div>
-          <h2>{title}</h2>
+          <h2 ref={headingRef} tabIndex={headingRef ? -1 : undefined}>
+            {title}
+          </h2>
           {description && <p>{description}</p>}
         </div>
         {action}
@@ -281,11 +285,17 @@ export function UserDashboardView({
   const [selectedTool, setSelectedTool] = useState<Catalog[number]>();
   const catalogTrigger = useRef<HTMLButtonElement>(null);
   const activitySearch = useRef<HTMLInputElement>(null);
+  const activityHeading = useRef<HTMLHeadingElement>(null);
+  const activityRetryFocus = useRef<string | null>(null);
   const generation = useRef(0);
   const activityGeneration = useRef(0);
   const requestKey = `${days}|${query}|${provider}|${status}|${page}|${section}`;
   const currentRequest = useRef(requestKey);
   currentRequest.current = requestKey;
+  const retryActivity = () => {
+    activityRetryFocus.current = requestKey;
+    setRefreshTick((tick) => tick + 1);
+  };
   const load = useCallback(async () => {
     const id = ++generation.current;
     try {
@@ -354,8 +364,19 @@ export function UserDashboardView({
           setActivity(undefined);
         }
       } finally {
-        if (id === activityGeneration.current && key === currentRequest.current)
+        if (
+          id === activityGeneration.current &&
+          key === currentRequest.current
+        ) {
           setActivityLoading(false);
+          if (activityRetryFocus.current === key) {
+            activityRetryFocus.current = null;
+            requestAnimationFrame(() => {
+              if (currentRequest.current === key)
+                activityHeading.current?.focus();
+            });
+          }
+        }
       }
     };
     const debounce = setTimeout(() => void fetchActivity(), query ? 200 : 0);
@@ -557,13 +578,12 @@ export function UserDashboardView({
                 <div className="ws-overview-grid">
                   <Section
                     title="Usage"
+                    headingRef={activityHeading}
                     action={<Go section="activity">View activity</Go>}
                   >
                     <InlineError message={activityError} />
                     {activityError ? (
-                      <ActivityUnavailable
-                        onRetry={() => setRefreshTick((tick) => tick + 1)}
-                      />
+                      <ActivityUnavailable onRetry={retryActivity} />
                     ) : (
                       <OverviewRequests
                         items={activity?.items.slice(0, 5) ?? []}
@@ -675,6 +695,7 @@ export function UserDashboardView({
           {section === "activity" && (
             <Section
               title="Request log"
+              headingRef={activityHeading}
               description="Every provider call, with its inputs, result, and stated selection reason."
               action={
                 <ExportActivity
@@ -732,9 +753,7 @@ export function UserDashboardView({
               </div>
               <InlineError message={activityError} />
               {activityError ? (
-                <ActivityUnavailable
-                  onRetry={() => setRefreshTick((tick) => tick + 1)}
-                />
+                <ActivityUnavailable onRetry={retryActivity} />
               ) : activityLoading ? (
                 <Loading />
               ) : (

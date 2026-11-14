@@ -53,3 +53,39 @@ for (const route of ["dashboard", "dashboard/activity"]) {
     await expect(trigger).toBeFocused();
   });
 }
+
+for (const route of ["dashboard", "dashboard/activity"]) {
+  test(`${route} retry completion keeps keyboard position in the request history`, async ({
+    page,
+  }) => {
+    let unavailable = true;
+    await page.route("**/api/account/activity?*", (request) =>
+      unavailable
+        ? request.fulfill({
+            status: 503,
+            json: { error: "TEST FIXTURE activity unavailable" },
+          })
+        : request.fulfill({
+            json: { items: [], total: 0, page: 1, pageSize: 20 },
+          }),
+    );
+    await page.goto(`/#${route}`);
+    const retry = page.getByRole("button", {
+      name: "Retry activity",
+      exact: true,
+    });
+    await expect(retry).toBeVisible();
+    await retry.focus();
+    unavailable = false;
+    await page.keyboard.press("Enter");
+    await expect(
+      page.getByRole("heading", { name: "No requests yet", exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("heading", {
+        name: route === "dashboard" ? "Usage" : "Request log",
+        exact: true,
+      }),
+    ).toBeFocused();
+  });
+}
