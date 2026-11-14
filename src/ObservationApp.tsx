@@ -51,7 +51,14 @@ const PortalShell = lazy(() =>
 );
 import "./provider.css";
 import "./customer-navigation.css";
-import { lazy, useCallback, useEffect, useRef, useState } from "react";
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import {
   Grid01,
   HomeLine,
@@ -961,19 +968,21 @@ export function ObservationApp() {
                 focusPaymentMethods: route.focusPaymentMethods,
               }}
             >
-              <UserDashboardView
-                key={connectionRevision}
-                section={
-                  dashboardSections.includes(route.id as DashboardSection)
-                    ? (route.id as DashboardSection)
-                    : "overview"
-                }
-                catalog={catalog}
-                catalogLoading={catalogStatus === "loading"}
-                catalogError={catalogStatus === "error" ? catalogError : ""}
-                refreshCatalog={refresh}
-                connectionRevision={connectionRevision}
-              />
+              <Suspense fallback={<p role="status">Loading page…</p>}>
+                <UserDashboardView
+                  key={connectionRevision}
+                  section={
+                    dashboardSections.includes(route.id as DashboardSection)
+                      ? (route.id as DashboardSection)
+                      : "overview"
+                  }
+                  catalog={catalog}
+                  catalogLoading={catalogStatus === "loading"}
+                  catalogError={catalogStatus === "error" ? catalogError : ""}
+                  refreshCatalog={refresh}
+                  connectionRevision={connectionRevision}
+                />
+              </Suspense>
             </CustomerFunding.Provider>
           )}
           {route.page === "sessions" && !route.id && (

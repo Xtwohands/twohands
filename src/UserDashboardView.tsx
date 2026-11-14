@@ -18,7 +18,15 @@ const ProviderAdaptersView = lazy(() =>
   })),
 );
 import { useAccount } from "./AccountGate";
-import { lazy, useCallback, useEffect, useId, useRef, useState } from "react";
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+} from "react";
 import {
   Activity,
   ArrowRight,
@@ -885,13 +893,23 @@ export function UserDashboardView({
             </>
           )}
           {section === "usage" && canManage && (
-            <ProviderBillingView key={connectionRevision} days={days} />
+            <Suspense fallback={<p role="status">Loading billing…</p>}>
+              <ProviderBillingView key={connectionRevision} days={days} />
+            </Suspense>
           )}
-          {section === "credits" && <FundingView key={connectionRevision} />}
+          {section === "credits" && (
+            <Suspense fallback={<p role="status">Loading credits…</p>}>
+              <FundingView key={connectionRevision} />
+            </Suspense>
+          )}
           {section === "connections" && (
             <>
               <ConnectionView connection={connection} catalog={catalog} />
-              {canManage && <ProviderAdaptersView key={connectionRevision} />}
+              {canManage && (
+                <Suspense fallback={<p role="status">Loading providers…</p>}>
+                  <ProviderAdaptersView key={connectionRevision} />
+                </Suspense>
+              )}
             </>
           )}
         </>

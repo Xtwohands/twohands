@@ -47,3 +47,18 @@ it("pauses hidden tabs, resumes on visibility, and cancels cleanly", async () =>
   await vi.advanceTimersByTimeAsync(20000);
   expect(task).toHaveBeenCalledTimes(2);
 });
+
+it("continues refreshing after a loader rejects so a temporary outage can recover", async () => {
+  const task = vi
+    .fn()
+    .mockRejectedValueOnce(new Error("Temporary outage"))
+    .mockResolvedValue(undefined);
+  const stop = startPolling(task, 5000);
+  await vi.advanceTimersByTimeAsync(0);
+  expect(task).toHaveBeenCalledTimes(1);
+  await vi.advanceTimersByTimeAsync(5000);
+  expect(task).toHaveBeenCalledTimes(2);
+  stop();
+  await vi.advanceTimersByTimeAsync(10000);
+  expect(task).toHaveBeenCalledTimes(2);
+});
