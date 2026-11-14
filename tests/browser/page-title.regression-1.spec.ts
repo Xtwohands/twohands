@@ -4,7 +4,7 @@ test("browser titles identify each app destination and follow history", async ({
   page,
 }, testInfo) => {
   for (const [route, title] of [
-    ["dashboard", "My dashboard"],
+    ["dashboard", "Home"],
     ["dashboard/tools", "Tool catalog"],
     ["dashboard/activity", "Activity"],
     ["dashboard/credits", "Credits"],
@@ -27,7 +27,7 @@ test("browser titles identify each app destination and follow history", async ({
     .click();
   await expect(page).toHaveTitle("Tool catalog · Two Hands");
   await page.goBack();
-  await expect(page).toHaveTitle("My dashboard · Two Hands");
+  await expect(page).toHaveTitle("Home · Two Hands");
   await page.goForward();
   await expect(page).toHaveTitle("Tool catalog · Two Hands");
 
