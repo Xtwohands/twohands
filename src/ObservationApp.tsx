@@ -590,6 +590,18 @@ export function ObservationApp() {
             : route.page === "tool-access"
               ? "Tool access"
               : pages.find((p) => p.id === route.page)?.label || "Sessions";
+  useEffect(() => {
+    const title =
+      route.page === "admin"
+        ? "Company reviews"
+        : route.page === "tool-settings"
+          ? "Tool settings"
+          : currentTitle;
+    document.title =
+      route.page === "home"
+        ? "Two Hands — Intent & outcomes"
+        : `${title} · Two Hands`;
+  }, [currentTitle, route.page]);
   if (route.page === "home") return <LandingView />;
   if (account.enabled && route.page === "settings") return <AccountSettings />;
   if (account.enabled && route.page === "company")
