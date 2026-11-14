@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import AxeBuilder from "@axe-core/playwright";
+import AxeBuilder from "./helpers/accessibility";
 test.use({ baseURL: "http://127.0.0.1:3106" });
 test("known links work without search keys; changed evidence needs re-review; privacy can be withdrawn and local history deleted", async ({
   page,

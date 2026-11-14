@@ -1,6 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
 import { captureJourney } from "./helpers/launch-screenshots";
-import AxeBuilder from "@axe-core/playwright";
+import AxeBuilder from "./helpers/accessibility";
 import { providerIds } from "../../server/provider-catalog";
 const authBrowserUrl =
   process.env.OCTOLAB_AUTH_BROWSER_URL || "http://127.0.0.1:3102";

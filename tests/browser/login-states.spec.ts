@@ -1,5 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
-import AxeBuilder from "@axe-core/playwright";
+import AxeBuilder from "./helpers/accessibility";
 import { captureJourney } from "./helpers/launch-screenshots";
 
 const authOrigin = "https://login-states-fixture.supabase.co";

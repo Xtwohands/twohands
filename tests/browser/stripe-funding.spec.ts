@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import AxeBuilder from "@axe-core/playwright";
+import AxeBuilder from "./helpers/accessibility";
 const base = "http://127.0.0.1:3102";
 
 test("Stripe fixture checkout, signed webhook credits, refunds, and shared ledger", async ({

@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import AxeBuilder from "@axe-core/playwright";
+import AxeBuilder from "./helpers/accessibility";
 import { providerIds } from "../../server/provider-catalog";
 test.use({ baseURL: "http://127.0.0.1:3102" });
 
