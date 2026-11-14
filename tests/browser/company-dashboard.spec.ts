@@ -160,6 +160,7 @@ test("company holder and selected admin preview share the dashboard, navigation,
     "Controlled tests",
     "Test plans",
     "Integration",
+    "Connectors",
     "Company details",
     "Company team",
   ]);

@@ -82,6 +82,10 @@ Agents can also connect over the network, with nothing installed locally, to the
 
 Set `AGENT_SESSION_BUDGET_MICROS` on the backend to control the per-session research cap (default 100000 = $0.10; 0 blocks positive-estimate calls). This is separate from any shopping budget in a user's request. `record_intent` exposes no budget input or approval link. Backend authorization is recorded as an observed policy event, not human approval. The operator console remains the inspection and review surface. Its manual intent flow remains available for operator-created sessions. The `apilayer` MCP tool catalog contains no approval, evaluation, consent, payment, or refund tool.
 
+## Company connectors
+
+Tool companies can connect their own MCP servers instead of waiting for a built-in adapter. Two Hands reads the server's tools into a hashed snapshot; a reviewer approves each tool at an exact schema and price; agents then find them with `list_connector_tools` and call them with `call_connector_tool`. Calls get the same receipts, budgets, stated reasons and outcome links as built-in providers. A changed schema loses approval until reviewed again, and a connector can be suspended instantly. Endpoints must be public HTTPS, are checked at connect time against private addresses, and company tokens are stored encrypted. See [company connectors](docs/CONNECTORS.md), including `npm run connector:test-server` and `npm run connector:demo` for a local walkthrough.
+
 ## What gets recorded
 
 | Record             | Meaning                                                                                                |

@@ -154,3 +154,44 @@ export function ToolOptions({ tools }: { tools: ToolOption[] }) {
     </div>
   );
 }
+
+type ConnectorOfferView = Pick<
+  import("../../server/connector-discovery").ConnectorOffer,
+  "tool" | "company" | "status" | "reason" | "estimatedMicros" | "relevance"
+>;
+const offerStatus: Record<string, string> = {
+  eligible: "Eligible",
+  disabled: "Not allowed",
+  unavailable: "Unavailable",
+  over_budget: "Over budget",
+};
+/** Company connector tools shown with a discovery. Absent on older events. */
+export function ConnectorOffers({ offers }: { offers?: ConnectorOfferView[] }) {
+  if (!offers?.length) return null;
+  return (
+    <div className="offered-tools connector-offers">
+      <strong>Company connector tools offered</strong>
+      <ul>
+        {offers.map((o) => (
+          <li key={o.tool}>
+            <span className="provider-option-name">
+              <code>{o.tool}</code> · {o.company}
+            </span>
+            <StateBadge label={offerStatus[o.status] ?? o.status} />
+            <span className="provider-option-price">
+              {money(o.estimatedMicros)} est.
+            </span>
+            <span className="field-hint">
+              Matched on: {o.relevance.matchedTerms.join(", ")}.{" "}
+              {o.status === "eligible" ? "" : o.reason}
+            </span>
+          </li>
+        ))}
+      </ul>
+      <p className="field-hint">
+        Matched on shared words with the stated need, not judged for fit.
+        Descriptions are company-supplied.
+      </p>
+    </div>
+  );
+}

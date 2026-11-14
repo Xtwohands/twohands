@@ -79,6 +79,8 @@ it("exposes distinct provider tools and no approval, scoring, consent, or refund
       "get_evidence",
       "record_intent",
       "route_call",
+      "list_connector_tools",
+      "call_connector_tool",
       "submit_outcome",
     ].sort(),
   );

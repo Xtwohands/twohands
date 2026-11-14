@@ -287,7 +287,7 @@ describe("remote MCP access control", () => {
 
   it("accepts the owner token and a scoped API key", async () => {
     expect((await (await connect(OWNER)).listTools()).tools.length).toBe(
-      providerToolNames.length + 6,
+      providerToolNames.length + 8,
     );
     const { secret } = await issueKey();
     const client = await connect(secret);

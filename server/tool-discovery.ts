@@ -216,7 +216,7 @@ export function matchTools<
     missingInputs: operations.length
       ? []
       : [
-          "operations: supply operation and query/URL to discover and price relevant alternatives",
+          "operations: supply operation and query/URL to discover and price search and extraction alternatives",
         ],
   };
 }
