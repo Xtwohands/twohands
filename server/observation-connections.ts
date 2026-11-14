@@ -4,6 +4,8 @@ export const clientIdentity = z
   .object({
     clientName: z.string().trim().min(1).max(160),
     clientVersion: z.string().trim().min(1).max(100),
+    /** How the client reached Two Hands. Absent means the stdio bridge. */
+    transport: z.enum(["stdio", "streamable-http"]).optional(),
   })
   .strict();
 export type ClientIdentity = z.infer<typeof clientIdentity>;
@@ -12,7 +14,7 @@ export async function recordConnection(
   input: ClientIdentity,
   sessionId?: string,
 ) {
-  const client = clientIdentity.parse(input);
+  const { transport = "stdio", ...client } = clientIdentity.parse(input);
   const key = JSON.stringify([client.clientName, client.clientVersion]);
   const existing = await db.store.db
     .prepare("SELECT body FROM observation_clients WHERE id=?")
@@ -24,7 +26,7 @@ export async function recordConnection(
       ? JSON.parse(existing.body as string).firstSeenAt
       : at,
     lastSeenAt: at,
-    transport: "stdio",
+    transport,
     identity: "MCP client-reported",
   };
   await db.store.db
@@ -44,7 +46,7 @@ export async function recordConnection(
   )
     await db.event(sessionId, "client_observed", "observed", {
       ...client,
-      transport: "stdio",
+      transport,
       identity:
         "Client name and version are self-reported, not model attestation.",
     });

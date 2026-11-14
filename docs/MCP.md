@@ -111,6 +111,60 @@ Send `discover_tools` a provider-neutral `operations` array plus the immediate `
 
 Every new provider call requires `statedReason`: a brief, non-empty explanation of the tool choice, not private reasoning. After upgrading, reconnect the MCP client so it reloads the required input schema. Historical calls remain readable with `get_evidence`; no explanation is invented for older calls.
 
+## Remote endpoint (Streamable HTTP)
+
+The HTTP service also serves MCP directly at `/mcp`, using the [Streamable HTTP transport](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports#streamable-http). Agents connect with a URL and a credential; nothing needs to be installed or cloned on the agent's machine. Locally the endpoint is `http://127.0.0.1:3001/mcp` (the API port, not the 5175 browser preview). On a deployed service it is `https://<your-origin>/mcp`.
+
+The tool catalog, instructions and schemas are identical to the stdio bridge's, because both are built by the same `createObservationMcp` factory from the provider registry. A provider or tool added to the registry appears on both transports with no endpoint change; `tests/mcp-http.test.ts` fails if the two catalogs ever differ.
+
+Every tool operation is executed by the existing `/api` routes, re-entered over a private loopback listener inside the same process with the caller's credential. Authentication, key scopes and tool allowlists, workspace isolation, spending policy, request-key replay and receipts are therefore the same code paths as every other client.
+
+### Credentials
+
+| Storage mode         | Accepted                                                                                    | Refused                                       |
+| -------------------- | ------------------------------------------------------------------------------------------- | --------------------------------------------- |
+| PostgreSQL (account) | A scoped `oct_key_` API key (recommended); a verified Supabase account session token        | No credential, `API_TOKEN`, `ADMIN_API_TOKEN` |
+| SQLite (local)       | `API_TOKEN` or a scoped key; with no `API_TOKEN`, no credential only from a loopback `Host` | Anything else                                 |
+
+Send the credential as `Authorization: Bearer <credential>`. Missing or rejected credentials return HTTP 401 with a `WWW-Authenticate: Bearer` challenge. Every request is authenticated, including `initialize` and `tools/list`, which never reach `/api`. A revoked or expired key stops working on its next request, even inside an open session.
+
+Account session tokens are accepted so that a future OAuth sign-in (needed for Claude.ai and ChatGPT connectors) needs no endpoint change. Session tokens expire within hours, so use a scoped key for any manual configuration. Keys keep their scope and spend limits; a session token acts with the signed-in account's own access, but only through the observation routes the MCP tools call (intent, discovery, provider calls, evidence and outcomes).
+
+With SQLite and no `API_TOKEN`, a non-loopback `Host` header is refused, so a tunnel or proxy in front of a local server cannot inherit local owner access. Set `API_TOKEN` (24+ characters) before exposing a local server through a tunnel.
+
+### Connecting a client
+
+Claude Code:
+
+```bash
+claude mcp add --transport http apilayer https://<your-origin>/mcp \
+  --header "Authorization: Bearer oct_key_..."
+```
+
+Codex (`~/.codex/config.toml`), keeping the key in the environment:
+
+```toml
+[mcp_servers.apilayer]
+url = "https://<your-origin>/mcp"
+bearer_token_env_var = "APILAYER_API_KEY"
+tool_timeout_sec = 150
+```
+
+Claude.ai and ChatGPT custom connectors authenticate with OAuth, which this endpoint does not provide yet. Until it does, use Claude Code, Codex, or another client that can send a bearer header.
+
+### Sessions and limits
+
+- Each `initialize` creates a session bound to the principal that created it (one key, one account, or the local owner). Another credential presenting that session ID receives 404, the same as a missing session. A refreshed account token keeps its session because binding is by account, not by token.
+- Sessions close after 30 idle minutes, on `DELETE /mcp`, or on server restart. Clients then receive 404 and reinitialize automatically, as the transport specification requires. Durable state lives in the database, so `get_session` resumes research in a new MCP session.
+- A principal can hold 16 open sessions; opening another closes that principal's least recently used one, never another principal's. The server holds at most 500 sessions and otherwise returns 503 with `Retry-After`.
+- Responses are plain JSON. `GET /mcp` returns 405, because the server sends no unprompted messages. Request bodies are limited to 256 KB.
+- Requests with an `Origin` header that does not match `Host` are refused (DNS-rebinding protection). Server-side clients send no `Origin`.
+- On `SIGTERM` the endpoint refuses new requests with 503, lets in-flight tool calls finish with the rest of the server drain, and then closes its sessions.
+- Tool errors return the server's own bounded error text (for example a scope, allowance or validation message) so the agent can act on it. Credentials are never echoed.
+- Connections are recorded with `transport: "streamable-http"`; stdio bridge connections remain `stdio`. Client name and version are self-reported.
+
+Proxies and hosts in front of the service must forward `/mcp` with its `Authorization`, `Mcp-Session-Id` and `Mcp-Protocol-Version` headers, preserve `Host`, and allow requests of at least 150 seconds.
+
 ## Hosted stdio bridge
 
 Set these values in the MCP process environment (replace the example origin with the actual deployed service):

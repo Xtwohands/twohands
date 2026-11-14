@@ -58,6 +58,8 @@ The installer merges the project’s `.mcp.json`, Claude desktop’s macOS confi
 
 You can target one client with `npm run mcp:install -- claude`, `-- codex`, or `-- project`. See [MCP setup and troubleshooting](docs/MCP.md), including custom ports and noninteractive tests.
 
+Agents can also connect over the network, with nothing installed locally, to the remote MCP endpoint at `/mcp` (locally `http://127.0.0.1:3001/mcp`) using a scoped API key as a bearer token. It serves the same tools as the stdio bridge. See [the remote endpoint](docs/MCP.md#remote-endpoint-streamable-http).
+
 1. Ask the external agent a normal question and tell it to use Two Hands through the connected `apilayer` tools.
 2. The agent records intent internally. The backend starts the session automatically under its configured spending policy; the consumer does not approve sessions or choose a research budget.
 3. The agent sends the immediate need and provider-neutral request parameters. Two Hands discovers relevant options with costs and evidence; the agent chooses explicitly, explains the choice, inspects results, and submits its final output.
