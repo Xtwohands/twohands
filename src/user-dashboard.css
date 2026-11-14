@@ -335,6 +335,7 @@
   margin: 5px 0;
 }
 .ws-table-scroll {
+  position: relative;
   overflow-x: auto;
 }
 .ws-table {
