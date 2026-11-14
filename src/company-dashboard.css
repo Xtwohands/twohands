@@ -532,7 +532,7 @@
   max-width: 74ch;
 }
 .company-dashboard .company-capability a {
-  color: color-mix(in srgb, var(--brand-accent) 65%, black);
+  color: var(--brand-accent);
 }
 .company-capability-full {
   display: grid;
@@ -652,7 +652,7 @@
   gap: 20px 16px;
 }
 .company-details-grid .portal-details a {
-  color: color-mix(in srgb, var(--brand-accent) 65%, black);
+  color: var(--brand-accent);
   text-underline-offset: 3px;
 }
 .portal-company .portal-team-member {

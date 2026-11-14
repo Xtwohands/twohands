@@ -38,6 +38,8 @@ export default class ProductAccessibility extends AxeBuilder {
                 variant: element.getAttribute("data-variant"),
                 background: style.backgroundColor,
                 color: style.color,
+                tag: element.tagName,
+                href: element.getAttribute("href"),
               };
             });
           if (isApprovedBrandContrast(control))

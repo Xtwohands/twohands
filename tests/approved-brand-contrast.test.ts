@@ -70,6 +70,21 @@ it("retains other contrast nodes and every other rule, with raw failures intact"
   expect(raw).toEqual(snapshot);
 });
 
+it("separates only real links using the exact approved accent", () => {
+  const link: RenderedControl = {
+    slot: null,
+    variant: null,
+    tag: "A",
+    href: "https://example.com",
+    color: "rgb(58, 160, 237)",
+    background: "rgba(0, 0, 0, 0)",
+  };
+  expect(isApprovedBrandContrast(link)).toBe(true);
+  expect(isApprovedBrandContrast({ ...link, href: null })).toBe(false);
+  expect(isApprovedBrandContrast({ ...link, tag: "SPAN" })).toBe(false);
+  expect(isApprovedBrandContrast({ ...link, color: "#318cde" })).toBe(false);
+});
+
 it("leaves unrecognized targets unchanged and removes only an emptied contrast rule", () => {
   const node = { target: ["#brand"] } as NodeResult;
   const raw = {

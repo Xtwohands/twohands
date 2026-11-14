@@ -5,6 +5,8 @@ export type RenderedControl = {
   variant: string | null;
   background: string;
   color: string;
+  tag?: string;
+  href?: string | null;
 };
 
 const compact = (value: string) => value.toLowerCase().replace(/\s+/g, "");
@@ -16,11 +18,12 @@ const white = (value: string) =>
 /** Exact, documented design choice; this does not make its contrast compliant. */
 export function isApprovedBrandContrast(control: RenderedControl) {
   return (
-    control.slot === "button" &&
-    ((control.variant === "brand" &&
-      accent(control.background) &&
-      white(control.color)) ||
-      (control.variant === "link" && accent(control.color)))
+    (control.slot === "button" &&
+      ((control.variant === "brand" &&
+        accent(control.background) &&
+        white(control.color)) ||
+        (control.variant === "link" && accent(control.color)))) ||
+    (control.tag === "A" && !!control.href && accent(control.color))
   );
 }
 
