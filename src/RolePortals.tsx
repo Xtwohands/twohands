@@ -1,6 +1,7 @@
 import { providerIds, providerLabel } from "../server/provider-catalog";
 import { AdminNavigation } from "./AdminNavigation";
 import { CompanyTeamView } from "./CompanyTeamView";
+import { ConnectorsView } from "./ConnectorsView";
 import {
   CompanyDashboard,
   companyDashboardLinks,
@@ -191,6 +192,8 @@ export function CompanyPortal(props: { id?: string; section: string }) {
         section={props.section}
       />
     );
+  if (selected && props.id !== "new" && props.section === "connectors")
+    return <CompanyConnectorsPortal key={selected.id} company={selected} />;
   if (
     selected &&
     props.id !== "new" &&
@@ -204,6 +207,29 @@ export function CompanyPortal(props: { id?: string; section: string }) {
       />
     );
   return <RegisteredCompanyPortal {...props} />;
+}
+function CompanyConnectorsPortal({ company }: { company: ToolCompany }) {
+  const canManage =
+    company.role === "owner" || company.role === "platform_admin";
+  return (
+    <PortalShell
+      area="company"
+      title={company.name}
+      links={companyDashboardLinks(company.id, "connectors", true, canManage)}
+    >
+      <ConnectorsView
+        mode="company"
+        base={`/companies/${company.id}/connectors`}
+        canWrite={canManage}
+        canReview={false}
+        locked={
+          company.status === "approved"
+            ? undefined
+            : "Connectors become available once our team approves your company registration."
+        }
+      />
+    </PortalShell>
+  );
 }
 function CompanyDashboardPortal({
   target,
@@ -565,9 +591,19 @@ function RegisteredCompanyPortal({
                     <li>
                       <strong>Tool connected</strong>
                       <p>
-                        {company.status === "approved"
-                          ? `Your company is linked to ${company.providerId}.`
-                          : "An administrator links the verified integration after approval."}
+                        {company.status !== "approved" ? (
+                          "An administrator links the verified integration after approval."
+                        ) : company.providerId ? (
+                          `Your company is linked to ${providerLabel(company.providerId)}.`
+                        ) : (
+                          <>
+                            Connect your own MCP server under{" "}
+                            <a href={`#company/${company.id}/connectors`}>
+                              Connectors
+                            </a>
+                            .
+                          </>
+                        )}
                       </p>
                     </li>
                     <li>
@@ -814,12 +850,19 @@ export function AdminCompanyReview() {
                   Verified provider integration
                   <select
                     value={form.providerId}
-                    required={form.status === "approved"}
                     onChange={(e) =>
-                      setForm({ ...form, providerId: e.target.value })
+                      setForm({
+                        ...form,
+                        providerId: e.target.value,
+                        insightsEnabled: e.target.value
+                          ? form.insightsEnabled
+                          : false,
+                      })
                     }
                   >
-                    <option value="">Choose an integration</option>
+                    <option value="">
+                      None: the company supplies its own connector
+                    </option>
                     {providerIds.map((p) => (
                       <option key={p} value={p}>
                         {providerLabel(p)}
@@ -830,7 +873,7 @@ export function AdminCompanyReview() {
                 <label className="portal-checkbox">
                   <input
                     type="checkbox"
-                    disabled={form.status !== "approved"}
+                    disabled={form.status !== "approved" || !form.providerId}
                     checked={form.insightsEnabled}
                     onChange={(e) =>
                       setForm({ ...form, insightsEnabled: e.target.checked })

@@ -652,6 +652,23 @@ describe("agents calling an approved connector tool", () => {
       endpoint: fixture.url.replace("/mcp", "/mcp/"),
     });
     expect(moved.body.status).toBe("pending");
+    // The dashboard uses the POST alias; a stale revision is refused.
+    const described = await api("POST", `/connectors/${c.id}/update`, {
+      revision: moved.body.revision,
+      description: "Updated weather and currency tools for testing.",
+    });
+    expect(described.body).toMatchObject({
+      description: "Updated weather and currency tools for testing.",
+      revision: moved.body.revision + 1,
+    });
+    expect(
+      (
+        await api("POST", `/connectors/${c.id}/update`, {
+          revision: moved.body.revision,
+          description: "A stale edit that should be refused by revision.",
+        })
+      ).status,
+    ).toBe(409);
     expect(
       (await call(s, "weatherco__get_forecast", { city: "Oslo", days: 2 }))
         .status,

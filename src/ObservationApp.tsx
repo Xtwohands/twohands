@@ -17,6 +17,7 @@ import { AccountControls, useAccount } from "./AccountGate";
 import { CustomerFunding, useCustomerFunding } from "./customer-funding";
 import { testUsdc } from "./FundingView";
 import { DisputeReviewView } from "./DisputeReviewView";
+import { ConnectorsView } from "./ConnectorsView";
 import { ToolOptions } from "./components/ToolOptions";
 import { ProviderLogo } from "./components/shared";
 import { OutcomeContent } from "./components/DeferredOutcomeContent";
@@ -49,6 +50,7 @@ import {
   Activity,
   GitBranch01,
   CreditCard01,
+  PuzzlePiece01,
   Key01,
 } from "@untitledui/icons";
 import { Button } from "./components/ui/button";
@@ -121,6 +123,7 @@ type Page =
   | "settings"
   | "company"
   | "lab"
+  | "connectors"
   | "disputes";
 type Summary = {
   sessions: number;
@@ -158,6 +161,7 @@ const pages = [
   { id: "tools", label: "Tool activity", icon: Link01 },
   { id: "cases", label: "Review cases", icon: ShieldTick },
   { id: "lab", label: "Provider lab", icon: TerminalSquare },
+  { id: "connectors", label: "Connectors", icon: PuzzlePiece01 },
   { id: "disputes", label: "Payment disputes", icon: CreditCard01 },
 ] as const;
 function readRoute() {
@@ -185,6 +189,7 @@ function readRoute() {
       "settings",
       "company",
       "lab",
+      "connectors",
       "disputes",
     ].includes(page)
       ? page
@@ -210,6 +215,7 @@ function readRoute() {
       "team",
       "details",
       "integration",
+      "connectors",
     ].includes(section)
       ? section
       : "overview",
@@ -395,7 +401,8 @@ export function ObservationApp() {
     (route.page === "company" ||
       route.page === "admin" ||
       route.page === "tool-access" ||
-      route.page === "tool-settings");
+      route.page === "tool-settings" ||
+      route.page === "connectors");
   const operatorArea =
     !account.enabled ||
     (!!account.profile?.isAdmin &&
@@ -406,6 +413,7 @@ export function ObservationApp() {
         "admin",
         "tool-access",
         "tool-settings",
+        "connectors",
       ].includes(route.page));
   const refresh = useCallback(async () => {
     if (independentArea || route.page === "home") return true;
@@ -574,6 +582,26 @@ export function ObservationApp() {
         adminPage="tool-access"
       >
         <ToolAccessView />
+      </PortalShell>
+    );
+  if (
+    account.enabled &&
+    account.profile?.isAdmin &&
+    route.page === "connectors"
+  )
+    return (
+      <PortalShell
+        area="admin"
+        title="Connector reviews"
+        links={[]}
+        adminPage="connectors"
+      >
+        <ConnectorsView
+          mode="admin"
+          base="/admin/connectors"
+          canWrite={false}
+          canReview
+        />
       </PortalShell>
     );
   if (
@@ -876,6 +904,15 @@ export function ObservationApp() {
             />
           )}
           {route.page === "disputes" && <DisputeReviewView />}
+          {route.page === "connectors" && !account.enabled && (
+            <ConnectorsView
+              key={connectionRevision}
+              mode="operator"
+              base="/connectors"
+              canWrite
+              canReview
+            />
+          )}
           {route.page === "lab" && (
             <ProviderLabView
               key={connectionRevision}

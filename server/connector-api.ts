@@ -104,13 +104,13 @@ function mount(
       });
     }),
   );
-  router.patch(
-    `${base}/:connectorId`,
-    route("write", async (req, res, access) => {
-      const c = await owned(req, access);
-      res.json(await connectors.update(c.id, req.body, access.actor));
-    }),
-  );
+  const update = route("write", async (req, res, access) => {
+    const c = await owned(req, access);
+    res.json(await connectors.update(c.id, req.body, access.actor));
+  });
+  router.patch(`${base}/:connectorId`, update);
+  // The dashboard's request helper sends POST.
+  router.post(`${base}/:connectorId/update`, update);
   router.post(
     `${base}/:connectorId/refresh`,
     route("write", async (req, res, access) => {

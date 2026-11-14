@@ -71,9 +71,20 @@ The demo registers the fixture company's server, approves two tools, then acts a
 
 The fixture server (`tests/fixtures/test-mcp-server.ts`) offers a normal forecast tool, a currency tool with an enum schema and structured output, and tools that fail, stall, return too much text, or return text that tries to instruct the agent. It can change a schema or drop tools to exercise re-review.
 
+## Dashboard
+
+| Where                                                        | Who                                         | What                                                                                                                  |
+| ------------------------------------------------------------ | ------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| Operator console, **Connectors** (`#connectors`, local mode) | The local operator                          | Register, edit, refresh, review, suspend                                                                              |
+| Company area, **Connectors** (`#company/<id>/connectors`)    | Approved company owners; analysts read only | Register, edit endpoint/token/description/price, refresh, see review status and history                               |
+| Admin area, **Connector reviews** (`#connectors`, hosted)    | Platform administrators                     | Approve, reject or turn off each tool at a chosen price; approve, request changes, suspend or reinstate the connector |
+| User dashboard, **Tool catalog**                             | Customers                                   | A _Company connector tools_ section listing approved tools and their prices                                           |
+
+Every tool decision defaults to _No change_, so approving is always explicit. The review sends the schema hash shown on screen; if the company changed the tool since, the server refuses and the reviewer reloads. Before company approval the company screen explains that connectors are not available yet. The admin company review accepts _None: the company supplies its own connector_ in place of a built-in provider, and then keeps aggregate insights off.
+
 ## Not yet included
 
-- Dashboard screens for registering and reviewing connectors. The API is complete; the UI shows connector calls in sessions and activity using the raw `connector:<slug>` label.
+- Session and activity views show connector calls with the raw `connector:<slug>` label rather than the company name.
 - Connector tools in `discover_tools` and `route_call`, workspace routing switches, and seller reports for connector tools.
 - Provider-reported usage and billing reconciliation for connectors; the reviewed per-call estimate is what is charged.
 - OAuth to company servers; only a static bearer token is supported.

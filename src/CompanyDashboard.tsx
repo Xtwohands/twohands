@@ -9,6 +9,7 @@ import {
   Activity,
   Building07,
   Users01,
+  PuzzlePiece01,
 } from "@untitledui/icons";
 import type { CompanyInsights, ToolCompany } from "../server/company-types";
 import { capabilityData } from "../server/provider-capability-data";
@@ -45,6 +46,12 @@ export function companyDashboardLinks(
     })),
     ...(registered
       ? [
+          {
+            href: `#company/${id}/connectors`,
+            label: "Connectors",
+            selected: section === "connectors",
+            icon: PuzzlePiece01,
+          },
           {
             href: `#company/${id}/details`,
             label: "Company details",
