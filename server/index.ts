@@ -74,6 +74,7 @@ for (const signal of ["SIGTERM", "SIGINT"])
   process.on(signal, async () => {
     if (shuttingDown) return;
     shuttingDown = true;
+    app.locals.mcp.refuse();
     let httpClosed = false;
     server.close(() => {
       httpClosed = true;
@@ -98,6 +99,7 @@ for (const signal of ["SIGTERM", "SIGINT"])
       ) {
         clearInterval(drain);
         clearTimeout(deadline);
+        await app.locals.mcp.close();
         await releaseRuntime?.();
         await store.close();
         process.exit(0);

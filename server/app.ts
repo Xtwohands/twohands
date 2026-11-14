@@ -22,6 +22,7 @@ import {
 import express from "express";
 import { ApiKeyError, requiredApiKeyScope } from "./api-keys.js";
 import { apiKeyRoutes } from "./api-key-api.js";
+import { mcpAuthenticator, mountMcpEndpoint } from "./mcp-http.js";
 import { DisputeReviewService } from "./dispute-review.js";
 import { disputeReviewRoutes } from "./dispute-review-api.js";
 import { FundingService } from "./funding.js";
@@ -129,6 +130,12 @@ export function createApp(
     await store.db.prepare("SELECT 1").get();
     res.json({ ok: true });
   });
+  // Remote MCP (Streamable HTTP). Mounted before the global JSON parser and the
+  // browser fallback; tool operations re-enter `/api` with the caller's credential.
+  app.locals.mcp = mountMcpEndpoint(
+    app,
+    mcpAuthenticator({ store, apiKeys: observatory.db.apiKeys, accounts }),
+  );
   app.get("/api/public/catalog", (_req, res) =>
     res.json(
       Object.entries(toolCapabilities).map(([tool, capability]) => {
