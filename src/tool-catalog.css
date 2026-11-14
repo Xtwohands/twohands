@@ -374,11 +374,6 @@
   cursor: pointer;
 }
 
-.catalog-secondary-actions {
-  display: flex;
-  justify-content: flex-end;
-}
-
 @media (max-width: 1140px) {
   .catalog-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));

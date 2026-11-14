@@ -11,20 +11,19 @@ import {
   Copy01,
   FileSearch02,
   Grid01,
-  Menu02,
   Plus,
   Receipt,
   SearchLg,
   TerminalSquare,
 } from "@untitledui/icons";
 import { Button } from "@/components/ui/button";
+import { GlyphField } from "@/components/landing/GlyphField";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import brand from "../../public/two-hands.svg";
@@ -162,10 +161,9 @@ function Brand() {
 
 function Header() {
   const [compact, setCompact] = useState(false);
-  const [mobileOpen, setMobileOpen] = useState(false);
   useEffect(() => {
     function sync() {
-      setCompact(window.scrollY > 168);
+      setCompact((current) => window.scrollY > (current ? 120 : 168));
     }
     sync();
     window.addEventListener("scroll", sync, { passive: true });
@@ -178,87 +176,20 @@ function Header() {
         <div className="th-header-brand">
           <Brand />
         </div>
-        <nav aria-label="Primary" className="th-nav">
-          <a href="#platform">Platform</a>
-          <a href="#workflows">Workflows</a>
-          <a href={catalog}>Tool catalog</a>
-          <a href="#developers">Developers</a>
-          <Button
-            className="th-compact-action"
-            asChild
-            variant="brand"
-            size="sm"
-          >
-            <a href={dashboard}>
-              Open demo <ArrowUpRight />
-            </a>
-          </Button>
-        </nav>
         <div className="th-header-actions">
           <Button asChild variant="ghost" size="sm">
             <a href="/#login">Sign in</a>
           </Button>
           <Button asChild variant="brand" size="sm">
             <a href={dashboard}>
-              Open demo <ArrowUpRight />
+              Open dashboard <ArrowUpRight />
             </a>
           </Button>
-        </div>
-        <div className="th-mobile-menu">
-          <Dialog open={mobileOpen} onOpenChange={setMobileOpen}>
-            <DialogTrigger asChild>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon-sm"
-                aria-label="Open menu"
-              >
-                <Menu02 />
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="th-mobile-menu-panel">
-              <DialogHeader>
-                <DialogTitle>Menu</DialogTitle>
-                <DialogDescription className="sr-only">
-                  Two Hands navigation
-                </DialogDescription>
-              </DialogHeader>
-              <nav
-                aria-label="Mobile navigation"
-                onClick={() => setMobileOpen(false)}
-              >
-                <a href="#platform">Platform</a>
-                <a href="#workflows">Workflows</a>
-                <a href={catalog}>Tool catalog</a>
-                <a href="#developers">Developers</a>
-                <a href="/#login">Sign in</a>
-                <Button asChild variant="brand">
-                  <a href={dashboard}>
-                    Open demo <ArrowUpRight />
-                  </a>
-                </Button>
-              </nav>
-            </DialogContent>
-          </Dialog>
         </div>
       </div>
     </header>
   );
 }
-
-const glyphs = Array.from({ length: 24 }, (_, y) =>
-  Array.from({ length: 230 }, (_, x) => {
-    const wave = Math.sin(x * 0.085 + y * 0.27) + Math.cos(x * 0.19 - y * 0.23);
-    const noise = (Math.sin(x * 43.1 + y * 183.7) + 1) * 0.5;
-    return wave > 0.85 + noise
-      ? "@"
-      : wave > 0.45
-        ? "+"
-        : noise > 0.13
-          ? "/"
-          : "·";
-  }).join(" "),
-).join("\n");
 
 function Hero() {
   return (
@@ -280,7 +211,7 @@ function Hero() {
           <div className="th-actions">
             <Button asChild variant="brand" size="lg">
               <a href={dashboard}>
-                Open demo <ArrowRight />
+                Open dashboard <ArrowRight />
               </a>
             </Button>
             <Button asChild variant="outline" size="lg">
@@ -292,9 +223,7 @@ function Hero() {
           </a>
         </div>
       </div>
-      <div className="th-glyph-field" aria-hidden="true">
-        <pre>{glyphs}</pre>
-      </div>
+      <GlyphField />
     </section>
   );
 }
@@ -904,7 +833,7 @@ function Developers() {
           <div className="th-actions">
             <Button asChild variant="brand" size="lg">
               <a href={dashboard}>
-                Open demo <ArrowRight />
+                Open dashboard <ArrowRight />
               </a>
             </Button>
             <Button asChild variant="outline" size="lg">
@@ -1038,7 +967,7 @@ function LandingPrototype() {
             <h2 id="close-heading">Give your agent more tools to work with.</h2>
             <Button asChild variant="brand" size="lg">
               <a href={dashboard}>
-                Open demo <ArrowRight />
+                Open dashboard <ArrowRight />
               </a>
             </Button>
           </div>

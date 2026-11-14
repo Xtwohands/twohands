@@ -51,9 +51,7 @@
   --button-fill: var(--brand-accent);
   --button-hover: color-mix(in srgb, var(--button-fill), black 8%);
   --button-border: var(--brand-border);
-  text-shadow:
-    0 0 2px color-mix(in srgb, var(--brand-accent), black 65%),
-    0 0 3px color-mix(in srgb, var(--brand-accent), black 65%);
+  text-shadow: none;
 }
 [data-slot="button"]:is([data-variant="default"], [data-variant="brand"]) {
   border-radius: 8px;
@@ -65,9 +63,7 @@
   color: var(--primary-foreground);
   border: 1px solid var(--button-border);
   background-color: var(--button-fill);
-  box-shadow:
-    inset 0 1px 0 rgb(255 255 255 / 15%),
-    var(--shadow-sm);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 15%);
 
   &:hover:not(:disabled) {
     background-color: var(--button-hover);
@@ -97,7 +93,7 @@
   background: var(--card);
   border: 1px solid var(--border);
   color: var(--foreground);
-  box-shadow: var(--shadow-sm);
+  box-shadow: none;
 }
 [data-slot="button"][data-variant="outline"]:hover,
 [data-slot="button"][data-variant="secondary"]:hover {

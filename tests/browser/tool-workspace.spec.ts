@@ -28,11 +28,10 @@ test("sidebar pages have independent routes, browser history, and accessible lay
     ).toBe(true);
   }
   await page.goto("/#dashboard/tools");
-  const configure = page.getByRole("link", {
-    name: "Configure routing",
-    exact: true,
-  });
-  await configure.click();
+  await expect(
+    page.getByRole("link", { name: "Configure routing", exact: true }),
+  ).toHaveCount(0);
+  await page.goto("/#dashboard/routing");
   await expect(page).toHaveURL(/#dashboard\/routing$/);
   await expect(
     page.getByRole("heading", { name: "Configure routing", exact: true }),
@@ -50,7 +49,7 @@ test("sidebar pages have independent routes, browser history, and accessible lay
   await expect(
     page.getByRole("heading", { name: "Tool catalog", exact: true }),
   ).toBeVisible();
-  await configure.click();
+  await page.goto("/#dashboard/routing");
   await page.getByRole("link", { name: "Back to catalog" }).click();
   await expect(page).toHaveURL(/#dashboard\/tools$/);
   if (test.info().project.name === "mobile")

@@ -25,7 +25,6 @@ import {
   RefreshCw01,
   SearchLg,
   SearchMd,
-  Settings02,
   TerminalSquare,
 } from "@untitledui/icons";
 import { Button } from "./components/ui/button";
@@ -1570,14 +1569,6 @@ function CatalogView({
           </Button>
         </Card>
       )}
-      <div className="catalog-secondary-actions">
-        <Button variant="ghost" size="sm" asChild>
-          <a href="#dashboard/routing">
-            <Settings02 />
-            Configure routing
-          </a>
-        </Button>
-      </div>
     </section>
   );
 }

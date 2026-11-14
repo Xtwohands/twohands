@@ -24,6 +24,7 @@
 }
 
 .th-skip {
+  pointer-events: auto;
   position: fixed;
   z-index: 10;
   top: 14px;
@@ -43,31 +44,159 @@
   position: fixed;
   z-index: 4;
   inset: 0 0 auto;
+  pointer-events: none;
 }
 
 .th-header-inner {
-  display: grid;
+  position: relative;
+  display: flex;
   height: 64px;
-  grid-template-columns: 1fr auto 1fr;
   align-items: center;
-  gap: 15px;
+  justify-content: space-between;
+  gap: 24px;
+  pointer-events: none;
 }
 
-.th-header-inner[data-compact="false"]::before {
+.th-header-inner::before,
+.th-header-inner::after {
   position: absolute;
   z-index: -1;
   inset: 0;
-  background: rgb(255 255 255 / 90%);
+  background: rgb(255 255 255 / 94%);
   content: "";
+  transition: opacity 280ms ease;
+}
+
+.th-header-inner::before {
+  inset-inline: calc(-1 * var(--th-margin));
+}
+
+.th-header-inner::after {
+  width: min(100%, 520px);
+  margin-inline: auto;
+  border: 1px solid var(--th-line);
+  border-radius: 12px;
+  opacity: 0;
+  transform: translateY(12px);
+  backdrop-filter: blur(10px);
+}
+
+.th-header-inner[data-compact="true"]::before {
+  opacity: 0;
+}
+.th-header-inner[data-compact="true"]::after {
+  opacity: 1;
+}
+
+.th-header-brand,
+.th-header-actions {
+  pointer-events: auto;
+  transition: transform 280ms cubic-bezier(0.77, 0, 0.175, 1);
+}
+
+.th-header-brand {
+  --header-compact-x: calc(
+    (
+        min(100vw - 2 * var(--th-margin), 1520px) -
+          min(100vw - 2 * var(--th-margin), 520px)
+      ) /
+      2 + 16px
+  );
+}
+
+.th-header-actions {
+  --header-compact-x: calc(
+    (
+        min(100vw - 2 * var(--th-margin), 520px) -
+          min(100vw - 2 * var(--th-margin), 1520px)
+      ) /
+      2 - 16px
+  );
+}
+
+.th-header-inner[data-compact="true"]
+  :is(.th-header-brand, .th-header-actions) {
+  transform: translate(var(--header-compact-x), 12px);
+}
+
+/* Follow the scroll directly so gathering and reversing have no threshold jump.
+   The transitions above remain the fallback for browsers without scroll timelines. */
+@supports (animation-timeline: scroll(root)) {
+  @media (prefers-reduced-motion: no-preference) {
+    .th-header-brand,
+    .th-header-actions {
+      animation: th-header-gather auto linear both;
+      animation-timeline: scroll(root);
+      animation-range: 32px 240px;
+      transition: none;
+    }
+
+    .th-header-inner::before {
+      animation: th-header-surface auto linear both;
+      animation-timeline: scroll(root);
+      animation-range: 32px 240px;
+      transition: none;
+    }
+
+    .th-header-inner::after {
+      animation: th-header-dock auto linear both;
+      animation-timeline: scroll(root);
+      animation-range: 32px 240px;
+      transition: none;
+    }
+  }
+}
+
+@keyframes th-header-gather {
+  from {
+    transform: translate(0, 0);
+  }
+  to {
+    transform: translate(var(--header-compact-x), 12px);
+  }
+}
+
+@keyframes th-header-surface {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+    clip-path: inset(0 round 0);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(12px);
+    clip-path: inset(
+      0 max(var(--th-margin), calc((100% - 520px) / 2)) round 12px
+    );
+  }
+}
+
+@keyframes th-header-dock {
+  from {
+    opacity: 0;
+    transform: translateY(0);
+  }
+  85% {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+    transform: translateY(12px);
+  }
 }
 
 .th-brand {
+  display: block;
   width: 136px;
   height: 30px;
   object-fit: contain;
 }
 
-.th-nav,
+.th-header-brand,
+.th-header-actions {
+  flex-shrink: 0;
+}
+
 .th-header-actions,
 .th-actions {
   display: flex;
@@ -75,61 +204,14 @@
   gap: 10px;
 }
 
-.th-nav {
-  min-height: 42px;
-  justify-content: center;
-  gap: clamp(14px, 2.3vw, 34px);
-  padding: 4px 12px;
-  border: 1px solid transparent;
-  border-radius: 9px;
-  font-size: 13px;
-  white-space: nowrap;
-}
-
-.th-nav > a:not([data-slot="button"]),
 .th-footer a:not(:has(img)) {
   color: var(--th-muted);
 }
 
-.th-nav > a:not([data-slot="button"]):hover,
 .th-footer a:not(:has(img)):hover {
   color: var(--foreground);
   text-decoration: underline;
   text-underline-offset: 4px;
-}
-
-.th-header-actions {
-  justify-self: end;
-}
-
-.th-mobile-menu {
-  display: none;
-  justify-self: end;
-}
-
-.th-mobile-menu-panel nav {
-  display: grid;
-  gap: 5px;
-}
-
-.th-mobile-menu-panel nav > a {
-  padding: 10px;
-}
-
-.th-header-inner[data-compact="true"] :is(.th-header-brand, .th-header-actions),
-.th-header-inner[data-compact="false"] .th-compact-action {
-  visibility: hidden;
-}
-
-.th-header-inner[data-compact="false"] .th-compact-action {
-  display: none;
-}
-
-.th-header-inner[data-compact="true"] .th-nav {
-  border-color: var(--th-line);
-  background: rgb(255 255 255 / 91%);
-  box-shadow: 0 4px 18px color-mix(in srgb, var(--th-blue) 9%, transparent);
-  backdrop-filter: blur(10px);
 }
 
 .th-hero {
@@ -146,10 +228,10 @@
 
 .th-hero h1 {
   margin: 0;
-  font-size: clamp(48px, 5.45vw, 88px);
+  font-size: clamp(42px, 4.4vw, 70px);
   font-weight: 500;
-  line-height: 0.99;
-  letter-spacing: -0.069em;
+  line-height: 1.04;
+  letter-spacing: -0.055em;
 }
 
 .th-hero-copy > p {
@@ -184,35 +266,6 @@
   height: 6px;
   border-radius: 50%;
   background: var(--brand-accent);
-}
-
-.th-glyph-field {
-  position: relative;
-  height: clamp(180px, 28svh, 310px);
-  overflow: hidden;
-  border-block: 1px solid var(--th-line);
-  background: color-mix(in srgb, var(--th-blue) 6%, white);
-}
-
-.th-glyph-field pre {
-  position: absolute;
-  left: 50%;
-  width: max-content;
-  margin: 0;
-  transform: translateX(-50%);
-  background: radial-gradient(
-    ellipse at 22% 48%,
-    var(--th-blue) 0,
-    color-mix(in srgb, var(--th-blue) 89%, white) 23%,
-    color-mix(in srgb, var(--th-blue) 63%, white) 52%,
-    color-mix(in srgb, var(--th-blue) 92%, black) 81%,
-    color-mix(in srgb, var(--th-blue) 55%, white) 100%
-  );
-  background-clip: text;
-  color: transparent;
-  font: 12px / 13px var(--th-mono);
-  letter-spacing: 0.5px;
-  user-select: none;
 }
 
 .th-provider-grid {
@@ -1131,28 +1184,6 @@
 }
 
 @media (max-width: 880px) {
-  .th-header-inner {
-    grid-template-columns: auto 1fr;
-    gap: 4px 10px;
-  }
-
-  .th-header-inner[data-compact="true"] {
-    grid-template-columns: 1fr;
-  }
-
-  .th-header-inner[data-compact="false"] .th-nav {
-    display: none;
-  }
-
-  .th-header-inner[data-compact="true"]
-    :is(.th-header-brand, .th-header-actions) {
-    display: none;
-  }
-
-  .th-header-inner[data-compact="true"] .th-nav {
-    justify-self: center;
-  }
-
   .th-architecture-copy {
     margin-left: 11px;
   }
@@ -1168,30 +1199,22 @@
     height: 27px;
   }
 
-  .th-header-inner[data-compact] :is(.th-nav, .th-header-actions) {
-    display: none;
+  .th-header-inner {
+    gap: 12px;
   }
 
-  .th-header-inner[data-compact] {
-    grid-template-columns: 1fr auto;
+  .th-header-brand,
+  .th-header-actions {
+    --header-compact-x: 0px;
   }
 
-  .th-header-inner[data-compact] .th-header-brand {
-    display: block;
-    visibility: visible;
+  .th-header-actions {
+    gap: 4px;
   }
 
-  .th-header-inner[data-compact="true"]::before {
-    position: absolute;
-    z-index: -1;
-    inset: 0;
-    border-bottom: 1px solid var(--th-line);
-    background: rgb(255 255 255 / 94%);
-    content: "";
-  }
-
-  .th-mobile-menu {
-    display: block;
+  .th-header-actions [data-slot="button"] {
+    padding-inline: 8px;
+    font-size: 12px;
   }
 
   .th-hero-copy {
@@ -1201,7 +1224,11 @@
   }
 
   .th-hero h1 {
-    font-size: clamp(39px, 9.7vw, 59px);
+    font-size: clamp(32px, 8.2vw, 48px);
+  }
+
+  .th-actions {
+    flex-wrap: wrap;
   }
 
   .th-hero-actions {
@@ -1211,10 +1238,6 @@
 
   .th-hero-jump {
     display: none;
-  }
-
-  .th-glyph-field {
-    height: 180px;
   }
 
   .th-provider-grid {
@@ -1331,12 +1354,28 @@
 }
 
 @media (max-width: 410px) {
+  .th-header-inner {
+    width: calc(100% - 32px);
+  }
+
+  .th-header-inner .th-brand {
+    width: 96px;
+  }
+
+  .th-header-actions [data-slot="button"] svg {
+    display: none;
+  }
+
   .th-stories {
     grid-template-columns: 1fr;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .th-header-inner::before,
+  .th-header-inner::after,
+  .th-header-brand,
+  .th-header-actions,
   .th-stack-layer,
   .th-stack-face,
   .th-stage-detail {
