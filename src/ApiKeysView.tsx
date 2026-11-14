@@ -220,7 +220,18 @@ export function ApiKeysView() {
   if (error && !enabled)
     return (
       <div className="ws-api-keys">
-        <h1>API keys</h1>
+        <header className="api-keys-heading">
+          <h1>API keys</h1>
+          <Button
+            className="api-keys-create"
+            variant="brand"
+            size="sm"
+            disabled
+          >
+            <Plus />
+            Create API key
+          </Button>
+        </header>
         <div className="api-keys-error">
           <InlineError message={error} />
           <Button variant="outline" size="sm" onClick={() => void refresh()}>
