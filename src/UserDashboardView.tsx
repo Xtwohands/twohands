@@ -549,11 +549,17 @@ export function UserDashboardView({
                     action={<Go section="activity">View activity</Go>}
                   >
                     <InlineError message={activityError} />
-                    <OverviewRequests
-                      items={activity?.items.slice(0, 5) ?? []}
-                      loading={activityLoading && !activity}
-                      onSelect={setSelectedCall}
-                    />
+                    {activityError ? (
+                      <ActivityUnavailable
+                        onRetry={() => setRefreshTick((tick) => tick + 1)}
+                      />
+                    ) : (
+                      <OverviewRequests
+                        items={activity?.items.slice(0, 5) ?? []}
+                        loading={activityLoading && !activity}
+                        onSelect={setSelectedCall}
+                      />
+                    )}
                   </Section>
                   <Section
                     title="By provider"
@@ -713,7 +719,11 @@ export function UserDashboardView({
                 />
               </div>
               <InlineError message={activityError} />
-              {activityLoading ? (
+              {activityError ? (
+                <ActivityUnavailable
+                  onRetry={() => setRefreshTick((tick) => tick + 1)}
+                />
+              ) : activityLoading ? (
                 <Loading />
               ) : (
                 <ActivityTable
@@ -722,38 +732,40 @@ export function UserDashboardView({
                   filtered={!!query || provider !== "all" || status !== "all"}
                 />
               )}
-              <div className="ws-pagination">
-                <span>
-                  {activity?.total ?? 0} requests · Times shown in your local
-                  timezone
-                </span>
-                <div>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    disabled={page === 1 || activityLoading}
-                    onClick={() => setPage((p) => p - 1)}
-                  >
-                    <ChevronLeft />
-                    Previous
-                  </Button>
+              {activity && !activityError && !activityLoading && (
+                <div className="ws-pagination">
                   <span>
-                    Page {page} of{" "}
-                    {Math.max(1, Math.ceil((activity?.total ?? 0) / 20))}
+                    {activity?.total ?? 0} requests · Times shown in your local
+                    timezone
                   </span>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    disabled={
-                      activityLoading || page * 20 >= (activity?.total ?? 0)
-                    }
-                    onClick={() => setPage((p) => p + 1)}
-                  >
-                    Next
-                    <ChevronRight />
-                  </Button>
+                  <div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      disabled={page === 1 || activityLoading}
+                      onClick={() => setPage((p) => p - 1)}
+                    >
+                      <ChevronLeft />
+                      Previous
+                    </Button>
+                    <span>
+                      Page {page} of{" "}
+                      {Math.max(1, Math.ceil((activity?.total ?? 0) / 20))}
+                    </span>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      disabled={
+                        activityLoading || page * 20 >= (activity?.total ?? 0)
+                      }
+                      onClick={() => setPage((p) => p + 1)}
+                    >
+                      Next
+                      <ChevronRight />
+                    </Button>
+                  </div>
                 </div>
-              </div>
+              )}
             </Section>
           )}
           {section === "tools" && (
@@ -1035,6 +1047,22 @@ function ProviderBreakdown({ usage }: { usage?: AccountUsage }) {
     </div>
   );
 }
+function ActivityUnavailable({ onRetry }: { onRetry: () => void }) {
+  return (
+    <Empty
+      title="Activity unavailable"
+      action={
+        <Button variant="outline" size="sm" onClick={onRetry}>
+          <RefreshCw01 />
+          Retry activity
+        </Button>
+      }
+    >
+      We couldn’t load your request history. Try again.
+    </Empty>
+  );
+}
+
 function OverviewRequests({
   items,
   loading,
