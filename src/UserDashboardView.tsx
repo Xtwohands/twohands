@@ -280,6 +280,7 @@ export function UserDashboardView({
   );
   const [selectedTool, setSelectedTool] = useState<Catalog[number]>();
   const catalogTrigger = useRef<HTMLButtonElement>(null);
+  const activitySearch = useRef<HTMLInputElement>(null);
   const generation = useRef(0);
   const activityGeneration = useRef(0);
   const requestKey = `${days}|${query}|${provider}|${status}|${page}|${section}`;
@@ -689,6 +690,7 @@ export function UserDashboardView({
                 <div className="search-input">
                   <SearchLg />
                   <Input
+                    ref={activitySearch}
                     aria-label="Search requests"
                     placeholder="Search requests, tools, or sessions…"
                     value={query}
@@ -740,6 +742,13 @@ export function UserDashboardView({
                   items={activity?.items ?? []}
                   onSelect={setSelectedCall}
                   filtered={!!query || provider !== "all" || status !== "all"}
+                  onClearFilters={() => {
+                    setQuery("");
+                    setProvider("all");
+                    setStatus("all");
+                    setPage(1);
+                    activitySearch.current?.focus();
+                  }}
                 />
               )}
               {activity && !activityError && !activityLoading && (
@@ -1227,11 +1236,13 @@ function ActivityTable({
   loading,
   onSelect,
   filtered,
+  onClearFilters,
 }: {
   items: ActivityItem[];
   loading?: boolean;
   onSelect: (i: ActivityItem) => void;
   filtered?: boolean;
+  onClearFilters?: () => void;
 }) {
   if (loading) return <Loading />;
   if (!items.length)
@@ -1239,12 +1250,18 @@ function ActivityTable({
       <Empty
         title={filtered ? "No matching requests" : "No requests yet"}
         action={
-          <Button variant="outline" size="sm" asChild>
-            <a href={filtered ? "#dashboard/tools" : "#dashboard/connections"}>
-              {filtered ? "Explore tools" : "Connect your agent"}
-              <ArrowRight />
-            </a>
-          </Button>
+          filtered && onClearFilters ? (
+            <Button variant="outline" size="sm" onClick={onClearFilters}>
+              Clear filters
+            </Button>
+          ) : (
+            <Button variant="outline" size="sm" asChild>
+              <a href="#dashboard/connections">
+                Connect your agent
+                <ArrowRight />
+              </a>
+            </Button>
+          )
         }
       >
         {filtered

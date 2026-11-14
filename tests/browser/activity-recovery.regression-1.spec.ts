@@ -96,3 +96,56 @@ test("unavailable usage remains unknown instead of announcing measured zero coun
   await expect(success).toContainText("No completed requests in this period");
   await expect(latency).toContainText("0 timed calls");
 });
+
+test("empty filtered activity clears filters in place and restores search focus", async ({
+  page,
+}) => {
+  let requestQuery = "";
+  await page.route("**/api/account/activity?*", async (request) => {
+    requestQuery = new URL(request.request().url()).search;
+    await request.fulfill({
+      json: { items: [], total: 0, page: 1, pageSize: 20 },
+    });
+  });
+  await page.goto("/#dashboard/activity");
+  const search = page.getByRole("textbox", {
+    name: "Search requests",
+    exact: true,
+  });
+  await search.fill("missing evidence");
+  await page
+    .getByRole("combobox", { name: "Provider", exact: true })
+    .selectOption("exa");
+  await page
+    .getByRole("combobox", { name: "Request status", exact: true })
+    .selectOption("failed");
+  await expect(
+    page.getByRole("heading", { name: "No matching requests", exact: true }),
+  ).toBeVisible();
+  await page
+    .getByRole("button", { name: "Clear filters", exact: true })
+    .click();
+  await expect(page).toHaveURL(/#dashboard\/activity$/);
+  await expect(search).toHaveValue("");
+  await expect(search).toBeFocused();
+  await expect(
+    page.getByRole("combobox", { name: "Provider", exact: true }),
+  ).toHaveValue("all");
+  await expect(
+    page.getByRole("combobox", { name: "Request status", exact: true }),
+  ).toHaveValue("all");
+  await expect(
+    page.getByRole("heading", { name: "No requests yet", exact: true }),
+  ).toBeVisible();
+  await expect
+    .poll(() => {
+      const query = new URLSearchParams(requestQuery);
+      return [
+        query.get("q"),
+        query.get("provider"),
+        query.get("status"),
+        query.get("page"),
+      ];
+    })
+    .toEqual(["", "all", "all", "1"]);
+});
