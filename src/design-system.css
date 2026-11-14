@@ -90,7 +90,7 @@
   }
 }
 [data-slot="button"][data-variant="link"] {
-  color: var(--primary);
+  color: var(--brand-accent-text);
 }
 [data-slot="button"][data-variant="outline"],
 [data-slot="button"][data-variant="secondary"] {
