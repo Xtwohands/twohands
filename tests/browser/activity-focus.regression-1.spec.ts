@@ -89,3 +89,64 @@ for (const route of ["dashboard", "dashboard/activity"]) {
     ).toBeFocused();
   });
 }
+
+test("operator evidence picker restores the invoking criterion after Done", async ({
+  page,
+  request,
+}) => {
+  const fixture = "http://127.0.0.1:3102";
+  const created = await request.post(
+    `${fixture}/api/observations/agent-sessions`,
+    {
+      data: {
+        title: "TEST FIXTURE evidence focus",
+        objective: "Check keyboard context after selecting recorded evidence.",
+        criteria: [{ text: "Names the source" }],
+      },
+    },
+  );
+  expect(created.status()).toBe(201);
+  const session = await created.json();
+  const executed = await request.post(
+    `${fixture}/api/observations/${session.id}/call`,
+    {
+      data: {
+        tool: "firecrawl_extract",
+        url: "https://example.com",
+        requestKey: "focus-fixture-call",
+        statedReason: "TEST FIXTURE evidence focus only",
+      },
+    },
+  );
+  expect(executed.status()).toBe(200);
+  const evidence = await executed.json();
+  const outcome = await request.post(
+    `${fixture}/api/observations/${session.id}/outcome`,
+    {
+      data: {
+        requestKey: "focus-fixture-answer",
+        text: "TEST FIXTURE Example Domain is the source.",
+        evidenceCallIds: [evidence.id],
+      },
+    },
+  );
+  expect(outcome.status()).toBe(200);
+  await page.goto(`${fixture}/#sessions/${session.id}/output`);
+  const trigger = page.getByRole("button", {
+    name: /evidence for Names the source$/,
+  });
+  await trigger.focus();
+  await page.keyboard.press("Enter");
+  const dialog = page.getByRole("dialog", {
+    name: "Choose supporting evidence",
+    exact: true,
+  });
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole("checkbox").check();
+  const done = dialog.getByRole("button", { name: "Done", exact: true });
+  await done.focus();
+  await page.keyboard.press("Enter");
+  await expect(dialog).toBeHidden();
+  await expect(trigger).toContainText("1 linked call");
+  await expect(trigger).toBeFocused();
+});
