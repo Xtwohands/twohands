@@ -2097,7 +2097,7 @@ function ConnectionView({
         </div>
         <div className="ws-panel-note">
           {account.enabled && !account.profile?.isAdmin
-            ? "Octolab manages provider availability. Your API keys connect agents to this account."
+            ? "Two Hands manages provider availability. Your API keys connect agents to this account."
             : "Missing a provider? Set its API key in the server environment, then restart the server."}
           <Go section="tools">Open tool catalog</Go>
         </div>
