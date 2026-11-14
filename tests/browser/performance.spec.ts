@@ -1,6 +1,37 @@
 import { test, expect } from "@playwright/test";
 import { providerIds } from "../../server/provider-catalog";
 
+test("Activity waits for its own usage data after the catalog has loaded", async ({
+  page,
+}) => {
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => (release = resolve));
+  let entered!: () => void;
+  const pending = new Promise<void>((resolve) => (entered = resolve));
+  await page.route("**/api/account/usage?*", async (route) => {
+    entered();
+    await gate;
+    await route.fulfill({ response: await route.fetch() });
+  });
+  const policy = page.waitForResponse((response) =>
+    response.url().endsWith("/api/account/routing"),
+  );
+  await page.goto("/#dashboard/tools");
+  await policy;
+  await expect(page.locator(".ws-tool-card")).not.toHaveCount(0);
+  if (test.info().project.name === "mobile")
+    await page.getByRole("button", { name: "Open navigation" }).click();
+  await page.getByRole("link", { name: "Activity", exact: true }).click();
+  await pending;
+  await expect(
+    page.getByText("Loading account data…", { exact: true }),
+  ).toBeVisible();
+  await expect(page.locator(".ws-metrics")).toHaveCount(0);
+  await expect(page.getByText("0 timed calls", { exact: true })).toHaveCount(0);
+  release();
+  await expect(page.locator(".ws-metrics")).toBeVisible();
+});
+
 test("slow successful catalog requests finish without overlapping or discarding results", async ({
   page,
 }) => {

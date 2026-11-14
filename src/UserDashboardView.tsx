@@ -534,10 +534,9 @@ export function UserDashboardView({
         </div>
       )}
       {loading &&
-      (needsUsage || needsPolicy || needsConnection) &&
-      !usage &&
-      !policy &&
-      !connection ? (
+      ((needsUsage && !usage) ||
+        (needsPolicy && !policy) ||
+        (needsConnection && !connection)) ? (
         <Loading />
       ) : (
         <>
