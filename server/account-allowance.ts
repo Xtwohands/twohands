@@ -56,7 +56,7 @@ export function operatorAllows(value: OperatorAllowance, amount: number) {
     (value.state === "available" && amount <= value.remainingMicros!)
   );
 }
-function deniedMessage(allowance: OperatorAllowance) {
+export function deniedMessage(allowance: OperatorAllowance) {
   if (allowance.state === "unconfigured")
     return "Paid tool access is currently unavailable for this account.";
   if (allowance.state === "paused")

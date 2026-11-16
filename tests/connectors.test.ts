@@ -788,3 +788,126 @@ describe("API keys and connectors", () => {
     expect(fixture.calls).toHaveLength(1);
   });
 });
+
+describe("discovering connector tools", () => {
+  const discover = (
+    sessionId: string,
+    body: Record<string, unknown>,
+    credential?: string,
+  ) => api("POST", `/observations/${sessionId}/discover`, body, credential);
+
+  it("matches approved tools to the stated need and records the offer", async () => {
+    const { body: c } = await register();
+    await approve(c.id, ["get_forecast", "convert_currency"]);
+    const s = await session();
+    const r = await discover(s, {
+      need: "What is the weather forecast for Lisbon this weekend?",
+    });
+    expect(r.status).toBe(200);
+    expect(r.body.connectorTools.map((t: any) => t.tool)).toEqual([
+      "weatherco__get_forecast",
+    ]);
+    const offer = r.body.connectorTools[0];
+    expect(offer).toMatchObject({
+      status: "eligible",
+      company: "Fixture Weather Co",
+      descriptionSource: "company_supplied",
+      estimatedMicros: 2000,
+      relevance: { basis: "connector-lexical-v1" },
+    });
+    expect(offer.relevance.matchedTerms).toEqual(
+      expect.arrayContaining(["forecast", "weather"]),
+    );
+    expect(offer.inputSchema.properties).toHaveProperty("city");
+    expect(r.body.candidateConnectorTools).toEqual(["weatherco__get_forecast"]);
+    // Built-in search and extraction still need operations to be priced.
+    expect(r.body.missingInputs[0]).toMatch(/search and extraction/);
+    const events = (await api("GET", `/observations/${s}`)).body.events;
+    const offered = events.find((e: any) => e.type === "tools_offered");
+    expect(offered.data.connectorTools[0].tool).toBe("weatherco__get_forecast");
+    expect(offered.data.connectorMatching.approvedTools).toBe(2);
+    const currency = await discover(s, {
+      need: "Convert 120 euros into US dollars",
+      context: { requirements: "Use a currency conversion rate." },
+    });
+    expect(currency.body.connectorTools[0].tool).toBe(
+      "weatherco__convert_currency",
+    );
+    expect(fixture.calls).toEqual([]);
+  });
+
+  it("never offers unapproved, suspended or unrelated tools", async () => {
+    const { body: c } = await register();
+    const s = await session();
+    expect(
+      (await discover(s, { need: "weather forecast" })).body.connectorTools,
+    ).toEqual([]);
+    const approved = await approve(c.id, ["get_forecast"]);
+    expect(
+      (await discover(s, { need: "Summarize the history of jazz" })).body
+        .connectorTools,
+    ).toEqual([]);
+    await api("POST", `/connectors/${c.id}/review`, {
+      revision: approved.body.revision,
+      decision: "suspend",
+    });
+    expect(
+      (await discover(s, { need: "weather forecast" })).body.connectorTools,
+    ).toEqual([]);
+  });
+
+  it("marks offers over budget or blocked by the API key, and reports call history", async () => {
+    const { body: c } = await register();
+    await approve(c.id, ["get_forecast"], { estimateUsd: 0.5 });
+    const s = await session();
+    const expensive = (await discover(s, { need: "weather forecast" })).body;
+    expect(expensive.connectorTools[0].status).toBe("over_budget");
+    expect(expensive.candidateConnectorTools).toEqual([]);
+    await approve(c.id, ["get_forecast"], { estimateUsd: 0.001 });
+    for (const city of ["Oslo", "Lisbon"])
+      await call(s, "weatherco__get_forecast", { city, days: 1 });
+    await call(s, "weatherco__get_forecast", { city: "Atlantis", days: 1 });
+    const offer = (await discover(s, { need: "weather forecast" })).body
+      .connectorTools[0];
+    expect(offer.status).toBe("eligible");
+    expect(offer.reputation.organic).toMatchObject({
+      completedCalls: 3,
+      succeeded: 2,
+      failed: 1,
+      successRate: null, // fewer than five samples
+      minimumSamples: 5,
+    });
+    // Local mode requires an owner token before scoped keys are accepted.
+    config.token = "owner-fixture-token-0000000000001";
+    const restricted = await issueKey({ allowedTools: ["exa_search"] });
+    const s2 = await session(restricted);
+    const blocked = (
+      await discover(s2, { need: "weather forecast" }, restricted)
+    ).body;
+    expect(blocked.connectorTools[0].status).toBe("disabled");
+    expect(blocked.connectorTools[0].reason).toMatch(/API key/);
+  });
+
+  it("is returned by discover_tools over MCP, and route_call leaves connectors alone", async () => {
+    const { body: c } = await register();
+    await approve(c.id, ["get_forecast"]);
+    const client = await mcp();
+    const tools = (await client.listTools()).tools;
+    expect(tools.find((t) => t.name === "discover_tools")?.description).toMatch(
+      /connectorTools/,
+    );
+    expect(tools.find((t) => t.name === "route_call")?.description).toMatch(
+      /never chooses a company connector tool/,
+    );
+    const s = parse(
+      await client.callTool({ name: "record_intent", arguments: intent }),
+    );
+    const offered = parse(
+      await client.callTool({
+        name: "discover_tools",
+        arguments: { sessionId: s.id, need: "daily forecast for Denver" },
+      }),
+    );
+    expect(offered.connectorTools[0].tool).toBe("weatherco__get_forecast");
+  });
+});

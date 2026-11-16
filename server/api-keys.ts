@@ -306,10 +306,7 @@ export class ApiKeyService {
    */
   async connectorAccess(id: string) {
     const key = await this.active(id);
-    if (
-      !key.scopes.includes("tools:execute") ||
-      API_KEY_TOOLS.some((tool) => !key.allowedTools.includes(tool))
-    )
+    if (!keyAllowsConnectors(key))
       throw new ApiKeyError(
         403,
         "This API key cannot call company connector tools. Use a key that allows every tool.",
@@ -364,6 +361,15 @@ export class ApiKeyService {
   }
 }
 /** Explicit allowlist: scoped credentials cannot access owner/admin/legacy billing paths. */
+/** Whether a key may reach company connector tools; see connectorAccess. */
+export function keyAllowsConnectors(
+  key: Pick<ScopedApiKey, "scopes" | "allowedTools">,
+) {
+  return (
+    key.scopes.includes("tools:execute") &&
+    API_KEY_TOOLS.every((tool) => key.allowedTools.includes(tool))
+  );
+}
 export function requiredApiKeyScope(
   method: string,
   path: string,

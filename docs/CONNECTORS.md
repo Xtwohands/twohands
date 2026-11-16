@@ -34,6 +34,18 @@ Results carry `source: "company_connector"`, `untrusted: true`, the returned tex
 
 Calls are recorded with `provider: "connector:<slug>"` and a `connector` block (`id`, `slug`, `company`, `tool`, `schemaHash`, `snapshotVersion`). Events are the usual `selection_explanation` (agent-reported), `tool_called` and `tool_result` (observed).
 
+## Discovery
+
+`discover_tools` returns connector tools alongside built-in providers, so agents find them in the normal flow instead of having to know to call `list_connector_tools`.
+
+- **Matching (`connector-lexical-v1`).** The words of the stated `need`, `context.requirements`, `context.evidenceGaps` and any search queries are compared with each approved tool's name and title (counted twice) and its description and input field names (counted once). Words are lowercased, split on punctuation, `snake_case` and `camelCase`, stripped of filler words and simple plurals. The company name is not matched, because it is shared by every tool on a connector. Only tools with at least one shared word are offered, best first, then cheapest; at most 10 per discovery, with the number withheld reported. There is no LLM and no hidden scoring: every offer carries `relevance.matchedTerms`. It is a shortlist for the agent to assess, not a judgement of fit.
+- **A need alone is enough.** Built-in search and extraction still need `operations` to be priced; connector tools do not.
+- **Each offer** (`connectorTools[]`) has the exposed tool name, company, company-supplied description, input schema, schema hash, approved estimate, status and reason, relevance, and organic reputation from recorded calls (completed, succeeded, failed; median latency and success rate only from five samples).
+- **Status.** `eligible`; `disabled` when the API key may not reach connector tools; `unavailable` when the hosted operator allowance does not cover the estimate; `over_budget` when the estimate exceeds the remaining session budget. `candidateConnectorTools` lists the eligible ones.
+- **Recorded.** The offers are saved in the session's `tools_offered` event with `connectorMatching` (basis, approved tool count, withheld count). This is the exposure record that later lets a company see when agents were offered its tool and whether they chose it. The session trace shows the offers under the built-in options.
+
+`route_call` does not choose connector tools. Routing picks among tools that can stand in for each other, and connector tools generally cannot: each has its own input schema and purpose. Routing among connector tools will make sense once reviewers assign interchangeable capabilities and two companies offer the same one.
+
 ## Security
 
 - **Network.** Endpoints must be public HTTPS hostnames on the default port, without embedded credentials. Every resolved address is checked inside the socket's own DNS lookup, so a hostname cannot pass the check and then connect to a private, loopback, link-local, metadata or reserved address. Redirects are refused. Each request has a time limit (`CONNECTOR_TIMEOUT_MS`) and a 1 MB response cap. Environment proxies are not used.
@@ -85,6 +97,7 @@ Every tool decision defaults to _No change_, so approving is always explicit. Th
 ## Not yet included
 
 - Session and activity views show connector calls with the raw `connector:<slug>` label rather than the company name.
-- Connector tools in `discover_tools` and `route_call`, workspace routing switches, and seller reports for connector tools.
+- Seller reports and insights for connector tools. The exposure data they need is now recorded at discovery.
+- Workspace routing switches for individual connector tools, and routing among interchangeable connector tools.
 - Provider-reported usage and billing reconciliation for connectors; the reviewed per-call estimate is what is charged.
 - OAuth to company servers; only a static bearer token is supported.

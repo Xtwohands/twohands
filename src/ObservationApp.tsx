@@ -15,7 +15,7 @@ import { testUsdc } from "./funding-format";
 const DisputeReviewView = lazy(() =>
   import("./DisputeReviewView").then((m) => ({ default: m.DisputeReviewView })),
 );
-import { ToolOptions } from "./components/ToolOptions";
+import { ToolOptions, ConnectorOffers } from "./components/ToolOptions";
 import { ProviderLogo } from "./components/shared";
 import { OutcomeContent } from "./components/DeferredOutcomeContent";
 const CompanyView = lazy(() =>
@@ -1955,6 +1955,15 @@ function SessionView({
                           e.data.tools as Parameters<
                             typeof ToolOptions
                           >[0]["tools"]
+                        }
+                      />
+                    )}
+                    {e.type === "tools_offered" && (
+                      <ConnectorOffers
+                        offers={
+                          e.data.connectorTools as Parameters<
+                            typeof ConnectorOffers
+                          >[0]["offers"]
                         }
                       />
                     )}
