@@ -92,6 +92,10 @@ async function request<T>(path: string, body?: unknown): Promise<T> {
     );
   if (response.status === 401 && accountId && token === accessToken)
     window.dispatchEvent(new Event("octolab-session-invalid"));
+  // Local mode: a request rejected for a missing or wrong server token lets
+  // the app offer the access-token prompt on any page.
+  else if (response.status === 401 && !accountId && token === accessToken)
+    window.dispatchEvent(new Event("octolab-access-required"));
   if (!response.ok)
     throw new ApiError(
       data.error || `Request failed (${response.status})`,
