@@ -23,6 +23,11 @@ import express from "express";
 import { ApiKeyError, requiredApiKeyScope } from "./api-keys.js";
 import { apiKeyRoutes } from "./api-key-api.js";
 import { mcpAuthenticator, mountMcpEndpoint } from "./mcp-http.js";
+import { ConnectorStore, PostgresConnectorDb } from "./connectors.js";
+import {
+  hostedConnectorRoutes,
+  localConnectorRoutes,
+} from "./connector-api.js";
 import { DisputeReviewService } from "./dispute-review.js";
 import { disputeReviewRoutes } from "./dispute-review-api.js";
 import { FundingService } from "./funding.js";
@@ -175,6 +180,14 @@ export function createApp(
   // Agents are shown seller-approved listing text wherever a tool is described.
   observatory.listings = async () => await sellers.liveAll();
   if (accounts) hostedSellerRoutes(app, accounts, sellerDeps);
+  // Company-supplied MCP connectors share one global catalog in both modes.
+  const connectors = (observatory.connectors ??= new ConnectorStore(
+    store.db instanceof PostgresDatabase
+      ? new PostgresConnectorDb(store.db.pool)
+      : store,
+  ));
+  app.locals.connectors = connectors;
+  if (accounts) hostedConnectorRoutes(app, accounts, connectors);
   companyAccountRoutes(app, accounts);
   accountAllowanceAdminRoutes(app, store, accounts);
   toolSettingsRoutes(app, toolSettings, accounts);
@@ -277,6 +290,7 @@ export function createApp(
   app.use(express.json({ limit: "24kb" }));
   apiKeyRoutes(app, observatory.db.apiKeys, !!accounts);
   observationRoutes(app, observatory);
+  if (!accounts) localConnectorRoutes(app, connectors);
   // Hosted company routes remain scoped to company members; this view is for operators.
   sellerRoutes(app, sellerDeps, { admin: true });
   accountDataRoutes(app, observatory);

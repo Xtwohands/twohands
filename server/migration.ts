@@ -9,8 +9,14 @@ export const STORAGE_TABLES = [
 ]
   .map((m) => m[1])
   // Seller state is keyed by provider, not by workspace. Hosted mode keeps it in its
-  // own tables, so it is never part of a workspace import.
-  .filter((t) => t !== "api_key_workspace" && !t.startsWith("seller_"));
+  // own tables, so it is never part of a workspace import. Company connectors are
+  // likewise global catalog state; hosted companies register them again.
+  .filter(
+    (t) =>
+      t !== "api_key_workspace" &&
+      !t.startsWith("seller_") &&
+      !t.startsWith("connector"),
+  );
 export const RUNTIME_LOCK = "octolab-runtime-v1";
 /** Refuse to serve a release whose database migrations have not been installed. */
 export async function verifyMigrations(database: PostgresDatabase) {

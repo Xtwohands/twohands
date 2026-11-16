@@ -1,6 +1,7 @@
 import { AllowanceError } from "./account-allowance.js";
 import { SettingsBusyError } from "./provider-settings-gate.js";
 import { ApiKeyError } from "./api-keys.js";
+import { ConnectorError } from "./connectors.js";
 import { discoveryInput } from "./tool-discovery.js";
 import { observationListItem } from "./observation-types.js";
 import {
@@ -58,6 +59,7 @@ export function observationRoutes(app: Express, obs: Observatory) {
         else if (
           e instanceof ObservationError ||
           e instanceof ApiKeyError ||
+          e instanceof ConnectorError ||
           e instanceof SettingsBusyError
         )
           res.status(e.status).json({ error: e.message });
@@ -105,6 +107,10 @@ export function observationRoutes(app: Express, obs: Observatory) {
     route(async (_req, res) =>
       res.json(await obs.catalog(res.locals.apiKeyId)),
     ),
+  );
+  app.get(
+    "/api/observations/connector-tools",
+    route(async (_req, res) => res.json(await obs.connectorTools())),
   );
   app.get(
     "/api/observations/aggregate",
@@ -190,6 +196,18 @@ export function observationRoutes(app: Express, obs: Observatory) {
     route(async (req, res) =>
       res.json(
         await obs.execute(String(req.params.id), req.body, res.locals.apiKeyId),
+      ),
+    ),
+  );
+  app.post(
+    "/api/observations/:id/connector-call",
+    route(async (req, res) =>
+      res.json(
+        await obs.connectorCall(
+          String(req.params.id),
+          req.body,
+          res.locals.apiKeyId,
+        ),
       ),
     ),
   );

@@ -20,7 +20,7 @@ The admin sidebar includes Model evaluations, Tool activity, and Review cases. A
 4. If the admin requests changes (`rejected`), the owner uses **Update registration**, edits the details, and resubmits. This creates a new audited revision and returns the registration to `pending`. Stale edits return `409`.
 5. Approval and aggregate-insight release are separate administrator decisions. Suspending the company immediately blocks subsequent insight requests. An owner cannot lift suspension or edit an approved integration into a different provider.
 
-The portal supports one owner per company registration, up to five registrations per account, and the existing Exa, Tavily, and Firecrawl integrations. Owners can add analysts to their company; arbitrary connector installation and emailed invitations remain separate work. Registration does not accept provider credentials or execute supplied endpoints/code.
+The portal supports one owner per company registration, up to five registrations per account, and the existing Exa, Tavily, and Firecrawl integrations. Owners can add analysts to their company; emailed invitations remain separate work. Company registration itself accepts no credentials or endpoints. After approval, which no longer requires a built-in provider, an owner can register the company's own MCP server as a [connector](CONNECTORS.md); a platform administrator reviews it before agents can use it.
 
 ## Manage company team access
 

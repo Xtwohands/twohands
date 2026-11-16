@@ -8,9 +8,11 @@ import {
   Link01,
   ShieldTick,
   Settings01,
+  PuzzlePiece01,
 } from "@untitledui/icons";
 const links = [
   { page: "admin", label: "Company reviews", icon: Building07 },
+  { page: "connectors", label: "Connector reviews", icon: PuzzlePiece01 },
   { page: "sessions", label: "Account activity", icon: Grid01 },
   { page: "disputes", label: "Payment disputes", icon: CreditCard01 },
   { page: "lab", label: "Provider lab", icon: TerminalSquare },

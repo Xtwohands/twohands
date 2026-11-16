@@ -49,6 +49,9 @@ const AccountSettings = lazy(() =>
 const PortalShell = lazy(() =>
   import("./RolePortals").then((m) => ({ default: m.PortalShell })),
 );
+const ConnectorsView = lazy(() =>
+  import("./ConnectorsView").then((m) => ({ default: m.ConnectorsView })),
+);
 import "./provider.css";
 import "./customer-navigation.css";
 import { lazy, useCallback, useEffect, useRef, useState } from "react";
@@ -71,6 +74,7 @@ import {
   Activity,
   GitBranch01,
   CreditCard01,
+  PuzzlePiece01,
   Key01,
 } from "@untitledui/icons";
 import { Button } from "./components/ui/button";
@@ -143,6 +147,7 @@ type Page =
   | "settings"
   | "company"
   | "lab"
+  | "connectors"
   | "disputes";
 type Summary = {
   sessions: number;
@@ -196,6 +201,7 @@ const pages = [
   { id: "tools", label: "Tool activity", icon: Link01 },
   { id: "cases", label: "Review cases", icon: ShieldTick },
   { id: "lab", label: "Provider lab", icon: TerminalSquare },
+  { id: "connectors", label: "Connectors", icon: PuzzlePiece01 },
   { id: "disputes", label: "Payment disputes", icon: CreditCard01 },
 ] as const;
 function readRoute() {
@@ -223,6 +229,7 @@ function readRoute() {
       "settings",
       "company",
       "lab",
+      "connectors",
       "disputes",
     ].includes(page)
       ? page
@@ -248,6 +255,7 @@ function readRoute() {
       "team",
       "details",
       "integration",
+      "connectors",
     ].includes(section)
       ? section
       : "overview",
@@ -447,7 +455,8 @@ export function ObservationApp() {
     (route.page === "company" ||
       route.page === "admin" ||
       route.page === "tool-access" ||
-      route.page === "tool-settings");
+      route.page === "tool-settings" ||
+      route.page === "connectors");
   const operatorArea =
     (!account.enabled && route.page !== "dashboard" && route.page !== "home") ||
     (!!account.profile?.isAdmin &&
@@ -458,6 +467,7 @@ export function ObservationApp() {
         "admin",
         "tool-access",
         "tool-settings",
+        "connectors",
       ].includes(route.page));
   const needsCatalog =
     route.page !== "dashboard" ||
@@ -680,6 +690,26 @@ export function ObservationApp() {
         adminPage="tool-settings"
       >
         <ToolSettingsView />
+      </PortalShell>
+    );
+  if (
+    account.enabled &&
+    account.profile?.isAdmin &&
+    route.page === "connectors"
+  )
+    return (
+      <PortalShell
+        area="admin"
+        title="Connector reviews"
+        links={[]}
+        adminPage="connectors"
+      >
+        <ConnectorsView
+          mode="admin"
+          base="/admin/connectors"
+          canWrite={false}
+          canReview
+        />
       </PortalShell>
     );
   const surface =
@@ -952,6 +982,15 @@ export function ObservationApp() {
             />
           )}
           {route.page === "disputes" && <DisputeReviewView />}
+          {route.page === "connectors" && !account.enabled && (
+            <ConnectorsView
+              key={connectionRevision}
+              mode="operator"
+              base="/connectors"
+              canWrite
+              canReview
+            />
+          )}
           {route.page === "lab" && (
             <ProviderLabView
               key={connectionRevision}

@@ -785,17 +785,20 @@ export function UserDashboardView({
             </Section>
           )}
           {section === "tools" && (
-            <CatalogView
-              catalog={catalog}
-              loading={catalogLoading}
-              error={catalogError}
-              onRetry={() => void refreshCatalog()}
-              enabled={enabled}
-              onSelect={(tool, trigger) => {
-                catalogTrigger.current = trigger;
-                setSelectedTool(tool);
-              }}
-            />
+            <>
+              <CatalogView
+                catalog={catalog}
+                loading={catalogLoading}
+                error={catalogError}
+                onRetry={() => void refreshCatalog()}
+                enabled={enabled}
+                onSelect={(tool, trigger) => {
+                  catalogTrigger.current = trigger;
+                  setSelectedTool(tool);
+                }}
+              />
+              <ConnectorCatalog />
+            </>
           )}
           {section === "routing" && (
             <>
@@ -1456,6 +1459,65 @@ function CatalogStatus({ label }: { label: ToolAvailability | "Mixed" }) {
     <Badge className="catalog-status" variant="secondary">
       {label}
     </Badge>
+  );
+}
+
+type ConnectorListing = {
+  tool: string;
+  connector: string;
+  company: string;
+  title: string | null;
+  description: string;
+  estimatedMicros: number;
+};
+/** Approved tools that companies supply through their own MCP servers. */
+function ConnectorCatalog() {
+  const [tools, setTools] = useState<ConnectorListing[]>();
+  const [error, setError] = useState("");
+  useEffect(() => {
+    let active = true;
+    api<{ tools: ConnectorListing[] }>("/observations/connector-tools")
+      .then((data) => active && setTools(data.tools))
+      .catch((e) => active && setError((e as Error).message));
+    return () => {
+      active = false;
+    };
+  }, []);
+  if (error || !tools?.length) return null;
+  return (
+    <Section
+      className="connector-catalog"
+      title="Company connector tools"
+      description="Supplied by tool companies through their own MCP servers and approved by Two Hands. Descriptions come from the company. Agents call them with call_connector_tool."
+    >
+      <div className="catalog-grid">
+        {tools.map((t) => (
+          <Card className="ws-tool-card" role="article" key={t.tool}>
+            <div className="catalog-card-intro">
+              <div className="catalog-card-header">
+                <div className="catalog-card-identity">
+                  <CardTitle>{t.title || t.tool.split("__")[1]}</CardTitle>
+                </div>
+                <CatalogStatus label="Available" />
+              </div>
+              <p className="catalog-summary">{t.description}</p>
+            </div>
+            <div className="catalog-estimate">
+              <p>Approved estimate</p>
+              <div className="catalog-estimate-value">
+                <span>
+                  {money(t.estimatedMicros)} <small>/ call</small>
+                </span>
+                <span>{t.company}</span>
+              </div>
+            </div>
+            <footer className="catalog-card-footer">
+              <code>{t.tool}</code>
+            </footer>
+          </Card>
+        ))}
+      </div>
+    </Section>
   );
 }
 

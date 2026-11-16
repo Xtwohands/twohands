@@ -30,7 +30,9 @@
     "db:backup": "node --use-env-proxy build/backup-cli.js backup",
     "db:restore": "node --use-env-proxy build/backup-cli.js restore",
     "test:restore": "node --import tsx scripts/restore-drill.ts",
-    "simulate:sellers": "node --import tsx scripts/simulate-seller-data.ts"
+    "simulate:sellers": "node --import tsx scripts/simulate-seller-data.ts",
+    "connector:test-server": "node --import tsx scripts/test-mcp-server.ts",
+    "connector:demo": "node --import tsx scripts/connector-demo.ts"
   },
   "engines": {
     "node": ">=24.5.0"
