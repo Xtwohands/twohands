@@ -407,6 +407,15 @@ export function ObservationApp() {
   const [busy, setBusy] = useState(false);
   const [newOpen, setNewOpen] = useState(false);
   const [connectOpen, setConnectOpen] = useState(false);
+  // Set when a local-mode request is refused for a missing server token.
+  const [accessRequired, setAccessRequired] = useState(false);
+  useEffect(() => {
+    if (account.enabled) return;
+    const onRequired = () => setAccessRequired(true);
+    window.addEventListener("octolab-access-required", onRequired);
+    return () =>
+      window.removeEventListener("octolab-access-required", onRequired);
+  }, [account.enabled]);
   const [menuOpen, setMenuOpen] = useState(false);
   const navigatingFromMenu = useRef(false);
   const [filter, setFilter] = useState("all");
@@ -943,7 +952,7 @@ export function ObservationApp() {
         </header>
         <main id="main-content" tabIndex={-1} className="obs-main">
           <InlineError message={error} />
-          {error && (
+          {(error || (accessRequired && !account.enabled)) && (
             <Button
               variant="outline"
               onClick={() =>
@@ -1649,6 +1658,7 @@ export function ObservationApp() {
               setConnectionRevision((v) => v + 1);
               const connected = await refresh();
               if (connected) {
+                setAccessRequired(false);
                 if (route.id && route.page === "sessions")
                   void reloadDetail(route.id);
                 setConnectOpen(false);
