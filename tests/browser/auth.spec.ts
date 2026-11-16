@@ -972,7 +972,7 @@ test("signed-in account owner can create the first key and proceed to agent setu
     page.getByLabel("New API key secret", { exact: true }),
   ).toHaveCount(0);
   await expect(page.locator(".ws-agent-environment")).toContainText(
-    "APILAYER_URL=" + new URL("/api", authBrowserUrl).href,
+    `url = "${new URL("/mcp", authBrowserUrl).href}"`,
   );
   expect(page.url()).not.toContain(secret);
   await captureJourney(page, "owner-agent-setup");

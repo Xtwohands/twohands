@@ -38,7 +38,6 @@ const dashboard = "/#dashboard";
 const catalog = "#home/landing-catalog";
 const brand = "/two-hands.svg";
 const brandMark = "/two-hands-mark.svg";
-const connectCommand = "npm run mcp:install";
 const sampleSession = "00000000-0000-4000-8000-000000000001";
 const providerOrder = [
   "exa",
@@ -851,6 +850,8 @@ function SetupDisclosure({
 
 function Developers() {
   const [copyStatus, setCopyStatus] = useState("");
+  const endpoint = new URL("/mcp", location.origin).href;
+  const connectCommand = `claude mcp add --transport http twohands ${endpoint} --header "Authorization: Bearer <your API key>"`;
   async function copyCommand() {
     try {
       await navigator.clipboard.writeText(connectCommand);
@@ -870,7 +871,7 @@ function Developers() {
               <Check size={16} />
               <div>
                 <strong>One MCP connection</strong>
-                <p>Register the bridge from a local checkout.</p>
+                <p>Point your agent at the hosted endpoint with an API key.</p>
               </div>
             </li>
             <li>
@@ -901,21 +902,23 @@ function Developers() {
         </div>
         <div className="th-setup">
           <div className="th-setup-title">
-            <TerminalSquare size={17} /> Local setup
+            <TerminalSquare size={17} /> Connect in three steps
           </div>
-          <SetupDisclosure label="Build and start" open>
-            <pre>
-              <code>npm run build{"\n"}npm start</code>
-            </pre>
+          <SetupDisclosure label="Create an API key" open>
+            <p className="th-setup-note">
+              Sign in and create a scoped key under{" "}
+              <a href="/#dashboard/keys">API keys</a>. Use a separate key for
+              each agent.
+            </p>
           </SetupDisclosure>
-          <SetupDisclosure label="Register the MCP bridge" open>
+          <SetupDisclosure label="Add the MCP server" open>
             <div className="th-terminal-command">
               <code>{connectCommand}</code>
               <Button
                 type="button"
                 variant="ghost"
                 size="icon-sm"
-                aria-label="Copy MCP install command"
+                aria-label="Copy MCP connection command"
                 onClick={copyCommand}
               >
                 {copyStatus === "Command copied." ? <Check /> : <Copy01 />}
@@ -924,11 +927,15 @@ function Developers() {
             <p className="th-copy-status" role="status">
               {copyStatus}
             </p>
+            <p className="th-setup-note">
+              Claude Code shown. Codex and other clients use the same URL with
+              your key as a bearer token; the dashboard’s Connect agent dialog
+              has each format.
+            </p>
           </SetupDisclosure>
           <SetupDisclosure label="Open a fresh session">
             <p className="th-setup-note">
-              Keep the server running and start a new chat in your MCP host so
-              it can load the Two Hands tool registration.
+              Start a new chat in your MCP host so it loads the Two Hands tools.
             </p>
           </SetupDisclosure>
         </div>
@@ -961,7 +968,7 @@ function Resources() {
           <a href="#home/developers">
             <strong>Setup</strong>
             <ArrowUpRight size={16} />
-            <span>Register the MCP bridge in a local checkout.</span>
+            <span>Connect your agent to the hosted MCP endpoint.</span>
           </a>
         </div>
       </div>
@@ -994,6 +1001,10 @@ function Footer() {
             <h2>Developers</h2>
             <a href="#home/developers">MCP setup</a>
             <a href="#home/resources">Resources</a>
+          </div>
+          <div>
+            <h2>For tool companies</h2>
+            <a href="/#company">List your tool</a>
           </div>
         </nav>
       </div>

@@ -90,11 +90,25 @@ export function AuthView({
   const [message, setMessage] = useState("");
   const [resent, setResent] = useState(false);
   const [cooldown, setCooldown] = useState(0);
+  // Hidden only once the Auth service confirms Google is turned off.
+  const [googleOff, setGoogleOff] = useState(false);
   const emailInput = useRef<HTMLInputElement>(null);
   const passwordInput = useRef<HTMLInputElement>(null);
   const heading = useRef<HTMLHeadingElement>(null);
   const operation = useRef(0);
   const previousMode = useRef(mode);
+  useEffect(() => {
+    let active = true;
+    googleAvailable()
+      .then((available) => active && setGoogleOff(available === false))
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+    // Re-check once sign-in settings load: the client is created after the
+    // Auth settings request starts, so the answer is final by then.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [client]);
 
   useEffect(() => {
     let pending: string | null = null;
@@ -260,8 +274,13 @@ export function AuthView({
     setStage("google-connecting");
     setMessage("");
     try {
-      if ((await googleAvailable()) === false)
-        throw new Error("Google sign-in is not configured.");
+      if ((await googleAvailable()) === false) {
+        if (revision === operation.current) {
+          setGoogleOff(true);
+          setStage(undefined);
+        }
+        return;
+      }
       const result = await client.auth.signInWithOAuth({
         provider: "google",
         options: { redirectTo: redirect("google"), skipBrowserRedirect: true },
@@ -348,7 +367,7 @@ export function AuthView({
       ],
       "google-error": [
         "Couldn’t connect to Google",
-        "Try again in a moment, or continue with email.",
+        "Google didn’t respond. Try Google again, or continue with email.",
       ],
       "confirmation-required": [
         "Confirm your email",
@@ -637,14 +656,18 @@ export function AuthView({
           <div className="auth-actions">
             {!stage && mode === "options" && (
               <>
+                {!googleOff && (
+                  <Action
+                    onClick={() => void google()}
+                    icon={
+                      <img src={googleMark} width={16} height={16} alt="" />
+                    }
+                  >
+                    Continue with Google
+                  </Action>
+                )}
                 <Action
-                  onClick={() => void google()}
-                  icon={<img src={googleMark} width={16} height={16} alt="" />}
-                >
-                  Continue with Google
-                </Action>
-                <Action
-                  secondary
+                  secondary={!googleOff}
                   onClick={() => changeMode("signin")}
                   icon={<ArrowRight />}
                 >

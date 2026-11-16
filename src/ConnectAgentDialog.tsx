@@ -10,7 +10,6 @@ import claudeMark from "./assets/claude-mark.svg";
 import codexMark from "./assets/codex-mark.png";
 import { useAccount } from "./AccountGate";
 import { CopyButton } from "./observation-ui";
-import { AgentEnvironment } from "./components/AgentEnvironment";
 import {
   Dialog,
   DialogContent,
@@ -62,6 +61,42 @@ export function ConnectAgentProvider({ children }: { children: ReactNode }) {
   );
 }
 
+/** The hosted Streamable HTTP MCP endpoint served by this origin. */
+export function mcpEndpoint() {
+  return new URL("/mcp", location.origin).href;
+}
+const keyPlaceholder = "<your API key>";
+function clientSetup(client: string, endpoint: string) {
+  if (client === "claude")
+    return {
+      title: "Add Two Hands to Claude Code",
+      note: "Run this in a terminal. Replace the placeholder with your API key.",
+      text: [
+        `claude mcp add --transport http twohands ${endpoint} \\`,
+        `  --header "Authorization: Bearer ${keyPlaceholder}"`,
+      ].join("\n"),
+    };
+  if (client === "codex")
+    return {
+      title: "Add Two Hands to Codex",
+      note: "Add this to ~/.codex/config.toml, then set TWOHANDS_API_KEY to your API key in the environment Codex starts from.",
+      text: [
+        "[mcp_servers.twohands]",
+        `url = "${endpoint}"`,
+        'bearer_token_env_var = "TWOHANDS_API_KEY"',
+        "tool_timeout_sec = 150",
+      ].join("\n"),
+    };
+  return {
+    title: "Add the server to your MCP client",
+    note: "Use the Streamable HTTP transport and send your API key as a bearer token.",
+    text: [
+      `URL: ${endpoint}`,
+      `Header: Authorization: Bearer ${keyPlaceholder}`,
+    ].join("\n"),
+  };
+}
+
 export function AgentConnectionInstructions({
   onNavigate,
 }: {
@@ -70,10 +105,7 @@ export function AgentConnectionInstructions({
   const account = useAccount();
   const [client, setClient] = useState("codex");
   const canManageKeys = !account.enabled || !!account.profile;
-  const command =
-    client === "other"
-      ? "npm run mcp:install -- project"
-      : `npm run mcp:install -- ${client}`;
+  const setup = clientSetup(client, mcpEndpoint());
   return (
     <div className="agent-connection-instructions">
       <div className="ws-client-picker" role="group" aria-label="Agent client">
@@ -102,71 +134,42 @@ export function AgentConnectionInstructions({
           </button>
         ))}
       </div>
-      <p className="ws-panel-note">
-        {canManageKeys ? (
-          <>
-            Use a separate scoped credential for each agent.{" "}
-            <a
-              href="#dashboard/keys"
-              className="ws-text-link"
-              onClick={onNavigate}
-            >
-              Manage API keys
-            </a>{" "}
-            before starting the bridge.
-          </>
-        ) : (
-          "Ask your account owner for a scoped API key before starting the bridge."
-        )}
-      </p>
       <ol className="ws-setup-steps">
         <li>
           <span>1</span>
           <div>
-            <strong>Build the local MCP bridge</strong>
+            <strong>Create an API key</strong>
             <p>
-              Run this in the Two Hands project folder. If you run the server
-              locally, keep it running in a separate terminal.
+              {canManageKeys ? (
+                <>
+                  Use a separate scoped key for each agent.{" "}
+                  <a
+                    href="#dashboard/keys"
+                    className="ws-text-link"
+                    onClick={onNavigate}
+                  >
+                    Manage API keys
+                  </a>
+                </>
+              ) : (
+                "Ask your account owner for a scoped API key."
+              )}
             </p>
-            <div className="command-box">
-              <code>npm run build</code>
-              <CopyButton text="npm run build" />
-            </div>
           </div>
         </li>
         <li>
           <span>2</span>
           <div>
-            <strong>Add your connection settings</strong>
-            <p>
-              Save these in the bridge project’s private .env file. Replace the
-              placeholder with your API key. The address points to this Two
-              Hands server, including its port.
-            </p>
-            <AgentEnvironment />
-          </div>
-        </li>
-        <li>
-          <span>3</span>
-          <div>
-            <strong>
-              {client === "other"
-                ? "Create the MCP configuration"
-                : `Install the ${client === "codex" ? "Codex" : "Claude"} connection`}
-            </strong>
-            <p>
-              {client === "other"
-                ? "Creates .mcp.json in the project. Use its stdio server entry in your MCP client."
-                : "The installer preserves existing settings and backs up changed files."}
-            </p>
-            <div className="command-box">
-              <code>{command}</code>
-              <CopyButton text={command} />
+            <strong>{setup.title}</strong>
+            <p>{setup.note}</p>
+            <div className="command-box ws-agent-environment">
+              <code>{setup.text}</code>
+              <CopyButton text={setup.text} />
             </div>
           </div>
         </li>
         <li>
-          <span>4</span>
+          <span>3</span>
           <div>
             <strong>Restart your client and ask your agent</strong>
             <p>

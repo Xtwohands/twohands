@@ -39,6 +39,8 @@ export default defineConfig(({ mode }) => {
           // Keep the browser's host so API write checks match production.
           changeOrigin: false,
         },
+        // The hosted MCP endpoint, so the Connect agent URL works in dev.
+        "/mcp": { target: `http://127.0.0.1:${port}`, changeOrigin: false },
       },
     },
     test: { include: ["tests/**/*.test.ts"] },
