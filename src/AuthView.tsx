@@ -105,9 +105,10 @@ export function AuthView({
     return () => {
       active = false;
     };
-    // The availability check runs once per sign-in screen.
+    // Re-check once sign-in settings load: the client is created after the
+    // Auth settings request starts, so the answer is final by then.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [client]);
 
   useEffect(() => {
     let pending: string | null = null;
