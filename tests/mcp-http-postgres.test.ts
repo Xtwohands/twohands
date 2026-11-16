@@ -128,6 +128,8 @@ suite("remote MCP with PostgreSQL accounts", () => {
         }),
       });
       expect(r.status).toBe(401);
+      if (credential === "unknown-session")
+        expect(JSON.stringify(await r.json())).toContain("Invalid API key");
     }
   });
 

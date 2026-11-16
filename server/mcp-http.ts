@@ -115,7 +115,18 @@ export function mcpAuthenticator(deps: {
           );
           return { id: `key:${key.id}`, credential };
         }
-        const identity = await accounts.identity(req);
+        let identity: Awaited<ReturnType<Accounts["identity"]>>;
+        try {
+          identity = await accounts.identity(req);
+        } catch (e) {
+          // MCP clients send API keys; "sign in again" means nothing to them.
+          if (e instanceof AccountError && e.status === 401)
+            throw new McpAuthError(
+              401,
+              "Invalid API key. Use a scoped key (oct_key_…) from API keys in your dashboard.",
+            );
+          throw e;
+        }
         return { id: `account:${identity.userId}`, credential };
       }
       // Local SQLite mode: same host rule as `/api`.

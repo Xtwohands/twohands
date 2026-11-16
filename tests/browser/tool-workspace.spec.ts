@@ -403,39 +403,39 @@ test("connection instructions change with the chosen client", async ({
   await page
     .getByRole("button", { name: "Connect agent", exact: true })
     .click();
-  await expect(page.locator(".ws-setup-steps")).toContainText(
-    "npm run mcp:install -- codex",
+  const endpoint = new URL("/mcp", page.url()).href;
+  await expect(page.locator(".ws-agent-environment")).toContainText(
+    `url = "${endpoint}"`,
   );
   await expect(page.locator(".ws-agent-environment")).toContainText(
-    `APILAYER_URL=${new URL("/api", page.url()).href}`,
+    'bearer_token_env_var = "TWOHANDS_API_KEY"',
   );
-  await expect(page.locator(".ws-agent-environment")).toContainText(
-    "APILAYER_API_KEY=<your scoped key>",
-  );
+  await expect(page.locator(".ws-setup-steps")).not.toContainText("npm run");
   await expect(
     page.getByRole("dialog", { name: "Connect agent", exact: true }),
   ).toHaveCSS("opacity", "1");
   await captureJourney(page, "agent-connection-settings");
   await page.getByRole("button", { name: "Claude", exact: true }).click();
-  await expect(page.locator(".ws-setup-steps")).toContainText(
-    "npm run mcp:install -- claude",
+  await expect(page.locator(".ws-agent-environment")).toContainText(
+    `claude mcp add --transport http twohands ${endpoint}`,
   );
   await page
     .getByRole("button", { name: "Other MCP client", exact: true })
     .click();
-  await expect(page.locator(".ws-setup-steps")).toContainText(
-    "npm run mcp:install -- project",
-  );
-  const install = page.locator(".ws-setup-steps li").nth(2);
-  await install.getByRole("button", { name: "Copy", exact: true }).click();
+  const expected = [
+    `URL: ${endpoint}`,
+    "Header: Authorization: Bearer <your API key>",
+  ].join("\n");
+  const connect = page.locator(".ws-setup-steps li").nth(1);
+  await connect.getByRole("button", { name: "Copy", exact: true }).click();
   await expect(
-    install.getByRole("button", { name: "Copied", exact: true }),
+    connect.getByRole("button", { name: "Copied", exact: true }),
   ).toBeVisible();
   expect(
     await page.evaluate(
       () => (window as unknown as { copiedCommand: string }).copiedCommand,
     ),
-  ).toBe("npm run mcp:install -- project");
+  ).toBe(expected);
   await expect(page).toHaveURL(/#dashboard\/tools$/);
 });
 
