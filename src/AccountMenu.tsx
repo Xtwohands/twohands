@@ -1,4 +1,5 @@
 import { useRef, useState, type ReactNode } from "react";
+import { useConnectAgent } from "./ConnectAgentDialog";
 import { Popover } from "radix-ui";
 import {
   BarChartSquare02,
@@ -33,6 +34,8 @@ export function AccountMenu({
   onSettings?: () => void;
   compact?: boolean;
 }) {
+  const openConnectAgent = useConnectAgent();
+  const openingConnection = useRef(false);
   const [open, setOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const trigger = useRef<HTMLButtonElement>(null);
@@ -126,6 +129,10 @@ export function AccountMenu({
           className="account-help-dialog"
           onCloseAutoFocus={(event) => {
             event.preventDefault();
+            if (openingConnection.current) {
+              openingConnection.current = false;
+              return;
+            }
             trigger.current?.focus();
           }}
         >
@@ -136,7 +143,15 @@ export function AccountMenu({
             </DialogDescription>
           </DialogHeader>
           <div className="account-help-topics">
-            <a href="#dashboard/connections" onClick={() => setHelpOpen(false)}>
+            <a
+              href="#dashboard/connections"
+              onClick={(event) => {
+                event.preventDefault();
+                openingConnection.current = true;
+                setHelpOpen(false);
+                openConnectAgent(trigger.current);
+              }}
+            >
               <strong>Connect an agent</strong>
               <span>
                 Follow the setup steps for Claude, Codex, or another MCP client.

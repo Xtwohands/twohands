@@ -1,3 +1,4 @@
+import { startPolling } from "./polling";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ArrowRight,
@@ -7,10 +8,10 @@ import {
   Plus,
   RefreshCw01,
   SearchMd,
-  TerminalSquare,
 } from "@untitledui/icons";
+import { useConnectAgent } from "./ConnectAgentDialog";
 import { Button } from "./components/ui/button";
-import { Card, CardTitle } from "./components/ui/card";
+import { Card } from "./components/ui/card";
 import { Input } from "./components/ui/input";
 import {
   Dialog,
@@ -70,7 +71,6 @@ const dateOnly = new Intl.DateTimeFormat(undefined, {
   day: "numeric",
   year: "numeric",
 });
-const keyEnvironment = "APILAYER_API_KEY=<your scoped key>";
 const canEdit = (key: ScopedApiKey) =>
   key.status === "active" || key.status === "at_limit";
 const money = (micros: number) =>
@@ -81,6 +81,8 @@ const money = (micros: number) =>
     maximumFractionDigits: 6,
   }).format(micros / 1e6);
 export function ApiKeysView() {
+  const openConnectAgent = useConnectAgent();
+  const openingConnection = useRef(false);
   const [keys, setKeys] = useState<ScopedApiKey[]>([]);
   const [enabled, setEnabled] = useState(false);
   const [localSetupRequired, setLocalSetupRequired] = useState(false);
@@ -166,12 +168,11 @@ export function ApiKeysView() {
     }
   }, [ownerApi]);
   useEffect(() => {
-    void refresh();
-    const timer = setInterval(() => void refresh(), 10000);
+    const stop = startPolling(refresh, 15000);
     return () => {
       generation.current++;
       accessEpoch.current++;
-      clearInterval(timer);
+      stop();
     };
   }, [refresh]);
   function close() {
@@ -286,64 +287,64 @@ export function ApiKeysView() {
         </Select>
       </div>
       <Card className="api-keys-library">
-        <header>
-          <CardTitle>Your keys</CardTitle>
-          {!loading && (
-            <span aria-live="polite">
-              {matching.length} {matching.length === 1 ? "key" : "keys"}
-            </span>
-          )}
-        </header>
-        {loading ? (
-          <p role="status" className="ws-panel-note">
-            Loading API keys…
-          </p>
-        ) : localSetupRequired && keys.length === 0 ? (
-          <Empty
-            title="Key creation is unavailable"
-            action={
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={(event) => {
-                  dialogTrigger.current = event.currentTarget;
-                  setMode("setup");
-                }}
-              >
-                View local setup
-              </Button>
-            }
+        <div role="region" aria-label="API keys">
+          <table
+            className="api-keys-table"
+            role="table"
+            aria-label="Your API keys"
           >
-            Finish setting up this local server to create API keys.
-          </Empty>
-        ) : matching.length ? (
-          <div role="region" aria-label="API keys">
-            <table
-              className="api-keys-table"
-              role="table"
-              aria-label="Your API keys"
-            >
-              <thead role="rowgroup">
-                <tr role="row">
-                  <th scope="col" role="columnheader">
-                    Name
-                  </th>
-                  <th scope="col" role="columnheader">
-                    Spend
-                  </th>
-                  <th scope="col" role="columnheader">
-                    Expires
-                  </th>
-                  <th scope="col" role="columnheader">
-                    Last used
-                  </th>
-                  <th scope="col" role="columnheader">
-                    <span className="sr-only">Actions</span>
-                  </th>
+            <thead role="rowgroup">
+              <tr role="row">
+                <th scope="col" role="columnheader">
+                  Name
+                </th>
+                <th scope="col" role="columnheader">
+                  Spend
+                </th>
+                <th scope="col" role="columnheader">
+                  Expires
+                </th>
+                <th scope="col" role="columnheader">
+                  Last used
+                </th>
+                <th scope="col" role="columnheader">
+                  <span className="sr-only">Actions</span>
+                </th>
+              </tr>
+            </thead>
+            <tbody role="rowgroup">
+              {loading ? (
+                <tr className="api-keys-state" role="row">
+                  <td role="cell" colSpan={5}>
+                    <p role="status" className="ws-panel-note">
+                      Loading API keys…
+                    </p>
+                  </td>
                 </tr>
-              </thead>
-              <tbody role="rowgroup">
-                {matching.map((k) => {
+              ) : localSetupRequired && keys.length === 0 ? (
+                <tr className="api-keys-state" role="row">
+                  <td role="cell" colSpan={5}>
+                    <Empty
+                      title="Key creation is unavailable"
+                      action={
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={(event) => {
+                            dialogTrigger.current = event.currentTarget;
+                            setMode("setup");
+                          }}
+                        >
+                          View local setup
+                        </Button>
+                      }
+                    >
+                      Finish setting up this local server to create API keys.
+                    </Empty>
+                  </td>
+                </tr>
+              ) : matching.length ? (
+                matching.map((k) => {
                   const action = canEdit(k) ? "Manage" : "View";
                   return (
                     <tr key={k.id} role="row">
@@ -411,64 +412,39 @@ export function ApiKeysView() {
                       </td>
                     </tr>
                   );
-                })}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <Empty
-            title={keys.length ? "No matching keys" : "No API keys yet"}
-            action={
-              keys.length > 0 && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => {
-                    setSearch("");
-                    setFilter("all");
-                    searchInput.current?.focus();
-                  }}
-                >
-                  Clear filters
-                </Button>
-              )
-            }
-          >
-            {keys.length
-              ? "Try another name or status."
-              : "Create a key for an agent or application."}
-          </Empty>
-        )}
-      </Card>
-      <Card className="api-key-connection">
-        <div className="api-key-connection-intro">
-          <span className="api-key-connection-icon">
-            <TerminalSquare size={18} aria-hidden />
-          </span>
-          <div>
-            <CardTitle>Connect an agent</CardTitle>
-            <p>
-              Set the key in your MCP bridge’s private environment, then restart
-              the client.
-            </p>
-          </div>
-        </div>
-        <div className="api-key-connection-actions">
-          <div className="api-key-command">
-            <code>{keyEnvironment}</code>
-            <CopyButton text={keyEnvironment} />
-          </div>
-          <Button
-            size="sm"
-            variant="ghost"
-            className="api-key-connection-setup"
-            asChild
-          >
-            <a href="#dashboard/connections">
-              Connection setup
-              <ArrowUpRight />
-            </a>
-          </Button>
+                })
+              ) : (
+                <tr className="api-keys-state" role="row">
+                  <td role="cell" colSpan={5}>
+                    <Empty
+                      title={
+                        keys.length ? "No matching keys" : "No API keys yet"
+                      }
+                      action={
+                        keys.length > 0 && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => {
+                              setSearch("");
+                              setFilter("all");
+                              searchInput.current?.focus();
+                            }}
+                          >
+                            Clear filters
+                          </Button>
+                        )
+                      }
+                    >
+                      {keys.length
+                        ? "Try another name or status."
+                        : "Create a key for an agent or application."}
+                    </Empty>
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
         </div>
       </Card>
       <Dialog
@@ -481,6 +457,10 @@ export function ApiKeysView() {
           className="ws-detail-dialog api-key-dialog translate-x-0 translate-y-0"
           onCloseAutoFocus={(event) => {
             event.preventDefault();
+            if (openingConnection.current) {
+              openingConnection.current = false;
+              return;
+            }
             const trigger = dialogTrigger.current;
             requestAnimationFrame(() => {
               if (trigger?.isConnected && !trigger.disabled) trigger.focus();
@@ -563,11 +543,18 @@ export function ApiKeysView() {
               )}
               <div className="button-row">
                 <Button onClick={close}>Done</Button>
-                <Button variant="outline" asChild>
-                  <a href="#dashboard/connections" onClick={close}>
-                    Agent connection setup
-                    <ArrowRight />
-                  </a>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    openingConnection.current = true;
+                    close();
+                    openConnectAgent(
+                      dialogTrigger.current ?? createTrigger.current,
+                    );
+                  }}
+                >
+                  Agent connection setup
+                  <ArrowRight />
                 </Button>
               </div>
             </div>

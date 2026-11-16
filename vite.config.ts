@@ -33,9 +33,12 @@ export default defineConfig(({ mode }) => {
     server: {
       port: 5175,
       strictPort: true,
-      // Keep the browser's Host so the API's same-origin write check matches its Origin.
       proxy: {
-        "/api": { target: `http://127.0.0.1:${port}`, changeOrigin: false },
+        "/api": {
+          target: `http://127.0.0.1:${port}`,
+          // Keep the browser's host so API write checks match production.
+          changeOrigin: false,
+        },
       },
     },
     test: { include: ["tests/**/*.test.ts"] },

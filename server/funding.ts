@@ -137,37 +137,41 @@ export class FundingService {
   ) {
     this.ledger = new FundingLedger(store);
   }
-  async summary(): Promise<FundingSummary> {
-    const recipient = address.safeParse(this.settings.recipient);
-    const enabled = this.settings.enabled && recipient.success;
-    const balance = (await this.store.db
-      .prepare(
-        "SELECT COALESCE(SUM(amount_units),0) AS balance, COUNT(*) AS count FROM funding_credits",
-      )
-      .get())!;
-    return {
-      enabled,
-      unavailableReason: !this.settings.enabled
-        ? "Testnet deposits are not enabled on this server."
-        : !recipient.success
-          ? "Configure a Base Sepolia receiving address on the server."
-          : null,
-      network: BASE_SEPOLIA,
-      recipient: recipient.success ? recipient.data : null,
-      balanceUnits: await this.ledger.balance(),
-      onchainBalanceUnits: Number(balance.balance),
-      onchainDeposits: Number(balance.count),
-      totalDeposits: Number(balance.count),
-      intents: (
-        await this.store.db
-          .prepare(
-            "SELECT body FROM funding_intents ORDER BY rowid DESC LIMIT 100",
-          )
-          .all()
-      ).map((r) => JSON.parse(r.body as string)),
-      testnet: true,
-      spendableForProviders: false,
-    };
+  async summary(includeHistory = true): Promise<FundingSummary> {
+    return this.store.db.read(async () => {
+      const recipient = address.safeParse(this.settings.recipient);
+      const enabled = this.settings.enabled && recipient.success;
+      const balance = (await this.store.db
+        .prepare(
+          "SELECT COALESCE(SUM(amount_units),0) AS balance, COUNT(*) AS count FROM funding_credits",
+        )
+        .get())!;
+      return {
+        enabled,
+        unavailableReason: !this.settings.enabled
+          ? "Testnet deposits are not enabled on this server."
+          : !recipient.success
+            ? "Configure a Base Sepolia receiving address on the server."
+            : null,
+        network: BASE_SEPOLIA,
+        recipient: recipient.success ? recipient.data : null,
+        balanceUnits: await this.ledger.balance(),
+        onchainBalanceUnits: Number(balance.balance),
+        onchainDeposits: Number(balance.count),
+        totalDeposits: Number(balance.count),
+        intents: includeHistory
+          ? (
+              await this.store.db
+                .prepare(
+                  "SELECT body FROM funding_intents ORDER BY rowid DESC LIMIT 100",
+                )
+                .all()
+            ).map((r) => JSON.parse(r.body as string))
+          : [],
+        testnet: true,
+        spendableForProviders: false,
+      };
+    });
   }
   async get(id: string): Promise<DepositIntent> {
     const row = await this.store.db

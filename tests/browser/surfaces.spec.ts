@@ -24,7 +24,7 @@ test("public site, user dashboard, and operator console are separate surfaces", 
 
   await page.goto("/#dashboard");
   await expect(
-    page.getByRole("heading", { name: "My dashboard", exact: true }),
+    page.getByRole("heading", { name: "Home", exact: true }),
   ).toBeVisible();
   await expect(page.getByRole("contentinfo")).toHaveCount(0);
   if (test.info().project.name === "mobile")
@@ -60,12 +60,9 @@ test("dashboard switching lives in settings", async ({ page }) => {
     exact: true,
   });
   await expect(panel).toBeVisible();
-  await page
-    .getByRole("link", { name: /My dashboard/ })
-    .first()
-    .click();
+  await page.getByRole("link", { name: /Home/ }).first().click();
   await expect(
-    page.getByRole("heading", { name: "My dashboard", exact: true }),
+    page.getByRole("heading", { name: "Home", exact: true }),
   ).toBeVisible();
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
 });

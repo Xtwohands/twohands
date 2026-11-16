@@ -121,6 +121,7 @@ export interface SellerDb {
   putSetting(key: string, body: string): Promise<void>;
   /** Listing bodies for one provider, newest version first. */
   listingBodies(provider: string): Promise<string[]>;
+  liveListingBodies(): Promise<string[]>;
   saveListing(provider: string, version: number, body: string): Promise<void>;
   addEvent(provider: string, body: string): Promise<void>;
   eventRows(
@@ -154,6 +155,15 @@ export class SqliteSellerDb implements SellerDb {
           "SELECT body FROM seller_listings WHERE provider=? ORDER BY version DESC",
         )
         .all(provider)
+    ).map((r) => r.body as string);
+  }
+  async liveListingBodies() {
+    return (
+      await this.db
+        .prepare(
+          "SELECT body FROM seller_listings WHERE json_extract(body,'$.status')='live' ORDER BY version DESC",
+        )
+        .all()
     ).map((r) => r.body as string);
   }
   async saveListing(provider: string, version: number, body: string) {
@@ -208,6 +218,13 @@ export class PostgresSellerDb implements SellerDb {
     const { rows } = await this.query(
       "SELECT body::text AS body FROM octolab.seller_listings WHERE provider=$1 ORDER BY version DESC",
       [provider],
+    );
+    return rows.map((r) => r.body as string);
+  }
+  async liveListingBodies() {
+    const { rows } = await this.query(
+      "SELECT body::text AS body FROM octolab.seller_listings WHERE body->>'status'='live' ORDER BY version DESC",
+      [],
     );
     return rows.map((r) => r.body as string);
   }
@@ -333,11 +350,9 @@ export class SellerStore {
   /** Live listings for every provider, used wherever agents are shown a tool. */
   async liveAll() {
     const out: Partial<Record<ProviderId, Listing>> = {};
-    for (const provider of new Set(
-      providerRegistry.list().map((a) => a.provider as ProviderId),
-    )) {
-      const listing = await this.live(provider);
-      if (listing) out[provider] = listing;
+    for (const body of await this.db.liveListingBodies()) {
+      const listing = JSON.parse(body) as Listing;
+      if (!out[listing.provider]) out[listing.provider] = listing;
     }
     return out;
   }
