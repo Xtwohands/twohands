@@ -405,7 +405,7 @@ test("a verified confirmation callback shows the confirmed state before opening 
   await captureJourney(page, "login-email-confirmed");
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
   await expect(
-    page.getByRole("heading", { name: "My dashboard", exact: true }),
+    page.getByRole("heading", { name: "Home", exact: true }),
   ).toBeVisible();
 });
 

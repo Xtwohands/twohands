@@ -5,6 +5,7 @@ import {
   Download01,
   ArrowUpRight,
   AlertCircle,
+  FileCheck02,
 } from "@untitledui/icons";
 import { Button } from "./components/ui/button";
 import { Checkbox } from "./components/ui/checkbox";
@@ -99,17 +100,17 @@ export function Empty({
   title,
   children,
   action,
+  icon: Icon = FileCheck02,
 }: {
   title: string;
   children: ReactNode;
   action?: ReactNode;
+  icon?: typeof FileCheck02;
 }) {
   return (
     <div className="obs-empty">
-      <div className="empty-symbol">
-        <span />
-        <span />
-        <span />
+      <div className="empty-symbol" aria-hidden="true">
+        <Icon />
       </div>
       <h2>{title}</h2>
       <p>{children}</p>

@@ -8,7 +8,7 @@ test("sidebar pages have independent routes, browser history, and accessible lay
   page,
 }) => {
   for (const [route, heading] of [
-    ["", "My dashboard"],
+    ["", "Home"],
     ["tools", "Tool catalog"],
     ["activity", "Activity"],
     ["usage", "Usage"],
@@ -28,11 +28,10 @@ test("sidebar pages have independent routes, browser history, and accessible lay
     ).toBe(true);
   }
   await page.goto("/#dashboard/tools");
-  const configure = page.getByRole("link", {
-    name: "Configure routing",
-    exact: true,
-  });
-  await configure.click();
+  await expect(
+    page.getByRole("link", { name: "Configure routing", exact: true }),
+  ).toHaveCount(0);
+  await page.goto("/#dashboard/routing");
   await expect(page).toHaveURL(/#dashboard\/routing$/);
   await expect(
     page.getByRole("heading", { name: "Configure routing", exact: true }),
@@ -50,7 +49,7 @@ test("sidebar pages have independent routes, browser history, and accessible lay
   await expect(
     page.getByRole("heading", { name: "Tool catalog", exact: true }),
   ).toBeVisible();
-  await configure.click();
+  await page.goto("/#dashboard/routing");
   await page.getByRole("link", { name: "Back to catalog" }).click();
   await expect(page).toHaveURL(/#dashboard\/tools$/);
   if (test.info().project.name === "mobile")
@@ -61,10 +60,108 @@ test("sidebar pages have independent routes, browser history, and accessible lay
   await expect(catalog).toHaveAttribute("aria-current", "page");
 });
 
+test("catalog loading does not look like an empty search", async ({ page }) => {
+  let release!: () => void;
+  const pending = new Promise<void>((resolve) => (release = resolve));
+  await page.route("**/api/observations/catalog", async (route) => {
+    await pending;
+    await route.continue();
+  });
+  try {
+    await page.goto("/#dashboard/tools");
+    await expect(
+      page.getByRole("status").filter({ hasText: "Loading tools" }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "No matching tools" }),
+    ).toHaveCount(0);
+    await expect(
+      page.getByRole("button", { name: "Clear filters" }),
+    ).toHaveCount(0);
+    await captureJourney(page, "tool-catalog-loading");
+  } finally {
+    release();
+  }
+  await expect(page.locator(".ws-tool-card")).toHaveCount(
+    providerIds.length - 1,
+  );
+});
+
+test("catalog failures explain the problem and can be retried", async ({
+  page,
+}) => {
+  let failed = false;
+  await page.route("**/api/observations/catalog", async (route) => {
+    if (!failed) {
+      failed = true;
+      await route.fulfill({
+        status: 503,
+        json: { error: "Tools are temporarily unavailable." },
+      });
+    } else await route.continue();
+  });
+  await page.goto("/#dashboard/tools");
+  await expect(page.getByRole("alert")).toContainText(
+    "Tools are temporarily unavailable.",
+  );
+  await expect(
+    page.getByRole("heading", { name: "No matching tools" }),
+  ).toHaveCount(0);
+  await captureJourney(page, "tool-catalog-load-error");
+  await page.getByRole("button", { name: "Retry loading tools" }).click();
+  await expect(page.locator(".ws-tool-card")).toHaveCount(
+    providerIds.length - 1,
+  );
+  await expect(page.getByRole("alert")).toHaveCount(0);
+});
+
+test("catalog refresh failures keep the existing tools visible", async ({
+  page,
+}) => {
+  await page.clock.install();
+  let requests = 0;
+  await page.route("**/api/observations/catalog", async (route) => {
+    if (++requests === 2)
+      await route.fulfill({
+        status: 503,
+        json: { error: "The catalog could not be refreshed." },
+      });
+    else await route.continue();
+  });
+  await page.goto("/#dashboard/tools");
+  await expect(page.locator(".ws-tool-card")).toHaveCount(
+    providerIds.length - 1,
+  );
+  await page.clock.fastForward(60001);
+  await expect(page.getByRole("alert")).toContainText(
+    "The catalog could not be refreshed.",
+    { timeout: 10000 },
+  );
+  await expect(page.locator(".ws-tool-card")).toHaveCount(
+    providerIds.length - 1,
+  );
+  await page.getByRole("button", { name: "Retry loading tools" }).click();
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  await expect(page.locator(".ws-tool-card")).toHaveCount(
+    providerIds.length - 1,
+  );
+});
+
 test("catalog search, capability filters, and tool details", async ({
   page,
 }) => {
   await page.goto("/#dashboard/tools");
+  const cards = page.locator(".ws-tool-card");
+  await expect(cards).toHaveCount(providerIds.length - 1);
+  for (const card of await cards.all()) {
+    const provider = await card.getByRole("heading").innerText();
+    await expect(
+      card.getByRole("button", {
+        name: `View tool: ${provider}`,
+        exact: true,
+      }),
+    ).toBeVisible();
+  }
   await page.getByRole("button", { name: /Extraction/ }).click();
   await expect(page.locator(".ws-tool-card")).toHaveCount(
     extractProviderIds.length,
@@ -204,6 +301,10 @@ test("fixture requests flow into usage, filters, receipt inspection, and CSV", a
   ).json();
   expect(call.status).toBe("succeeded");
   await page.goto(`${fixture}/#dashboard/activity`);
+  await expect(page.locator(".ws-overview-requests")).toContainText(
+    "Dashboard browser fixture",
+  );
+  await page.getByRole("link", { name: "View requests", exact: true }).click();
   await page
     .getByRole("textbox", { name: "Search requests" })
     .fill(`workspace-e2e-${session.id}`);
@@ -241,10 +342,67 @@ test("fixture requests flow into usage, filters, receipt inspection, and CSV", a
   await expect(page.locator(".ws-table")).toContainText("Tavily");
 });
 
+test("connect agent opens instructions in place and restores focus", async ({
+  page,
+}) => {
+  for (const route of ["#dashboard/activity", "#dashboard/tools"]) {
+    await page.goto("/" + route);
+    const trigger = page.getByRole("button", {
+      name: "Connect agent",
+      exact: true,
+    });
+    await trigger.click();
+    const dialog = page.getByRole("dialog", {
+      name: "Connect agent",
+      exact: true,
+    });
+    await expect(dialog).toBeVisible();
+    await expect(dialog).toHaveCSS("opacity", "1");
+    await expect(page).toHaveURL(new RegExp(route + "$"));
+    expect(
+      (
+        await new AxeBuilder({ page })
+          .include(".connect-agent-dialog")
+          .analyze()
+      ).violations,
+    ).toEqual([]);
+    const bounds = await dialog.boundingBox();
+    const viewport = page.viewportSize()!;
+    expect(bounds!.x).toBeGreaterThanOrEqual(0);
+    expect(bounds!.y).toBeGreaterThanOrEqual(0);
+    expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(viewport.width);
+    expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(viewport.height);
+    await dialog.getByRole("button", { name: "Close", exact: true }).focus();
+    await page.keyboard.press("Tab");
+    await expect(
+      dialog.getByRole("button", { name: "Codex", exact: true }),
+    ).toBeFocused();
+    await page.keyboard.press("Escape");
+    await expect(dialog).toHaveCount(0);
+    await expect(trigger).toBeFocused();
+    await trigger.click();
+    await dialog.getByRole("button", { name: "Close", exact: true }).click();
+    await expect(trigger).toBeFocused();
+  }
+});
+
 test("connection instructions change with the chosen client", async ({
   page,
 }) => {
-  await page.goto("/#dashboard/connections");
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText: async (text: string) => {
+          (window as unknown as { copiedCommand: string }).copiedCommand = text;
+        },
+      },
+    });
+  });
+  await page.goto("/#dashboard/tools");
+  await page
+    .getByRole("button", { name: "Connect agent", exact: true })
+    .click();
   await expect(page.locator(".ws-setup-steps")).toContainText(
     "npm run mcp:install -- codex",
   );
@@ -254,6 +412,9 @@ test("connection instructions change with the chosen client", async ({
   await expect(page.locator(".ws-agent-environment")).toContainText(
     "APILAYER_API_KEY=<your scoped key>",
   );
+  await expect(
+    page.getByRole("dialog", { name: "Connect agent", exact: true }),
+  ).toHaveCSS("opacity", "1");
   await captureJourney(page, "agent-connection-settings");
   await page.getByRole("button", { name: "Claude", exact: true }).click();
   await expect(page.locator(".ws-setup-steps")).toContainText(
@@ -265,6 +426,71 @@ test("connection instructions change with the chosen client", async ({
   await expect(page.locator(".ws-setup-steps")).toContainText(
     "npm run mcp:install -- project",
   );
+  const install = page.locator(".ws-setup-steps li").nth(2);
+  await install.getByRole("button", { name: "Copy", exact: true }).click();
+  await expect(
+    install.getByRole("button", { name: "Copied", exact: true }),
+  ).toBeVisible();
+  expect(
+    await page.evaluate(
+      () => (window as unknown as { copiedCommand: string }).copiedCommand,
+    ),
+  ).toBe("npm run mcp:install -- project");
+  await expect(page).toHaveURL(/#dashboard\/tools$/);
+});
+
+test("empty request log opens agent setup without leaving the log", async ({
+  page,
+}) => {
+  await page.goto("/#dashboard/requests");
+  const trigger = page.getByRole("button", {
+    name: "Connect your agent",
+    exact: true,
+  });
+  await trigger.click();
+  const dialog = page.getByRole("dialog", {
+    name: "Connect agent",
+    exact: true,
+  });
+  await expect(dialog).toBeVisible();
+  await expect(page).toHaveURL(/#dashboard\/requests$/);
+  await dialog
+    .getByRole("link", { name: "Manage API keys", exact: true })
+    .click();
+  await expect(dialog).toHaveCount(0);
+  await expect(page).toHaveURL(/#dashboard\/keys$/);
+  await expect(
+    page.getByRole("heading", { name: "API keys", exact: true }),
+  ).toBeVisible();
+});
+
+test("help hands off to agent setup and returns focus to the account control", async ({
+  page,
+}) => {
+  await page.goto("/#dashboard/tools");
+  if (test.info().project.name === "mobile") {
+    await page.getByRole("button", { name: "Open navigation" }).click();
+  }
+  const account = page.getByRole("button", { name: /^Account menu:/ });
+  await account.click();
+  await page
+    .getByRole("button", { name: "Help and documentation", exact: true })
+    .click();
+  const help = page.getByRole("dialog", {
+    name: "Help and documentation",
+    exact: true,
+  });
+  await help.getByRole("link", { name: /Connect an agent/ }).click();
+  const setup = page.getByRole("dialog", {
+    name: "Connect agent",
+    exact: true,
+  });
+  await expect(help).toHaveCount(0);
+  await expect(setup).toBeVisible();
+  await expect(page).toHaveURL(/#dashboard\/tools$/);
+  await page.keyboard.press("Escape");
+  await expect(setup).toHaveCount(0);
+  await expect(account).toBeFocused();
 });
 
 test("usage charts keep every day visible for longer periods", async ({

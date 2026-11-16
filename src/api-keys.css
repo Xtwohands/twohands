@@ -14,7 +14,6 @@
 }
 
 .api-keys-heading,
-.api-keys-library > header,
 .api-keys-error {
   display: flex;
   align-items: center;
@@ -88,8 +87,7 @@
   box-shadow: none;
 }
 
-.api-keys-library[data-slot="card"],
-.api-key-connection[data-slot="card"] {
+.api-keys-library[data-slot="card"] {
   min-width: 0;
   padding: 0;
   gap: 0;
@@ -102,24 +100,10 @@
 
 .api-keys-library[data-slot="card"] {
   container-type: inline-size;
-  padding: 1px;
+  overflow: hidden;
 }
 
-.api-keys-library > header {
-  min-height: 55px;
-  padding: 12px 18px;
-}
-
-.ws-api-keys [data-slot="card-title"] {
-  font-size: 15px;
-  font-weight: 500;
-  line-height: 20px;
-  letter-spacing: normal;
-}
-
-.api-keys-library > header span,
-.api-keys-library .obs-empty p,
-.api-key-connection p {
+.api-keys-library .obs-empty p {
   color: var(--muted-foreground);
   font-size: 12px;
   line-height: 18px;
@@ -152,7 +136,7 @@
 }
 
 .api-keys-table thead {
-  background: #f6f6f6;
+  background: var(--card);
   color: var(--muted-foreground);
 }
 
@@ -169,7 +153,8 @@
 }
 
 .api-keys-table thead th {
-  height: 39px;
+  height: 46px;
+  border-top: 0;
   font-size: 12px;
   line-height: 18px;
 }
@@ -189,6 +174,11 @@
   text-align: right;
 }
 
+.api-keys-table .api-keys-state > td {
+  padding: 0;
+  text-align: left;
+}
+
 .api-key-identity strong,
 .api-key-identity code {
   display: block;
@@ -198,8 +188,7 @@
   font-weight: 500;
 }
 
-.api-key-identity code,
-.api-key-command code {
+.api-key-identity code {
   font-family: "Geist Mono Variable", ui-monospace, monospace;
   font-size: 11px;
   line-height: 16.5px;
@@ -232,96 +221,6 @@
 .api-key-action[data-slot="button"] svg {
   width: 13px;
   height: 13px;
-}
-
-.api-key-connection[data-slot="card"] {
-  display: flex;
-  flex-flow: row wrap;
-  min-height: 76px;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 16px 19px;
-}
-
-.api-key-connection-intro,
-.api-key-connection-actions {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  gap: 10px;
-}
-
-.api-key-connection-intro {
-  flex: 1 1 260px;
-}
-
-.api-key-connection-icon {
-  display: grid;
-  flex: 0 0 34px;
-  height: 34px;
-  place-items: center;
-  border: 1px solid var(--api-key-border);
-  border-radius: var(--api-key-radius);
-  background: #f6f6f6;
-}
-
-.api-key-connection-intro p {
-  margin-top: 4px;
-}
-
-.api-key-connection-actions {
-  flex-wrap: wrap;
-  gap: 12px;
-}
-
-.api-key-command {
-  display: flex;
-  width: 312px;
-  min-width: 0;
-  max-width: 100%;
-  min-height: 34px;
-  align-items: center;
-  justify-content: space-between;
-  gap: 4px;
-  padding-inline: 10px 7px;
-  border: 1px solid var(--api-key-border);
-  border-radius: var(--api-key-radius);
-  background: #f6f6f6;
-}
-
-.api-key-command code {
-  overflow-wrap: anywhere;
-}
-
-.ws-api-keys .api-key-command [data-slot="button"] {
-  height: 24px;
-  gap: 4px;
-  padding: 0 4px;
-  border-color: transparent;
-  background: transparent;
-  color: var(--muted-foreground);
-  box-shadow: none;
-  font-size: 11px;
-  font-weight: 400;
-}
-
-.ws-api-keys .api-key-command [data-slot="button"]:hover {
-  background: var(--muted);
-}
-
-.api-key-command [data-slot="button"] svg {
-  width: 12px;
-  height: 12px;
-}
-
-.api-key-connection-setup[data-slot="button"] {
-  gap: 9px;
-}
-
-.api-key-connection-setup[data-slot="button"] svg {
-  width: 14px;
-  height: 14px;
 }
 
 @container (max-width: 600px) {
@@ -362,6 +261,20 @@
   .api-keys-table tbody tr > :last-child {
     grid-column: 3;
     grid-row: 1;
+  }
+
+  .api-keys-table tbody tr:first-child {
+    border-top: 0;
+  }
+
+  .api-keys-table tbody .api-keys-state {
+    display: block;
+    padding: 0;
+  }
+
+  .api-keys-table .api-keys-state > td {
+    display: block;
+    width: 100%;
   }
 
   .api-key-mobile-label {

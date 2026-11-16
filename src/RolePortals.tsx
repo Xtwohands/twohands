@@ -1,3 +1,4 @@
+import { startPolling } from "./polling";
 import { providerIds, providerLabel } from "../server/provider-catalog";
 import { AdminNavigation } from "./AdminNavigation";
 import { CompanyTeamView } from "./CompanyTeamView";
@@ -7,11 +8,13 @@ import {
   companyDashboardLinks,
   companyDashboardSection,
 } from "./CompanyDashboard";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode, Fragment } from "react";
 import {
   ArrowLeft,
   ArrowRight,
   Building07,
+  RefreshCw01,
+  CheckCircle,
   Menu01,
   Plus,
   XClose,
@@ -28,7 +31,7 @@ import {
   DialogDescription,
   DialogClose,
 } from "./components/ui/dialog";
-import { Panel, InlineError, date } from "./observation-ui";
+import { Panel, Empty, InlineError, date } from "./observation-ui";
 import type {
   ToolCompany,
   CompanyInsights,
@@ -71,6 +74,7 @@ export function PortalShell({
         <img src="/two-hands.svg" width="147" height="32" alt="Two Hands" />
       </a>
       <nav
+        className="customer-navigation"
         aria-label={
           area === "settings"
             ? "Settings navigation"
@@ -83,16 +87,21 @@ export function PortalShell({
           <AdminNavigation page={adminPage} onNavigate={() => setOpen(false)} />
         ) : (
           links.map((link) => (
-            <a
-              key={link.href}
-              href={link.href}
-              onClick={() => setOpen(false)}
-              className={link.selected ? "selected" : ""}
-              aria-current={link.selected ? "page" : undefined}
-            >
-              {link.icon && <link.icon aria-hidden="true" />}
-              {link.label}
-            </a>
+            <Fragment key={link.href}>
+              {area === "company" && link.label === "Company details" && (
+                <div className="customer-navigation-divider" role="separator" />
+              )}
+              <a
+                key={link.href}
+                href={link.href}
+                onClick={() => setOpen(false)}
+                className={link.selected ? "selected" : ""}
+                aria-current={link.selected ? "page" : undefined}
+              >
+                {link.icon && <link.icon aria-hidden="true" />}
+                {link.label}
+              </a>
+            </Fragment>
           ))
         )}
       </nav>
@@ -102,20 +111,24 @@ export function PortalShell({
     </>
   );
   return (
-    <div className={`observation-shell role-portal portal-${area}`}>
-      <a
-        className="skip-link"
-        href="#portal-content"
-        onClick={(e) => {
-          e.preventDefault();
-          document.getElementById("portal-content")?.focus();
-        }}
-      >
-        Skip to content
-      </a>
-      <aside className="obs-sidebar">{nav}</aside>
+    <div
+      className={`observation-shell role-portal portal-${area}${area !== "company" ? " workspace-console" : ""}`}
+    >
+      <nav aria-label="Skip links">
+        <a
+          className="skip-link"
+          href="#portal-content"
+          onClick={(e) => {
+            e.preventDefault();
+            document.getElementById("portal-content")?.focus();
+          }}
+        >
+          Skip to content
+        </a>
+      </nav>
+      <aside className="obs-sidebar customer-sidebar">{nav}</aside>
       <div className="obs-body">
-        <header className="obs-topbar">
+        <header className="obs-topbar" aria-label={title}>
           <div>
             <Button
               ref={navigationTrigger}
@@ -128,7 +141,18 @@ export function PortalShell({
             >
               <Menu01 />
             </Button>
-            <span>{title}</span>
+            <a
+              href="#home"
+              className="customer-mobile-brand"
+              aria-label="Two Hands home"
+            >
+              <img
+                src="/two-hands.svg"
+                width="123"
+                height="27"
+                alt="Two Hands"
+              />
+            </a>
           </div>
         </header>
         <Dialog open={open} onOpenChange={setOpen}>
@@ -154,7 +178,7 @@ export function PortalShell({
                 <XClose />
               </Button>
             </DialogClose>
-            <div className="mobile-sidebar-content">{nav}</div>
+            <div className="mobile-sidebar-content customer-sidebar">{nav}</div>
           </DialogContent>
         </Dialog>
         <main className="obs-main" id="portal-content" tabIndex={-1}>
@@ -206,7 +230,12 @@ export function CompanyPortal(props: { id?: string; section: string }) {
         section={props.section}
       />
     );
-  return <RegisteredCompanyPortal {...props} />;
+  return (
+    <RegisteredCompanyPortal
+      key={`${props.id ?? "company"}:${props.section}`}
+      {...props}
+    />
+  );
 }
 function CompanyConnectorsPortal({ company }: { company: ToolCompany }) {
   const canManage =
@@ -277,11 +306,10 @@ function CompanyDashboardPortal({
         if (active) setLoading(false);
       }
     };
-    void refresh();
-    const timer = setInterval(() => void refresh(), 30000);
+    const stop = startPolling(refresh, 30000);
     return () => {
       active = false;
-      clearInterval(timer);
+      stop();
     };
   }, [id, revision, initialCompany?.status, initialCompany?.revision]);
   const canManage =
@@ -355,11 +383,10 @@ function RegisteredCompanyPortal({
         }
       }
     };
-    void refresh();
-    const timer = setInterval(() => void refresh(), 30000);
+    const stop = startPolling(refresh, 30000);
     return () => {
       active = false;
-      clearInterval(timer);
+      stop();
     };
   }, [selected?.id, registering, tab]);
   const links = registering
@@ -406,12 +433,14 @@ function RegisteredCompanyPortal({
                 : "Bring your tool to Two Hands"
               : tab === "team"
                 ? "Company team"
-                : (company?.name ?? "Company overview")}
+                : "Company details"}
           </h1>
           <p>
             {registering
               ? "Register your company so our team can verify ownership and arrange your integration."
-              : "Manage your company’s integration and access to aggregate tool performance."}
+              : tab === "team"
+                ? "Manage who can view your company’s aggregate insights."
+                : "Your company profile, integration status, and data access."}
           </p>
         </div>
       </div>
@@ -549,7 +578,7 @@ function RegisteredCompanyPortal({
                 </Panel>
               )
             ) : tab === "overview" ? (
-              <>
+              <div className="company-details-grid">
                 <Panel
                   title="Integration status"
                   action={
@@ -610,7 +639,7 @@ function RegisteredCompanyPortal({
                       <strong>Aggregate insights</strong>
                       <p>
                         {company.insightsEnabled
-                          ? "Enabled. Metrics appear once enough independent usage is available."
+                          ? "Enabled. Usage appears from the first eligible recorded activity."
                           : "Available after approval and a separate data-access review."}
                       </p>
                     </li>
@@ -634,7 +663,7 @@ function RegisteredCompanyPortal({
                     <dd>{company.description}</dd>
                   </dl>
                 </Panel>
-              </>
+              </div>
             ) : null}
           </>
         )
@@ -643,6 +672,7 @@ function RegisteredCompanyPortal({
   );
 }
 export function AdminCompanyReview() {
+  const [loading, setLoading] = useState(true);
   const [items, setItems] = useState<CompanyReviewItem[]>([]),
     [selected, setSelected] = useState<CompanyReviewItem>();
   const [error, setError] = useState(""),
@@ -668,15 +698,22 @@ export function AdminCompanyReview() {
   const selectionVersion = useRef(0);
   const queuePath = `/admin/companies?status=${filter}${cursor ? "&cursor=" + encodeURIComponent(cursor) : ""}`;
   const refresh = async () => {
-    const data = await api<{
-      items: CompanyReviewItem[];
-      nextCursor: string | null;
-    }>(queuePath);
-    setItems(data.items);
-    setNextCursor(data.nextCursor);
+    setLoading(true);
+    try {
+      const data = await api<{
+        items: CompanyReviewItem[];
+        nextCursor: string | null;
+      }>(queuePath);
+      setItems(data.items);
+      setNextCursor(data.nextCursor);
+    } finally {
+      setLoading(false);
+    }
   };
   useEffect(() => {
     let active = true;
+    setLoading(true);
+    setError("");
     api<{ items: CompanyReviewItem[]; nextCursor: string | null }>(queuePath)
       .then((data) => {
         if (active) {
@@ -686,6 +723,9 @@ export function AdminCompanyReview() {
       })
       .catch((e) => {
         if (active) setError(e.message);
+      })
+      .finally(() => {
+        if (active) setLoading(false);
       });
     return () => {
       active = false;
@@ -713,216 +753,237 @@ export function AdminCompanyReview() {
   };
   return (
     <PortalShell area="admin" title="Administration" links={[]}>
-      <div className="page-heading">
-        <div>
-          <h1>Company reviews</h1>
+      <div className="admin-company-review">
+        <div className="page-heading">
+          <div>
+            <h1>Company reviews</h1>
+            <p>
+              Verify tool company ownership, link integrations, and control
+              access to aggregate insights.
+            </p>
+          </div>
+          <Button
+            variant="outline"
+            disabled={loading || busy}
+            onClick={() => void refresh().catch((e) => setError(e.message))}
+          >
+            <RefreshCw01 aria-hidden="true" />
+            Refresh reviews
+          </Button>
+        </div>
+        <InlineError message={error} />
+        {notice && (
+          <p role="status" className="notice">
+            {notice}
+          </p>
+        )}
+        <div className="console-review-toolbar">
+          <label className="portal-company-select console-review-filter">
+            Review status
+            <select
+              value={filter}
+              onChange={(e) => {
+                setFilter(e.target.value);
+                setCursor("");
+                setSelected(undefined);
+                selectionVersion.current++;
+              }}
+            >
+              <option value="pending">Pending</option>
+              <option value="all">All companies</option>
+              <option value="approved">Approved</option>
+              <option value="rejected">Changes requested</option>
+              <option value="suspended">Suspended</option>
+            </select>
+          </label>
           <p>
-            Verify tool company ownership, link integrations, and control access
-            to aggregate insights.
+            {loading
+              ? "Loading registrations…"
+              : `${items.length} ${items.length === 1 ? "company" : "companies"} on this page`}
           </p>
         </div>
-        <Button
-          variant="outline"
-          onClick={() => void refresh().catch((e) => setError(e.message))}
-        >
-          Refresh reviews
-        </Button>
-      </div>
-      <InlineError message={error} />
-      {notice && (
-        <p role="status" className="notice">
-          {notice}
-        </p>
-      )}
-      <label className="portal-company-select">
-        Review status
-        <select
-          value={filter}
-          onChange={(e) => {
-            setFilter(e.target.value);
-            setCursor("");
-            setSelected(undefined);
-            selectionVersion.current++;
-          }}
-        >
-          <option value="pending">Pending</option>
-          <option value="all">All companies</option>
-          <option value="approved">Approved</option>
-          <option value="rejected">Changes requested</option>
-          <option value="suspended">Suspended</option>
-        </select>
-      </label>
-      <div className="portal-review-grid">
-        <Panel title="Registered companies">
-          <div className="portal-company-list">
-            {items
-              .filter((i) => filter === "all" || i.status === filter)
-              .map((item) => (
-                <button
-                  key={item.id}
-                  aria-pressed={selected?.id === item.id}
-                  onClick={() => void select(item)}
-                >
-                  <strong>{item.name}</strong>
-                  <span>
-                    {item.toolName} · {statusLabels[item.status]}
-                  </span>
-                </button>
-              ))}
-            {!items.some((i) => filter === "all" || i.status === filter) && (
-              <p>No companies in this queue.</p>
-            )}
-          </div>
-          <div className="account-actions">
-            {cursor && (
-              <Button variant="outline" onClick={() => setCursor("")}>
-                First page
-              </Button>
-            )}
-            {nextCursor && (
-              <Button variant="outline" onClick={() => setCursor(nextCursor)}>
-                Next page
-              </Button>
-            )}
-          </div>
-        </Panel>
-        <Panel
-          title={selected ? `Review ${selected.name}` : "Select a company"}
-        >
-          {selected ? (
-            <>
-              <dl className="portal-details">
-                <dt>Applicant</dt>
-                <dd>{selected.ownerEmail}</dd>
-                <dt>Website</dt>
-                <dd>
-                  <a href={selected.website} target="_blank" rel="noreferrer">
-                    {selected.website}
-                  </a>
-                </dd>
-                <dt>Tool</dt>
-                <dd>{selected.toolName}</dd>
-                <dt>Description</dt>
-                <dd>{selected.description}</dd>
-              </dl>
-              <form
-                className="portal-form"
-                onSubmit={async (e) => {
-                  e.preventDefault();
-                  setBusy(true);
-                  setError("");
-                  try {
-                    await api(`/admin/companies/${selected.id}/review`, {
-                      ...form,
-                      providerId: form.providerId || null,
-                      revision: selected.revision,
-                    });
-                    await refresh();
-                    setSelected(undefined);
-                    setNotice(
-                      "Company review saved. The owner will see your feedback.",
-                    );
-                  } catch (e) {
-                    setError((e as Error).message);
-                  } finally {
-                    setBusy(false);
-                  }
-                }}
-              >
-                <label>
-                  Decision
-                  <select
-                    value={form.status}
-                    onChange={(e) =>
-                      setForm({
-                        ...form,
-                        status: e.target.value,
-                        insightsEnabled: false,
-                      })
-                    }
+        <div className="portal-review-grid">
+          <Panel title="Registered companies">
+            <div className="portal-company-list">
+              {items
+                .filter((i) => filter === "all" || i.status === filter)
+                .map((item) => (
+                  <button
+                    key={item.id}
+                    aria-pressed={selected?.id === item.id}
+                    onClick={() => void select(item)}
                   >
-                    <option value="approved">Approve</option>
-                    <option value="rejected">Request changes</option>
-                    <option value="suspended">Suspend access</option>
-                  </select>
-                </label>
-                <label>
-                  Verified provider integration
-                  <select
-                    value={form.providerId}
-                    onChange={(e) =>
-                      setForm({
-                        ...form,
-                        providerId: e.target.value,
-                        insightsEnabled: e.target.value
-                          ? form.insightsEnabled
-                          : false,
-                      })
-                    }
-                  >
-                    <option value="">
-                      None: the company supplies its own connector
-                    </option>
-                    {providerIds.map((p) => (
-                      <option key={p} value={p}>
-                        {providerLabel(p)}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="portal-checkbox">
-                  <input
-                    type="checkbox"
-                    disabled={form.status !== "approved" || !form.providerId}
-                    checked={form.insightsEnabled}
-                    onChange={(e) =>
-                      setForm({ ...form, insightsEnabled: e.target.checked })
-                    }
-                  />
-                  Release aggregate insights after ownership review
-                </label>
-                <label>
-                  Feedback to company
-                  <Textarea
-                    required
-                    minLength={5}
-                    maxLength={1500}
-                    value={form.feedback}
-                    onChange={(e) =>
-                      setForm({ ...form, feedback: e.target.value })
-                    }
-                  />
-                </label>
-                <Button type="submit" disabled={busy}>
-                  {busy ? "Saving…" : "Save review"}
-                </Button>
-              </form>
-              <details className="portal-audit">
-                <summary>Review history</summary>
-                {history.map((event) => (
-                  <div key={event.revision}>
-                    <strong>
-                      {event.revision === 0
-                        ? "Registration submitted"
-                        : String(event.data.status)}
-                    </strong>
-                    <p>
-                      {date(event.at)} · {event.actorId}
-                    </p>
-                    {typeof event.data.feedback === "string" && (
-                      <p>{event.data.feedback}</p>
-                    )}
-                  </div>
+                    <strong>{item.name}</strong>
+                    <span>
+                      {item.toolName} · {statusLabels[item.status]}
+                    </span>
+                  </button>
                 ))}
-              </details>
-            </>
-          ) : (
-            <p>
-              Open a registration to verify the company and review its
-              integration.
-            </p>
-          )}
-        </Panel>
+              {loading && !items.length ? (
+                <p role="status" className="subtle">
+                  Loading company reviews…
+                </p>
+              ) : (
+                !error &&
+                !items.some((i) => filter === "all" || i.status === filter) && (
+                  <Empty title="No companies in this queue" icon={CheckCircle}>
+                    New registrations will appear here. Change the review status
+                    to see other companies.
+                  </Empty>
+                )
+              )}
+            </div>
+            <div className="account-actions">
+              {cursor && (
+                <Button variant="outline" onClick={() => setCursor("")}>
+                  First page
+                </Button>
+              )}
+              {nextCursor && (
+                <Button variant="outline" onClick={() => setCursor(nextCursor)}>
+                  Next page
+                </Button>
+              )}
+            </div>
+          </Panel>
+          <Panel
+            title={selected ? `Review ${selected.name}` : "Select a company"}
+          >
+            {selected ? (
+              <>
+                <dl className="portal-details">
+                  <dt>Applicant</dt>
+                  <dd>{selected.ownerEmail}</dd>
+                  <dt>Website</dt>
+                  <dd>
+                    <a href={selected.website} target="_blank" rel="noreferrer">
+                      {selected.website}
+                    </a>
+                  </dd>
+                  <dt>Tool</dt>
+                  <dd>{selected.toolName}</dd>
+                  <dt>Description</dt>
+                  <dd>{selected.description}</dd>
+                </dl>
+                <form
+                  className="portal-form"
+                  onSubmit={async (e) => {
+                    e.preventDefault();
+                    setBusy(true);
+                    setError("");
+                    try {
+                      await api(`/admin/companies/${selected.id}/review`, {
+                        ...form,
+                        providerId: form.providerId || null,
+                        revision: selected.revision,
+                      });
+                      await refresh();
+                      setSelected(undefined);
+                      setNotice(
+                        "Company review saved. The owner will see your feedback.",
+                      );
+                    } catch (e) {
+                      setError((e as Error).message);
+                    } finally {
+                      setBusy(false);
+                    }
+                  }}
+                >
+                  <label>
+                    Decision
+                    <select
+                      value={form.status}
+                      onChange={(e) =>
+                        setForm({
+                          ...form,
+                          status: e.target.value,
+                          insightsEnabled: false,
+                        })
+                      }
+                    >
+                      <option value="approved">Approve</option>
+                      <option value="rejected">Request changes</option>
+                      <option value="suspended">Suspend access</option>
+                    </select>
+                  </label>
+                  <label>
+                    Verified provider integration
+                    <select
+                      value={form.providerId}
+                      onChange={(e) =>
+                        setForm({
+                          ...form,
+                          providerId: e.target.value,
+                          insightsEnabled: e.target.value
+                            ? form.insightsEnabled
+                            : false,
+                        })
+                      }
+                    >
+                      <option value="">
+                        None: the company supplies its own connector
+                      </option>
+                      {providerIds.map((p) => (
+                        <option key={p} value={p}>
+                          {providerLabel(p)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="portal-checkbox">
+                    <input
+                      type="checkbox"
+                      disabled={form.status !== "approved" || !form.providerId}
+                      checked={form.insightsEnabled}
+                      onChange={(e) =>
+                        setForm({ ...form, insightsEnabled: e.target.checked })
+                      }
+                    />
+                    Release aggregate insights after ownership review
+                  </label>
+                  <label>
+                    Feedback to company
+                    <Textarea
+                      required
+                      minLength={5}
+                      maxLength={1500}
+                      value={form.feedback}
+                      onChange={(e) =>
+                        setForm({ ...form, feedback: e.target.value })
+                      }
+                    />
+                  </label>
+                  <Button type="submit" disabled={busy}>
+                    {busy ? "Saving…" : "Save review"}
+                  </Button>
+                </form>
+                <details className="portal-audit">
+                  <summary>Review history</summary>
+                  {history.map((event) => (
+                    <div key={event.revision}>
+                      <strong>
+                        {event.revision === 0
+                          ? "Registration submitted"
+                          : String(event.data.status)}
+                      </strong>
+                      <p>
+                        {date(event.at)} · {event.actorId}
+                      </p>
+                      {typeof event.data.feedback === "string" && (
+                        <p>{event.data.feedback}</p>
+                      )}
+                    </div>
+                  ))}
+                </details>
+              </>
+            ) : (
+              <Empty title="Ready for review" icon={Building07}>
+                Select a company to review its profile, verify ownership, and
+                link an integration.
+              </Empty>
+            )}
+          </Panel>
+        </div>
       </div>
     </PortalShell>
   );
@@ -1082,7 +1143,7 @@ export function AccountSettings() {
         <div className="settings-account-links">
           {account.previewRole !== "company" && (
             <a href="#dashboard">
-              My dashboard <ArrowRight size={16} />
+              Home <ArrowRight size={16} />
             </a>
           )}
           <a href="#company">

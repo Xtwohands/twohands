@@ -474,142 +474,142 @@ export class Observatory {
     });
   }
   async catalog(apiKeyId?: string) {
-    const operatorAllowance = await this.db.store.allowance.status();
-    const sessions = await this.db.list();
-    const calls = (
-      await Promise.all(
-        sessions.flatMap(async (s) => await this.db.calls(s.id)),
-      )
-    ).flat();
-    const controlled = (await this.controlledSamples?.()) ?? {};
+    // Global listing reads use their own pool interface, outside the scoped read.
     const listings = (await this.listings?.()) ?? {};
-    return await Promise.all(
-      (Object.keys(names) as ToolName[]).map(async (tool) => {
-        const provider = names[tool];
-        const samples = calls.filter(
-          (c) => c.tool === tool && ["succeeded", "failed"].includes(c.status),
-        );
-        const callIds = new Set(samples.map((c) => c.id));
-        const linkedCriteria = { pass: 0, fail: 0, unknown: 0 };
-        let reviewedSessions = 0;
-        let multiToolCriteria = 0;
-        const reviewSources: Record<string, number> = {};
-        for (const session of sessions) {
-          const review = session.evaluations
-            .filter((e) => e.outcomeId === session.outcomes.at(-1)?.id)
-            .at(-1);
-          const linked =
-            review?.criteria.filter((c) =>
-              c.evidenceCallIds.some((id) => callIds.has(id)),
-            ) ?? [];
-          if (!linked.length) continue;
-          reviewedSessions++;
-          const source = review?.reviewer?.kind ?? "unspecified";
-          reviewSources[source] = (reviewSources[source] ?? 0) + 1;
-          for (const criterion of linked) {
-            linkedCriteria[criterion.verdict]++;
-            if (criterion.evidenceCallIds.some((id) => !callIds.has(id)))
-              multiToolCriteria++;
+    return this.db.store.db.read(async () => {
+      const operatorAllowance = await this.db.store.allowance.status();
+      const sessions = await this.db.reviewSessions();
+      const calls = await this.db.metricCalls();
+      const controlled = (await this.controlledSamples?.()) ?? {};
+      const policy = await this.routingPolicy();
+      const key = apiKeyId ? await this.db.apiKeys.active(apiKeyId) : undefined;
+      return await Promise.all(
+        (Object.keys(names) as ToolName[]).map(async (tool) => {
+          const provider = names[tool];
+          const samples = calls.filter(
+            (c) =>
+              c.tool === tool && ["succeeded", "failed"].includes(c.status),
+          );
+          const callIds = new Set(samples.map((c) => c.id));
+          const linkedCriteria = { pass: 0, fail: 0, unknown: 0 };
+          let reviewedSessions = 0;
+          let multiToolCriteria = 0;
+          const reviewSources: Record<string, number> = {};
+          for (const session of sessions) {
+            const review = session.evaluations
+              .filter((e) => e.outcomeId === session.outcomeId)
+              .at(-1);
+            const linked =
+              review?.criteria.filter((c) =>
+                c.evidenceCallIds.some((id) => callIds.has(id)),
+              ) ?? [];
+            if (!linked.length) continue;
+            reviewedSessions++;
+            const source = review?.reviewer?.kind ?? "unspecified";
+            reviewSources[source] = (reviewSources[source] ?? 0) + 1;
+            for (const criterion of linked) {
+              linkedCriteria[criterion.verdict]++;
+              if (criterion.evidenceCallIds.some((id) => !callIds.has(id)))
+                multiToolCriteria++;
+            }
           }
-        }
-        const latencySamples = samples
-          .flatMap((c) =>
-            typeof c.latencyMs === "number" ? [c.latencyMs] : [],
-          )
-          .sort((a, b) => a - b);
-        const medianLatencyMs = latencySamples.length
-          ? latencySamples.length % 2
-            ? latencySamples[Math.floor(latencySamples.length / 2)]
-            : (latencySamples[latencySamples.length / 2 - 1] +
-                latencySamples[latencySamples.length / 2]) /
-              2
-          : null;
-        return {
-          tool,
-          provider,
-          enabled:
-            !(await this.routingPolicy()).disabledTools.includes(tool) &&
-            (!apiKeyId ||
-              (await this.db.apiKeys.active(apiKeyId)).allowedTools.includes(
-                tool,
-              )),
-          reputation: {
-            organic: {
-              source: "observed_workspace_calls",
-              sampleCount: samples.length,
-              succeeded: samples.filter((c) => c.status === "succeeded").length,
-              failed: samples.filter((c) => c.status === "failed").length,
-              interrupted: calls.filter(
-                (c) => c.tool === tool && c.status === "interrupted",
-              ).length,
-              latencySampleCount: latencySamples.length,
-              medianLatencyMs,
-              successRate:
-                samples.length >= 5
-                  ? samples.filter((c) => c.status === "succeeded").length /
-                    samples.length
-                  : null,
-              minimumRateSamples: 5,
-              lastObservedAt:
-                samples
-                  .map((c) => c.finishedAt ?? c.startedAt)
-                  .sort()
-                  .at(-1) ?? null,
-              scope:
-                "Same tool across account tasks; not a task-specific prediction or answer-quality score. API success can include an unusable page.",
+          const latencySamples = samples
+            .flatMap((c) =>
+              typeof c.latencyMs === "number" ? [c.latencyMs] : [],
+            )
+            .sort((a, b) => a - b);
+          const medianLatencyMs = latencySamples.length
+            ? latencySamples.length % 2
+              ? latencySamples[Math.floor(latencySamples.length / 2)]
+              : (latencySamples[latencySamples.length / 2 - 1] +
+                  latencySamples[latencySamples.length / 2]) /
+                2
+            : null;
+          return {
+            tool,
+            provider,
+            enabled:
+              !policy.disabledTools.includes(tool) &&
+              (!apiKeyId || key!.allowedTools.includes(tool)),
+            reputation: {
+              organic: {
+                source: "observed_workspace_calls",
+                sampleCount: samples.length,
+                succeeded: samples.filter((c) => c.status === "succeeded")
+                  .length,
+                failed: samples.filter((c) => c.status === "failed").length,
+                interrupted: calls.filter(
+                  (c) => c.tool === tool && c.status === "interrupted",
+                ).length,
+                latencySampleCount: latencySamples.length,
+                medianLatencyMs,
+                successRate:
+                  samples.length >= 5
+                    ? samples.filter((c) => c.status === "succeeded").length /
+                      samples.length
+                    : null,
+                minimumRateSamples: 5,
+                lastObservedAt:
+                  samples
+                    .map((c) => c.finishedAt ?? c.startedAt)
+                    .sort()
+                    .at(-1) ?? null,
+                scope:
+                  "Same tool across account tasks; not a task-specific prediction or answer-quality score. API success can include an unusable page.",
+              },
+              outcomeEvidence: {
+                source: "workspace_review",
+                reviewedSessions,
+                linkedCriteria,
+                multiToolCriteria,
+                reviewSources,
+                scope:
+                  "Latest reviews of latest outputs with explicit evidence links to this tool. Criterion verdicts assess answers, not provider causation or task-specific accuracy.",
+              },
+              controlled: controlled[provider] ?? null,
             },
-            outcomeEvidence: {
-              source: "workspace_review",
-              reviewedSessions,
-              linkedCriteria,
-              multiToolCriteria,
-              reviewSources,
-              scope:
-                "Latest reviews of latest outputs with explicit evidence links to this tool. Criterion verdicts assess answers, not provider causation or task-specific accuracy.",
-            },
-            controlled: controlled[provider] ?? null,
-          },
-          ...toolCapabilities[tool],
-          ...(listings[provider]
-            ? {
-                description: listings[provider].description,
-                useWhen: listings[provider].useWhen,
-                limitations: listings[provider].limitations,
-              }
-            : {}),
-          // 0 is the adapter's built-in text; higher numbers are seller-approved versions.
-          listingVersion: listings[provider]?.version ?? 0,
-          available:
-            providerRegistry.credentialStatus(tool).configured &&
-            providerRegistry.credentialStatus(tool).enabled,
-          adapterVersion: providerRegistry.get(tool).version,
-          operatorAllowance,
-          operatorAllowed: operatorAllows(
+            ...toolCapabilities[tool],
+            ...(listings[provider]
+              ? {
+                  description: listings[provider].description,
+                  useWhen: listings[provider].useWhen,
+                  limitations: listings[provider].limitations,
+                }
+              : {}),
+            // 0 is the adapter's built-in text; higher numbers are seller-approved versions.
+            listingVersion: listings[provider]?.version ?? 0,
+            available:
+              providerRegistry.credentialStatus(tool).configured &&
+              providerRegistry.credentialStatus(tool).enabled,
+            adapterVersion: providerRegistry.get(tool).version,
             operatorAllowance,
-            providerEstimate(provider),
-          ),
-          estimatedMicros: providerEstimate(provider),
-          rateCardVersion: config.rateCardVersion,
-          sampleCount: samples.length,
-          sampleScope:
-            "Completed organic calls across this account; includes successes and failures. Controlled tests are excluded. Usage is not quality.",
-          controlledTestSample: controlled[provider] ?? null,
-          averageLatencyMs:
-            samples.length >= 5
-              ? Math.round(
-                  samples.reduce((n, c) => n + (c.latencyMs || 0), 0) /
-                    samples.length,
-                )
-              : null,
-          successRate:
-            samples.length >= 5
-              ? samples.filter((c) => c.status === "succeeded").length /
-                samples.length
-              : null,
-          quality: null,
-        };
-      }),
-    );
+            operatorAllowed: operatorAllows(
+              operatorAllowance,
+              providerEstimate(provider),
+            ),
+            estimatedMicros: providerEstimate(provider),
+            rateCardVersion: config.rateCardVersion,
+            sampleCount: samples.length,
+            sampleScope:
+              "Completed organic calls across this account; includes successes and failures. Controlled tests are excluded. Usage is not quality.",
+            controlledTestSample: controlled[provider] ?? null,
+            averageLatencyMs:
+              samples.length >= 5
+                ? Math.round(
+                    samples.reduce((n, c) => n + (c.latencyMs || 0), 0) /
+                      samples.length,
+                  )
+                : null,
+            successRate:
+              samples.length >= 5
+                ? samples.filter((c) => c.status === "succeeded").length /
+                  samples.length
+                : null,
+            quality: null,
+          };
+        }),
+      );
+    });
   }
   async discover(
     id: string,
@@ -1655,79 +1655,88 @@ export class Observatory {
     });
   }
   async summary() {
-    const sessions = await this.db.list();
-    const modelNames = [...new Set(sessions.map((s) => s.model))];
-    const models = modelNames.map((model) => {
-      const group = sessions.filter((s) => s.model === model);
-      const reviews = group.flatMap((s) => {
-        const e = s.evaluations
-          .filter((e) => e.outcomeId === s.outcomes.at(-1)?.id)
-          .at(-1);
-        return e ? [e] : [];
-      });
-      const complete = reviews.filter(
-        (e) => e.unknownWeight === 0 && e.score !== null,
-      );
-      return {
-        model,
-        identity: "Reported, not independently verified",
-        sessions: group.length,
-        reviewed: reviews.length,
-        fullyReviewed: complete.length,
-        score:
-          complete.length >= 5 && model !== "Not reported"
-            ? Math.round(
-                complete.reduce((n, e) => n + e.score!, 0) / complete.length,
-              )
-            : null,
-        scoreUnavailableReason:
-          model === "Not reported"
-            ? "Model identity not reported"
-            : complete.length < 5
-              ? "Not enough reviews"
+    return this.db.store.db.read(async () => {
+      const sessions = await this.db.reviewSessions();
+      const modelNames = [...new Set(sessions.map((s) => s.model))];
+      const models = modelNames.map((model) => {
+        const group = sessions.filter((s) => s.model === model);
+        const reviews = group.flatMap((s) => {
+          const e = s.evaluations
+            .filter((e) => e.outcomeId === s.outcomeId)
+            .at(-1);
+          return e ? [e] : [];
+        });
+        const complete = reviews.filter(
+          (e) => e.unknownWeight === 0 && e.score !== null,
+        );
+        return {
+          model,
+          identity: "Reported, not independently verified",
+          sessions: group.length,
+          reviewed: reviews.length,
+          fullyReviewed: complete.length,
+          score:
+            complete.length >= 5 && model !== "Not reported"
+              ? Math.round(
+                  complete.reduce((n, e) => n + e.score!, 0) / complete.length,
+                )
               : null,
-        assistantReviewed: reviews.filter(
-          (e) => e.reviewer?.kind === "assistant_reported",
+          scoreUnavailableReason:
+            model === "Not reported"
+              ? "Model identity not reported"
+              : complete.length < 5
+                ? "Not enough reviews"
+                : null,
+          assistantReviewed: reviews.filter(
+            (e) => e.reviewer?.kind === "assistant_reported",
+          ).length,
+          humanReportedReviews: reviews.filter(
+            (e) => e.reviewer?.kind === "human_reported",
+          ).length,
+          minimumSamples: 5,
+          sampleUnit: "Latest fully reviewed outcome per session",
+          reviewSource: "Local workspace operator",
+        };
+      });
+      const sharing = sessions.filter((s) => s.commercialConsent);
+      return {
+        sessions: sessions.length,
+        pendingApproval: sessions.filter((s) => !s.approvedAt).length,
+        outputs: sessions.filter((s) => s.outcomeId).length,
+        reviews: sessions.filter((s) =>
+          s.evaluations.some((e) => e.outcomeId === s.outcomeId),
         ).length,
-        humanReportedReviews: reviews.filter(
-          (e) => e.reviewer?.kind === "human_reported",
-        ).length,
-        minimumSamples: 5,
-        sampleUnit: "Latest fully reviewed outcome per session",
-        reviewSource: "Local workspace operator",
+        estimatedMicros: sessions.reduce((n, s) => n + s.spentMicros, 0),
+        openCases: sessions.reduce(
+          (n, s) => n + s.cases.filter((c) => c.status === "open").length,
+          0,
+        ),
+        models,
+        sharing: {
+          consentedSessions: sharing.length, // Legacy response field.
+          includedSessions: sharing.length,
+          policy: SHARING_POLICY,
+          minimumCohort: 0,
+          available: !!(await this.db.store.db
+            .prepare(
+              `SELECT 1 FROM observation_calls c JOIN observation_sessions s ON s.id=c.session_id
+           ${this.db.store.db.dialect === "postgres" ? "AND s.workspace_id=c.workspace_id" : ""}
+           WHERE CAST(json_extract(s.body,'$.commercialConsent') AS TEXT) IN ('1','true')
+           AND json_extract(c.body,'$.status') IN ('succeeded','failed') LIMIT 1`,
+            )
+            .get()),
+          published: false,
+        },
       };
     });
-    const sharing = sessions.filter((s) => s.commercialConsent);
-    return {
-      sessions: sessions.length,
-      pendingApproval: sessions.filter((s) => !s.approvedAt).length,
-      outputs: sessions.filter((s) => s.outcomes.length).length,
-      reviews: sessions.filter((s) =>
-        s.evaluations.some((e) => e.outcomeId === s.outcomes.at(-1)?.id),
-      ).length,
-      estimatedMicros: sessions.reduce((n, s) => n + s.spentMicros, 0),
-      openCases: sessions.reduce(
-        (n, s) => n + s.cases.filter((c) => c.status === "open").length,
-        0,
-      ),
-      models,
-      sharing: {
-        consentedSessions: sharing.length, // Legacy response field.
-        includedSessions: sharing.length,
-        policy: SHARING_POLICY,
-        minimumCohort: 0,
-        available: (await this.commercialAggregate()).available,
-        published: false,
-      },
-    };
   }
   async commercialAggregate() {
     const sessions = (await this.db.list()).filter((s) => s.commercialConsent);
+    const allCalls = await this.db.metricCalls();
     const sessionCalls = new Map(
-      await Promise.all(
-        sessions.map(async (s) => [s.id, await this.db.calls(s.id)] as const),
-      ),
+      sessions.map((s) => [s.id, [] as typeof allCalls]),
     );
+    for (const call of allCalls) sessionCalls.get(call.sessionId)?.push(call);
     const providers = Object.values(names).flatMap((provider) => {
       const relevant = sessions.filter((s) =>
         sessionCalls

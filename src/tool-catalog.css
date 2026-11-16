@@ -135,6 +135,7 @@
   gap: 22px;
   align-items: start;
   min-height: 213px;
+  padding-bottom: 0;
 }
 
 .catalog-card-intro {
@@ -248,11 +249,12 @@
   font-variant-numeric: tabular-nums;
 }
 
-.catalog-card-footer {
-  align-items: flex-end;
-  margin: 0;
-  padding: 0;
+.tool-catalog .catalog-card-footer {
+  align-items: center;
+  margin: 0 -16px;
+  padding: 12px 16px;
   border: 0;
+  border-top: 1px solid var(--border);
 }
 
 .catalog-card-footer .catalog-action-chip {
@@ -372,11 +374,6 @@
 .catalog-adapter-details summary {
   width: fit-content;
   cursor: pointer;
-}
-
-.catalog-secondary-actions {
-  display: flex;
-  justify-content: flex-end;
 }
 
 @media (max-width: 1140px) {
