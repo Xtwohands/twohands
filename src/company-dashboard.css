@@ -264,7 +264,7 @@
 }
 .company-dashboard .company-capability a {
   font-size: 12px;
-  color: var(--brand-accent);
+  color: var(--brand-accent-text);
   text-decoration: none;
 }
 .company-dashboard .company-capability a:hover {
@@ -532,7 +532,7 @@
   max-width: 74ch;
 }
 .company-dashboard .company-capability a {
-  color: var(--brand-accent);
+  color: var(--brand-accent-text);
 }
 .company-capability-full {
   display: grid;
@@ -652,7 +652,7 @@
   gap: 20px 16px;
 }
 .company-details-grid .portal-details a {
-  color: var(--brand-accent);
+  color: var(--brand-accent-text);
   text-underline-offset: 3px;
 }
 .portal-company .portal-team-member {

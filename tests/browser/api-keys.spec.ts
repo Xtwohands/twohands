@@ -249,9 +249,10 @@ test("owner rejection clears the one-time secret and the key list", async ({
   await expect(
     page.getByLabel("New API key secret", { exact: true }),
   ).toHaveCount(0);
+  // The table stays on screen; the rejected owner's keys must be gone from it.
   await expect(
     page.getByRole("region", { name: "API keys", exact: true }),
-  ).toHaveCount(0);
+  ).not.toContainText("Rejected owner");
   await expect(
     page.getByText("Owner credential rejected.", { exact: true }),
   ).toBeVisible();

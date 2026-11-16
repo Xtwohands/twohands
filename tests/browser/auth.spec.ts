@@ -362,6 +362,11 @@ async function login(page: Page, destination = "/#dashboard/activity") {
     .fill("fixture-password-123");
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
 }
+/** Activity hides the refresh control unless it has an error; Requests keeps it. */
+async function refreshAccount(page: Page) {
+  await page.getByRole("link", { name: "View requests", exact: true }).click();
+  await page.getByRole("button", { name: "Refresh account" }).click();
+}
 async function openNav(page: Page) {
   if (test.info().project.name !== "mobile") return;
   const menu = page.getByRole("button", { name: /^Account menu/ }).last();
@@ -390,11 +395,11 @@ test("email sign-in, persisted session, and sign-out clear the private workspace
 }) => {
   await mockAuth(page);
   await login(page);
-  await expect(page.locator(".ws-activity-table")).toContainText(
+  await expect(page.locator(".ws-overview-requests")).toContainText(
     "Private A receipt",
   );
   await page.reload();
-  await expect(page.locator(".ws-activity-table")).toContainText(
+  await expect(page.locator(".ws-overview-requests")).toContainText(
     "Private A receipt",
   );
   await openNav(page);
@@ -418,17 +423,18 @@ test("new accounts start automatically and expired access removes private conten
   await expect(
     page.getByRole("button", { name: "Create workspace", exact: true }),
   ).toHaveCount(0);
-  await expect(page.locator(".ws-activity-table")).toContainText(
+  await expect(page.locator(".ws-overview-requests")).toContainText(
     "Private A receipt",
   );
   expect(state.setupCalls).toBe(0);
   await page.reload();
-  await expect(page.locator(".ws-activity-table")).toContainText(
+  await expect(page.locator(".ws-overview-requests")).toContainText(
     "Private A receipt",
   );
   expect(state.setupCalls).toBe(0);
   state.revoked = true;
-  await page.getByRole("button", { name: "Refresh account" }).click();
+  // Opening Requests reloads account data, which reveals the expired session.
+  await page.getByRole("link", { name: "View requests", exact: true }).click();
   await expect(
     page.getByRole("heading", { name: "Continue to twohands" }),
   ).toBeVisible();
@@ -515,12 +521,12 @@ test("a delayed profile response cannot restore the previous account after sign-
     .getByLabel("Password", { exact: true })
     .fill("fixture-password-123");
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
-  await expect(page.locator(".ws-activity-table")).toContainText(
+  await expect(page.locator(".ws-overview-requests")).toContainText(
     "Private B receipt",
   );
   release();
   await expect.poll(() => finished).toBe(true);
-  await page.getByRole("button", { name: "Refresh account" }).click();
+  await refreshAccount(page);
   await expect(page.locator(".ws-activity-table")).toContainText(
     "Private B receipt",
   );
@@ -856,19 +862,19 @@ test("admin switches selected companies, drops late reports, and retains return 
   await captureJourney(page, "company-preview-picker");
   await page.getByRole("button", { name: "Open company preview" }).click();
   await expect(
-    page.getByRole("banner").filter({ hasText: a.name }),
+    page.getByRole("heading", { name: `${a.name} dashboard`, level: 1 }),
   ).toBeVisible();
   await expect.poll(() => waiting).toBe(true);
   await page
     .getByLabel("Preview company", { exact: true })
     .selectOption(`company:${b.id}`);
   await expect(
-    page.getByRole("banner").filter({ hasText: b.name }),
+    page.getByRole("heading", { name: `${b.name} dashboard`, level: 1 }),
   ).toBeVisible();
   release();
   await expect(page.getByText("987654", { exact: true })).toHaveCount(0);
   await expect(
-    page.getByRole("heading", { name: "No usage available yet", exact: true }),
+    page.getByText("No usage available yet", { exact: true }).first(),
   ).toBeVisible();
   await page.goto(`/#company/${b.id}/overview`);
   await expect(

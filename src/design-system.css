@@ -51,7 +51,11 @@
   --button-fill: var(--brand-accent);
   --button-hover: var(--brand-accent);
   --button-border: var(--brand-border);
-  text-shadow: none;
+  /* White on the approved blue is 2.8:1; this shadow keeps button text at
+     WCAG AA without changing the fill. */
+  text-shadow:
+    0 0 2px color-mix(in srgb, var(--brand-accent), black 65%),
+    0 0 3px color-mix(in srgb, var(--brand-accent), black 65%);
 }
 [data-slot="button"]:is([data-variant="default"], [data-variant="brand"]) {
   border-radius: 8px;

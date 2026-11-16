@@ -28,9 +28,14 @@ async function assertNoDarkBlueButtons(page: Page) {
   ).toEqual([]);
 }
 
-async function checkStates(page: Page, control: Locator, filled: boolean) {
+async function checkStates(
+  page: Page,
+  control: Locator,
+  filled: boolean,
+  textColor = accent,
+) {
   const assertColors = async () => {
-    await expect(control).toHaveCSS("color", filled ? white : accent);
+    await expect(control).toHaveCSS("color", filled ? white : textColor);
     if (filled) await expect(control).toHaveCSS("background-color", accent);
     await assertNoDarkBlueButtons(page);
   };
@@ -70,7 +75,7 @@ for (const route of ["/#home", "/#dashboard/tools"]) {
   });
 }
 
-test("the link button variant uses the unmodified accent in every pointer state", async ({
+test("the link button variant uses the AA text shade of the accent in every pointer state", async ({
   page,
 }) => {
   await page.goto("/#dashboard/tools");
@@ -86,5 +91,20 @@ test("the link button variant uses the unmodified accent in every pointer state"
     probe.textContent = "Link-style button color check";
     document.querySelector("main")!.prepend(probe);
   });
-  await checkStates(page, page.locator("#brand-link-style-probe"), false);
+  // Link text uses --brand-accent-text: the approved blue is 2.8:1 on white.
+  const textShade = await page.evaluate(() => {
+    const sample = document.createElement("span");
+    sample.style.color = "var(--brand-accent-text)";
+    document.body.append(sample);
+    const color = getComputedStyle(sample).color;
+    sample.remove();
+    return color;
+  });
+  expect(textShade).not.toBe(accent);
+  await checkStates(
+    page,
+    page.locator("#brand-link-style-probe"),
+    false,
+    textShade,
+  );
 });
