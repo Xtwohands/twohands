@@ -740,17 +740,75 @@ hosted("hosted wallet enforcement", () => {
     });
   });
 
-  it("leaves tools without a verified rate outside wallet billing", async () => {
+  it("refuses unrated paid calls while credits are short and never charges them", async () => {
     const id = await session();
+    const advanced = () => call(randomUUID(), { searchDepth: "advanced" });
+    const nine = () => call(randomUUID(), { maxResults: 9 });
+    for (const variant of [advanced, nine])
+      await expect(run(id, variant())).rejects.toMatchObject({
+        code: "insufficient_credits",
+        status: 402,
+        wallet: { reason: "insufficient_balance", requiredMicros: 7700 },
+      });
+    expect(search).not.toHaveBeenCalled();
+    expect(await obs.db.calls(id)).toEqual([]);
+
+    await fund(7700);
+    for (const variant of [advanced, nine])
+      expect((await run(id, variant())).status).toBe("succeeded");
+    expect(await holds()).toEqual([]);
+    expect(await debits()).toEqual([]);
+    expect(await status()).toMatchObject({
+      availableMicros: 7700,
+      chargedMicros: 0,
+    });
+
+    // An account that is not enrolled is untouched by the wallet.
+    await db.pool.query(
+      "DELETE FROM octolab.wallet_rates WHERE workspace_id=$1",
+      [workspace],
+    );
+    const neighborless = await session();
+    expect((await run(neighborless, call())).status).toBe("succeeded");
+    expect(await holds()).toEqual([]);
+  });
+
+  it("fails closed when the verified rate has lapsed or the credential rotated", async () => {
+    await fund(20_000_000);
+    const alert = vi.spyOn(console, "error").mockImplementation(() => {});
+    const id = await session();
+    const unbillable = {
+      code: "billing_unavailable",
+      status: 409,
+      wallet: { reason: "rate_unverified" },
+    };
+    config.keys.tavily = "rotated-fixture-secret";
+    await expect(run(id, call())).rejects.toMatchObject(unbillable);
+    config.keys.tavily = fixtureKey;
+    await db.pool.query(
+      "UPDATE octolab.wallet_rates SET verified_at=now()-interval '2 hours', expires_at=now()-interval '1 hour' WHERE workspace_id=$1",
+      [workspace],
+    );
+    await expect(run(id, call())).rejects.toMatchObject(unbillable);
+    expect(await status()).toMatchObject({ enforced: true });
+    expect(search).not.toHaveBeenCalled();
+    expect(await holds()).toEqual([]);
+    expect(await obs.db.calls(id)).toEqual([]);
+    expect(alert).toHaveBeenCalledTimes(2);
+    expect(alert.mock.calls[0][0]).toMatch(/re-verified/);
+    expect(alert.mock.calls[0][0]).not.toContain(fixtureKey);
+    alert.mockRestore();
+    // Unrated paid calls still run, uncharged, while the rate is lapsed.
     expect(
       (await run(id, call(randomUUID(), { searchDepth: "advanced" }))).status,
     ).toBe("succeeded");
-    config.keys.tavily = "rotated-fixture-secret";
+    await setRate(7000);
+    await db.pool.query(
+      "UPDATE octolab.wallet_rates SET verified_at=now()-interval '1 hour', expires_at=now()+interval '1 hour' WHERE workspace_id=$1",
+      [workspace],
+    );
     expect((await run(id, call())).status).toBe("succeeded");
-    expect(await holds()).toEqual([]);
-    expect(await debits()).toEqual([]);
-    config.keys.tavily = fixtureKey;
-    await expect(run(id, call())).rejects.toBeInstanceOf(WalletError);
+    expect(await debits()).toHaveLength(1);
   });
 
   it("isolates neighbouring accounts and restricts runtime postings", async () => {

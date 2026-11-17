@@ -90,7 +90,7 @@ The Stripe sandbox mirror is separately default-off. With `TWO_HANDS_SHADOW_STRI
 
 ## Sandbox enforcement
 
-Phase 2 is implemented behind `TWO_HANDS_WALLET_ENFORCEMENT`, default off. It uses separate `octolab.wallet_*` tables: a hold per admitted call, an append-only journal fed by verified Stripe test-mode deposits, refunds and dispute holds, and a balance projection rebuildable from the journal. Enrolled accounts are denied before dispatch with `insufficient_credits` when available credits cannot cover the hold. The shadow tables keep recording independently. The operator allowance, key caps and session caps remain separate required controls; a top-up does not grant an allowance. See [wallet enforcement](WALLET_ENFORCEMENT.md).
+Phase 2 is implemented behind `TWO_HANDS_WALLET_ENFORCEMENT`, default off. It uses separate `octolab.wallet_*` tables: a hold per admitted call, an append-only journal fed by verified Stripe test-mode deposits, refunds and dispute holds, and a balance projection rebuildable from the journal. Enrolled accounts are denied before dispatch with `insufficient_credits` when available credits cannot cover the hold, for every paid tool, and a lapsed or mismatched rate fails closed with `billing_unavailable`. The shadow tables keep recording independently. The operator allowance, key caps and session caps remain separate required controls; a top-up does not grant an allowance. See [wallet enforcement](WALLET_ENFORCEMENT.md).
 
 Before a customer pilot, add live Checkout funding, durable payment-event recovery, customer balances and statements, and wallet enforcement on every enabled customer entry point. Verify dispute resolution, unused-balance refunds, and provider terms and rates before accepting real money.
 

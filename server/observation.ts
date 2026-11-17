@@ -1171,7 +1171,7 @@ export class Observatory {
       s.status = "active";
       await this.db.save(s);
       await this.db.saveCall(call, signature);
-      // Denies before dispatch when available credits cannot cover the hold.
+      // Denies before dispatch when an enrolled account's credits are short.
       walletHeld = await this.db.wallet.admit(call, config.keys[provider]);
       if (s.authorizationSource === "backend_policy")
         shadowReserved = await this.db.shadowWallet.recordAdmission(
@@ -1399,6 +1399,9 @@ export class Observatory {
       s.status = "active";
       await this.db.save(s);
       await this.db.saveCall(call, signature);
+      // Connector tools are never held or charged, but a paid one is refused
+      // while an enrolled account is out of credits.
+      await this.db.wallet.admit(call);
       await this.db.event(id, "selection_explanation", "agent_reported", {
         callId: call.id,
         tool: call.tool,

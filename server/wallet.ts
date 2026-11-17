@@ -21,21 +21,31 @@ export interface WalletStatus {
   frozen: boolean;
 }
 export interface WalletDenial {
-  reason: "insufficient_balance" | "dispute_hold";
+  /**
+   * `rate_unverified`: the account is enrolled but its verified rate has
+   * expired or no longer matches the provider credential, so the call cannot
+   * be billed and is refused until an operator re-verifies the rate.
+   */
+  reason: "insufficient_balance" | "dispute_hold" | "rate_unverified";
   requiredMicros: number;
   availableMicros: number;
   heldMicros: number;
 }
 /** Refusal before dispatch. Nothing was reserved, charged or sent to a provider. */
 export class WalletError extends Error {
-  readonly code = "insufficient_credits";
-  readonly status = 402;
+  readonly code: "insufficient_credits" | "billing_unavailable";
+  readonly status: number;
   constructor(public wallet: WalletDenial) {
     super(
-      wallet.reason === "dispute_hold"
-        ? "Paid tools are unavailable for this account while a payment is under review. Continue with free tools or the evidence already gathered."
-        : "This account's available credits do not cover this paid tool call. Continue with free tools or the evidence already gathered.",
+      wallet.reason === "rate_unverified"
+        ? "This paid tool is temporarily unavailable for this account. Continue with other tools or the evidence already gathered."
+        : wallet.reason === "dispute_hold"
+          ? "Paid tools are unavailable for this account while a payment is under review. Continue with free tools or the evidence already gathered."
+          : "This account's available credits do not cover this paid tool call. Continue with free tools or the evidence already gathered.",
     );
+    const unbillable = wallet.reason === "rate_unverified";
+    this.code = unbillable ? "billing_unavailable" : "insufficient_credits";
+    this.status = unbillable ? 409 : 402;
   }
 }
 
@@ -52,9 +62,10 @@ export function walletCredentialDigest(credential: string) {
 }
 
 const scope = "current_setting('octolab.workspace_id')";
-const activeRate = `SELECT rate_version, provider_account, provider_cost_micros, verified_at, expires_at
-  FROM wallet_rates
-  WHERE workspace_id=${scope} AND verified_at<=now() AND expires_at>now()`;
+/** A rate row enrolls the account, whether or not the rate is still current. */
+const enrollment = `SELECT rate_version, provider_account, credential_digest, provider_cost_micros,
+         verified_at, expires_at, (verified_at<=now() AND expires_at>now()) AS current
+  FROM wallet_rates WHERE workspace_id=${scope}`;
 /** One row per workspace, whether or not the account has a balance row yet. */
 const balanceRow = `SELECT COALESCE(b.posted_micros,0) AS posted,
          COALESCE(b.held_micros,0) AS held,
@@ -106,25 +117,27 @@ export class Wallet {
   }
 
   /**
-   * Holds the maximum charge for a billable call in the transaction that
-   * creates its receipt. Returns false when the call is outside wallet billing
-   * and throws WalletError when available credits are too low.
+   * Gate for every paid call of an enrolled account, in the transaction that
+   * creates its receipt.
+   *
+   * - The rated configuration is held at its maximum charge (returns true).
+   * - The rated configuration with a lapsed or mismatched rate fails closed.
+   * - Any other paid call is not held or charged (returns false), but is
+   *   refused while the account could not cover the rated hold, so an empty
+   *   wallet cannot be worked around with an unrated variant.
+   *
+   * Free calls and accounts without a rate are untouched.
    */
-  async admit(call: ObservedCall, providerCredential: string) {
+  async admit(call: ObservedCall, providerCredential = "") {
     const { db } = this.store;
-    if (
-      !walletEnforcementEnabled() ||
-      !fixedCostTavilyCall(call, providerCredential) ||
-      !(await this.ready())
-    )
-      return false;
-    const rate = await db
-      .prepare(`${activeRate} AND provider_account=? AND credential_digest=?`)
-      .get(
-        call.providerAccountReference!,
-        walletCredentialDigest(providerCredential),
-      );
+    if (!walletEnforcementEnabled() || !(await this.ready())) return false;
+    const rate = await db.prepare(enrollment).get();
     if (!rate) return false;
+    const rated =
+      call.tool === "tavily_search" &&
+      (call.arguments.searchDepth ?? "basic") === "basic" &&
+      (call.arguments.maxResults ?? 10) === 10;
+    if (!rated && !(call.estimateMicros > 0)) return false;
 
     const base = Number(rate.provider_cost_micros);
     const { markupBps, markupMicros, maximumMicros } = shadowWalletPrice(base);
@@ -137,14 +150,28 @@ export class Wallet {
     const balance = (await db.prepare(balanceRow).get())!;
     const heldMicros = Number(balance.held);
     const availableMicros = Number(balance.posted) - heldMicros;
-    if (balance.frozen === true || availableMicros < maximumMicros)
-      throw new WalletError({
-        reason:
-          balance.frozen === true ? "dispute_hold" : "insufficient_balance",
+    const deny = (reason: WalletDenial["reason"]) =>
+      new WalletError({
+        reason,
         requiredMicros: maximumMicros,
         availableMicros: Math.max(0, availableMicros),
         heldMicros,
       });
+    if (balance.frozen === true) throw deny("dispute_hold");
+    if (availableMicros < maximumMicros) throw deny("insufficient_balance");
+    if (!rated) return false;
+    if (
+      rate.current !== true ||
+      !fixedCostTavilyCall(call, providerCredential) ||
+      rate.provider_account !== call.providerAccountReference ||
+      rate.credential_digest !== walletCredentialDigest(providerCredential)
+    ) {
+      // Operator alert: no customer data, only the rate that needs attention.
+      console.error(
+        `Wallet rate ${String(rate.rate_version)} is expired or no longer matches the provider credential. Billable calls are refused until it is re-verified.`,
+      );
+      throw deny("rate_unverified");
+    }
     await db
       .prepare(
         `INSERT INTO wallet_holds
@@ -201,12 +228,12 @@ export class Wallet {
         .run(call.id, -Number(hold.total_micros));
   }
 
-  /** Enrolls a deposit of an account with an active rate while enforcement is on. */
+  /** Enrolls a deposit of an enrolled account while enforcement is on. */
   async enrollDeposit(depositId: string) {
     if (!walletEnforcementEnabled() || !(await this.ready())) return;
     await this.store.db
       .prepare(
-        `INSERT INTO wallet_deposits(deposit_id) SELECT ? WHERE EXISTS (${activeRate})
+        `INSERT INTO wallet_deposits(deposit_id) SELECT ? WHERE EXISTS (${enrollment})
          ON CONFLICT (workspace_id,deposit_id) DO NOTHING`,
       )
       .run(depositId);
@@ -267,7 +294,7 @@ export class Wallet {
     if (!(await this.ready())) return inactive;
     const row = await this.store.db
       .prepare(
-        `SELECT s.*, EXISTS (${activeRate}) AS enrolled FROM (${balanceRow}) s`,
+        `SELECT s.*, EXISTS (${enrollment}) AS enrolled FROM (${balanceRow}) s`,
       )
       .get();
     if (!row) return inactive;
