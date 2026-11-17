@@ -342,7 +342,7 @@ suite("business and user account types", () => {
     // Replay the migration's backfill statements against fresh sample accounts.
     const migration = await readFile(
       new URL(
-        "../supabase/migrations/20261117120000_account_types.sql",
+        "../supabase/migrations/20261117130000_account_types.sql",
         import.meta.url,
       ),
       "utf8",
