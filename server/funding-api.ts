@@ -72,7 +72,9 @@ export function fundingRoutes(
           );
           return {
             ...summary,
-            ...(light ? { stripe: stripe.status() } : await stripe.summary()),
+            ...(light
+              ? { stripe: stripe.status(), wallet: await stripe.walletStatus() }
+              : await stripe.summary()),
             stripeDeposits,
             totalDeposits: summary.totalDeposits + stripeDeposits,
           };

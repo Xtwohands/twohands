@@ -51,6 +51,7 @@ export interface FundingSummary {
   stripe?: StripeFundingStatus;
   stripeIntents?: StripeDeposit[];
   entries?: FundingEntry[];
+  wallet?: import("./wallet.js").WalletStatus;
 }
 export interface FundingEntry {
   id: number;

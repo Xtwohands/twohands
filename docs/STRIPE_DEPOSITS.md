@@ -2,7 +2,7 @@
 
 The Credits sidebar page (`#dashboard/credits`) supports Stripe-hosted card Checkout and USDC on Base Sepolia. Both are disabled by default. This implementation was left disabled on the development server: no Stripe account keys or receiving wallet were supplied, and no real payment or testnet transaction was performed.
 
-One **test USD** or one **test USDC** adds one internal test credit. The balance uses integer millionths of a credit. These are development credits only; they do not increase backend session spending authority or pay live provider invoices. Test USD and test USDC are separately labeled in their payment receipts.
+One **test USD** or one **test USDC** adds one internal test credit. The balance uses integer millionths of a credit. With [wallet enforcement](WALLET_ENFORCEMENT.md) enabled, new verified Stripe test deposits for an enrolled account also fund its separate sandbox wallet. Otherwise these are development credits only; they do not increase backend session spending authority or pay live provider invoices. Test USD and test USDC are separately labeled in their payment receipts.
 
 ## Enable Stripe later
 

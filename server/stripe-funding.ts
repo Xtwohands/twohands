@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import Stripe from "stripe";
 import { z } from "zod";
 import { ShadowWallet } from "./shadow-wallet.js";
+import { Wallet } from "./wallet.js";
 import { FundingError, type FundingService } from "./funding.js";
 import type { StripeDeposit, StripeFundingStatus } from "./funding-types.js";
 export type StripeSettings = {
@@ -146,6 +147,7 @@ export class StripeFundingService {
   readonly active = new Map<string, Promise<StripeDeposit>>();
   readonly creating = new Map<string, Promise<StripeDeposit>>();
   private readonly shadowWallet: ShadowWallet;
+  private readonly wallet: Wallet;
   private manualChecks = new Map<string, number>();
   constructor(
     public funding: FundingService,
@@ -154,6 +156,7 @@ export class StripeFundingService {
     private now = () => Date.now(),
   ) {
     this.shadowWallet = new ShadowWallet(funding.store);
+    this.wallet = new Wallet(funding.store);
   }
   status(): StripeFundingStatus {
     const reason = !this.settings.enabled
@@ -294,6 +297,7 @@ export class StripeFundingService {
             .run(value.id, input.requestKey, JSON.stringify(value));
           await this.save(value, "checkout_requested");
           await this.shadowWallet.enrollSandboxDeposit(value.id);
+          await this.wallet.enrollDeposit(value.id);
         }
       }
       if (!this.status().enabled)
@@ -470,6 +474,9 @@ export class StripeFundingService {
             502,
             "Stripe payment amount or identity does not match this deposit. No credits were added.",
           );
+        // First time this payment is seen as paid; earlier credits are never backfilled.
+        const firstVerification =
+          !current.paymentIntentId && !current.netCreditUnits;
         current.paymentIntentId = payment.id;
         current.chargeId = charge.id;
         current.refundedCents = Math.max(
@@ -498,6 +505,13 @@ export class StripeFundingService {
           payment.id,
           target,
           current.disputed,
+        );
+        await this.wallet.reconcileDeposit(
+          id,
+          payment.id,
+          target,
+          current.disputed,
+          firstVerification,
         );
         current.netCreditUnits = target;
         current.checkoutUrl = null;
@@ -678,11 +692,15 @@ export class StripeFundingService {
     );
     return { received: true, replayed: false };
   }
+  walletStatus() {
+    return this.wallet.status();
+  }
   async summary() {
     return {
       stripe: this.status(),
       stripeIntents: await this.list(),
       entries: await this.funding.ledger.entries(),
+      wallet: await this.wallet.status(),
     };
   }
 }

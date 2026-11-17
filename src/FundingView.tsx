@@ -24,7 +24,7 @@ import { CopyButton, Empty, InlineError, date } from "./observation-ui";
 import type { DepositIntent } from "../server/funding-types";
 import "./funding.css";
 
-import { testUsdc } from "./funding-format";
+import { sandboxCredits, testUsdc } from "./funding-format";
 export { testUsdc } from "./funding-format";
 const statuses: Record<DepositIntent["status"], string> = {
   awaiting_transfer: "Awaiting transfer",
@@ -98,6 +98,25 @@ export function FundingView() {
                 estimated tool usage
               </p>
             </section>
+            {(summary?.wallet?.enforced || summary?.wallet?.active) && (
+              <section className="ws-panel ws-balance-card">
+                <span>Available credits</span>
+                <strong>
+                  {sandboxCredits(summary.wallet.availableMicros)}
+                  <small>sandbox</small>
+                </strong>
+                <p>
+                  Held for in-progress calls:{" "}
+                  {sandboxCredits(summary.wallet.heldMicros)} · Charged for tool
+                  calls: {sandboxCredits(summary.wallet.chargedMicros)}
+                  {summary.wallet.frozen
+                    ? " · Paid tools are paused while a payment is under review"
+                    : !summary.wallet.enforced
+                      ? " · Credit billing is paused; your balance is kept"
+                      : ""}
+                </p>
+              </section>
+            )}
             <section className="ws-panel ws-funding-method">
               <header>
                 <div>
