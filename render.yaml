@@ -46,6 +46,15 @@ services:
         value: "true"
       - key: DEPOSITS_TESTNET_ENABLED
         value: "false"
+      # Prepaid wallet enforcement (sandbox credits). Only accounts with a
+      # verified rate in octolab.wallet_rates are held and charged; see
+      # docs/WALLET_ENFORCEMENT.md.
+      - key: TWO_HANDS_WALLET_ENFORCEMENT
+        value: "true"
+      # Account label bound into each wallet rate. Not a secret. Changing it
+      # makes enrolled accounts fail closed until their rate is re-verified.
+      - key: TAVILY_ACCOUNT_REFERENCE
+        value: tavily-primary
       # Session pooler connection string on port 5432.
       - key: DATABASE_URL
         sync: false
