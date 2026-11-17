@@ -43,3 +43,15 @@ it("serves the same JavaScript with gzip/Brotli, correct MIME, Vary, and immutab
   expect(missing.status).toBe(404);
   expect(missing.headers.get("content-encoding")).toBeNull();
 });
+it("serves the public legal pages at /privacy and /terms", async () => {
+  for (const [path, title] of [
+    ["/privacy", "Privacy Policy"],
+    ["/terms", "Terms of Service"],
+  ]) {
+    const r = await fetch(base + path);
+    expect(r.status).toBe(200);
+    expect(r.headers.get("content-type")).toContain("text/html");
+    expect(r.headers.get("cache-control")).toBe("no-cache");
+    expect(await r.text()).toContain(`<h1>${title}</h1>`);
+  }
+});
