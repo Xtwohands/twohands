@@ -1887,3 +1887,12 @@
     grid-template-columns: minmax(0, 1fr);
   }
 }
+@media (max-width: 760px) {
+  .ws-legacy-credits > header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .ws-legacy-credits > header p {
+    max-width: none;
+  }
+}
