@@ -1006,6 +1006,11 @@ function Footer() {
             <h2>For tool companies</h2>
             <a href="/#company">List your tool</a>
           </div>
+          <div>
+            <h2>Legal</h2>
+            <a href="/privacy">Privacy</a>
+            <a href="/terms">Terms</a>
+          </div>
         </nav>
       </div>
     </footer>

@@ -31,6 +31,8 @@ export function staticAssets(app: Express) {
   });
   app.use(
     express.static("dist", {
+      // Lets /privacy and /terms serve the static legal pages.
+      extensions: ["html"],
       setHeaders: (res, path) => {
         if (/\.(js|css|svg|json)$/.test(path)) res.vary("Accept-Encoding");
         res.setHeader(
