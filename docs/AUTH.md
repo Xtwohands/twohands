@@ -73,4 +73,5 @@ Every account is either a **business** (tool company, opens `#company`) or a **u
 - A database trigger rejects every update, delete and truncate, so the type cannot change. To correct a mistake, an operator must run SQL by hand: `ALTER TABLE octolab.account_types DISABLE TRIGGER account_types_no_update_or_delete;`, fix the row, then `ENABLE` the trigger again.
 - Personal routes (dashboard, credits and payments, API keys, MCP sessions) require a user account. Company, connector and seller routes, and company registration, require a business account. Analysts must have business accounts. Platform admins on `SUPABASE_ADMIN_USER_IDS` are exempt.
 - The migration backfills existing accounts: company members become business, and other workspace owners become user.
+- API keys are not affected by account types. Keys created earlier by an account that is now business keep working for MCP tool calls (a deliberate decision), even though that account can no longer open the user dashboard.
 - Logged-out visitors to a signed-in area are sent to `/login`. `#signin` still works.
