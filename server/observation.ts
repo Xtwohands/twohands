@@ -1,6 +1,7 @@
 import { isExtractProvider, providerToolNames } from "./provider-catalog.js";
 import { providerWork } from "./provider-settings-gate.js";
 import { applyOperatorAllowance, operatorAllows } from "./account-allowance.js";
+import { WalletError, applyWalletQuote } from "./wallet.js";
 import { z } from "zod";
 import { providerRegistry, registeredToolSchema } from "./provider-adapters.js";
 import { providerAccountForCall } from "./provider-accounts.js";
@@ -328,6 +329,8 @@ export class Observatory {
       );
     }
     applyOperatorAllowance(discovery.tools, operatorAllowance);
+    const wallet = await this.db.wallet.quote();
+    applyWalletQuote(discovery.tools, wallet);
     const tools = discovery.tools.map((tool) => ({
       ...tool,
       enabled:
@@ -356,6 +359,7 @@ export class Observatory {
         .map((t) => t.tool),
       preview: true,
       operatorAllowance,
+      wallet,
       budgetMicros: previewBudgetMicros,
       policyRevision: policy.revision,
     };
@@ -473,11 +477,26 @@ export class Observatory {
       return s;
     });
   }
+  /**
+   * Runs a call's admission transaction. A wallet refusal rolls the whole
+   * transaction back, so it is recorded afterwards, outside it, for the
+   * account owner to see.
+   */
+  private async admission<T>(tool: string, fn: () => Promise<T>) {
+    try {
+      return await this.db.transaction(fn);
+    } catch (error) {
+      if (error instanceof WalletError)
+        await this.db.wallet.refused(tool, error);
+      throw error;
+    }
+  }
   async catalog(apiKeyId?: string) {
     // Global listing reads use their own pool interface, outside the scoped read.
     const listings = (await this.listings?.()) ?? {};
     return this.db.store.db.read(async () => {
       const operatorAllowance = await this.db.store.allowance.status();
+      const walletQuote = await this.db.wallet.quote();
       const sessions = await this.db.reviewSessions();
       const calls = await this.db.metricCalls();
       const controlled = (await this.controlledSamples?.()) ?? {};
@@ -587,6 +606,11 @@ export class Observatory {
               operatorAllowance,
               providerEstimate(provider),
             ),
+            // False when this account's prepaid credits could not cover a paid call right now.
+            walletAllowed:
+              !walletQuote.enforced ||
+              walletQuote.paidCallsAllowed ||
+              providerEstimate(provider) === 0,
             estimatedMicros: providerEstimate(provider),
             rateCardVersion: config.rateCardVersion,
             sampleCount: samples.length,
@@ -651,6 +675,8 @@ export class Observatory {
       );
     }
     applyOperatorAllowance(discovery.tools, operatorAllowance);
+    const wallet = await this.db.wallet.quote();
+    applyWalletQuote(discovery.tools, wallet);
     const tools = catalog.map((t) => ({
       ...t,
       ...discovery.tools.find((m) => m.tool === t.tool)!,
@@ -683,7 +709,11 @@ export class Observatory {
       },
       (await this.connectors?.approvedTools()) ?? [],
       {
-        remainingMicros: remainingBudgetMicros,
+        // A paid connector tool is refused while credits are short, like any paid call.
+        remainingMicros:
+          wallet.enforced && !wallet.paidCallsAllowed
+            ? 0
+            : remainingBudgetMicros,
         allowance: operatorAllowance,
         keyAllowsConnectors: !key || keyAllowsConnectors(key),
         calls: (
@@ -732,6 +762,7 @@ export class Observatory {
     await this.db.event(id, "tools_offered", "observed", data);
     return {
       ...data,
+      wallet,
       note: "Choose explicitly. No provider is selected automatically. Performance is local observed execution, not an accuracy benchmark.",
       selectionGuidance: providerSelectionGuidance,
     };
@@ -792,6 +823,7 @@ export class Observatory {
         );
       }
       applyOperatorAllowance(discovery.tools, operatorAllowance);
+      applyWalletQuote(discovery.tools, await this.db.wallet.quote());
       const now = Date.now();
       const ranked = rankRoute(
         catalog.map((t) => {
@@ -1061,7 +1093,7 @@ export class Observatory {
     let call!: ObservedCall;
     let shadowReserved = false;
     let walletHeld = false;
-    const replay = await this.db.transaction(async () => {
+    const replay = await this.admission(input.tool, async () => {
       const existing = await this.db.receipt(id, input.requestKey);
       if (existing) {
         if (
@@ -1324,7 +1356,7 @@ export class Observatory {
       );
     const provider = `connector:${connector.slug}` as ProviderId;
     let call!: ObservedCall;
-    const replay = await this.db.transaction(async () => {
+    const replay = await this.admission(input.tool, async () => {
       const existing = await this.db.receipt(id, input.requestKey);
       if (existing) {
         if (existing.signature !== signature)

@@ -70,6 +70,75 @@ export const alertInput = z
       .max(4000),
   })
   .strict();
+/** Largest single adjustment in either direction: $100. */
+export const ADJUSTMENT_MAX_MICROS = 100_000_000;
+export const adjustmentInput = z
+  .object({
+    requestKey: z.uuid(),
+    accountId: z.uuid(),
+    // Named by the operator every time. Nothing defaults to sandbox or live.
+    mode: z.enum(["test", "live"]),
+    amount: z
+      .string()
+      .regex(
+        /^-?(?:0|[1-9]\d{0,2})(?:\.\d{1,6})?$/,
+        "Use a USD amount with up to six decimal places, negative to remove credits.",
+      )
+      .transform((s) => {
+        const negative = s.startsWith("-");
+        const [whole, fraction = ""] = s.replace("-", "").split(".");
+        const micros =
+          Number(whole) * 1_000_000 + Number(fraction.padEnd(6, "0"));
+        return negative ? -micros : micros;
+      })
+      .pipe(
+        z
+          .number()
+          .int()
+          .refine((n) => n !== 0, "Enter an amount other than zero.")
+          .refine(
+            (n) => Math.abs(n) <= ADJUSTMENT_MAX_MICROS,
+            "One adjustment is limited to $100 in either direction.",
+          ),
+      ),
+    note: z
+      .string()
+      .trim()
+      .min(10, "Add a note of at least 10 characters.")
+      .max(4000),
+  })
+  .strict();
+export interface WalletAdjustment {
+  id: string;
+  accountId: string;
+  account: string | null;
+  mode: StripeMode;
+  micros: number;
+  actor: string;
+  note: string;
+  createdAt: string;
+}
+export interface AdjustmentResult {
+  adjustment: WalletAdjustment;
+  balance: {
+    postedMicros: number;
+    heldMicros: number;
+    availableMicros: number;
+  };
+  replayed: boolean;
+}
+/** An account an operator can adjust: enrolled for credit billing. */
+export interface AdjustableAccount {
+  accountId: string;
+  account: string;
+  fundingMode: StripeMode;
+  balances: {
+    mode: StripeMode;
+    postedMicros: number;
+    heldMicros: number;
+    availableMicros: number;
+  }[];
+}
 export type OperatorAlert = Awaited<
   ReturnType<WalletOperations["alerts"]>
 >[number];
@@ -138,6 +207,19 @@ const requestRow = (r: Record<string, unknown>): RefundRequest => ({
   createdAt: new Date(r.created_at as string).toISOString(),
   updatedAt: new Date(r.updated_at as string).toISOString(),
 });
+const adjustmentRow = (r: Record<string, unknown>): WalletAdjustment => {
+  const data = r.data as { micros: number; note: string };
+  return {
+    id: String(r.id),
+    accountId: String(r.workspace_id),
+    account: r.account === null ? null : String(r.account),
+    mode: r.mode as StripeMode,
+    micros: Number(data.micros),
+    actor: String(r.actor),
+    note: String(data.note),
+    createdAt: new Date(r.created_at as string).toISOString(),
+  };
+};
 /** The payment facts an operator action was decided on. A change means: look again. */
 const evidence = (p: StripeDeposit) =>
   hash([
@@ -366,9 +448,14 @@ export class WalletOperations {
     client: PoolClient,
     action: {
       workspaceId: string;
-      depositId: string;
+      /** Null only for an adjustment, which belongs to an account, not a payment. */
+      depositId: string | null;
       mode: StripeMode;
-      kind: "dispute_release" | "refund_request" | "refund_resolution";
+      kind:
+        | "dispute_release"
+        | "refund_request"
+        | "refund_resolution"
+        | "adjustment";
       actor: string;
       requestKey: string;
       inputHash: string;
@@ -391,6 +478,190 @@ export class WalletOperations {
         JSON.stringify(action.data),
       ],
     );
+  }
+
+  /**
+   * Posts one operator `adjustment` to an account's balance, replacing the
+   * hand-written journal row.
+   *
+   * The operator names the account and the mode; nothing is inferred. It runs
+   * as the database owner under the account lock, so the runtime role still
+   * cannot post an adjustment. The account must be enrolled, the mode must be
+   * one the account has a balance in (its funding mode, or an older balance
+   * such as the sandbox credits of an account now funded live), and a removal
+   * cannot take available credits below zero. The journal row and the
+   * immutable `wallet_operator_actions` record commit together. A repeat with
+   * the same request key returns the saved adjustment and posts nothing.
+   *
+   * Adjustment credit is spendable on tool calls and is never refunded to a
+   * card (see `refundableByPayment`).
+   */
+  async adjust(raw: unknown, actor: string): Promise<AdjustmentResult> {
+    const input = adjustmentInput.parse(raw);
+    const inputHash = hash([
+      input.accountId,
+      input.mode,
+      input.amount,
+      input.note,
+    ]);
+    const balanceOf = async (client: PoolClient) => {
+      const row = (
+        await client.query(
+          "SELECT posted_micros,held_micros FROM octolab.wallet_balances WHERE workspace_id=$1 AND mode=$2",
+          [input.accountId, input.mode],
+        )
+      ).rows[0];
+      const postedMicros = Number(row?.posted_micros ?? 0),
+        heldMicros = Number(row?.held_micros ?? 0);
+      return {
+        exists: !!row,
+        postedMicros,
+        heldMicros,
+        availableMicros: postedMicros - heldMicros,
+      };
+    };
+    const saved = async (client: PoolClient, replayed: boolean) => {
+      const row = (
+        await client.query(
+          `SELECT a.id,a.workspace_id,a.mode,a.actor,a.data,a.created_at,a.input_hash,s.name AS account
+           FROM octolab.wallet_operator_actions a
+           LEFT JOIN octolab.workspaces s ON s.id=a.workspace_id
+           WHERE a.request_key=$1`,
+          [input.requestKey],
+        )
+      ).rows[0];
+      if (!row) return null;
+      if (row.input_hash !== inputHash)
+        throw new FundingError(
+          409,
+          "This request key was already used for a different operator action. Nothing was changed.",
+        );
+      const { exists: _exists, ...balance } = await balanceOf(client);
+      return {
+        adjustment: adjustmentRow(row),
+        balance: {
+          ...balance,
+          availableMicros: Math.max(0, balance.availableMicros),
+        },
+        replayed,
+      };
+    };
+    try {
+      return await this.owner(input.accountId, async (client) => {
+        const replay = await saved(client, true);
+        if (replay) return replay;
+        const account = (
+          await client.query(
+            `SELECT s.id, r.funding_mode FROM octolab.workspaces s
+             LEFT JOIN octolab.wallet_rates r ON r.workspace_id=s.id WHERE s.id=$1`,
+            [input.accountId],
+          )
+        ).rows[0];
+        if (!account) throw new FundingError(404, "Account not found.");
+        if (!account.funding_mode)
+          throw new FundingError(
+            409,
+            "This account is not enrolled for credit billing, so it has no balance to adjust. Nothing was changed.",
+          );
+        const balance = await balanceOf(client);
+        if (account.funding_mode !== input.mode && !balance.exists)
+          throw new FundingError(
+            409,
+            `This account is funded in ${account.funding_mode === "live" ? "live" : "sandbox"} mode and has no ${input.mode === "live" ? "live" : "sandbox"} balance. Nothing was changed.`,
+          );
+        if (input.amount < 0 && balance.availableMicros + input.amount < 0)
+          throw new FundingError(
+            409,
+            `A removal cannot take available credits below zero. Available now: $${(Math.max(0, balance.availableMicros) / 1e6).toFixed(6)}. Nothing was changed.`,
+          );
+        const id = randomUUID();
+        await client.query(
+          `INSERT INTO octolab.wallet_journal (workspace_id,source_id,kind,reference,wallet_micros,mode)
+           VALUES ($1,$2,'adjustment',$3,$4,$5)`,
+          [
+            input.accountId,
+            id,
+            `operator adjustment ${id}`,
+            input.amount,
+            input.mode,
+          ],
+        );
+        await client.query(
+          `INSERT INTO octolab.wallet_operator_actions
+           (id,workspace_id,deposit_id,mode,kind,actor,request_key,input_hash,data)
+           VALUES ($1,$2,NULL,$3,'adjustment',$4,$5,$6,$7)`,
+          [
+            id,
+            input.accountId,
+            input.mode,
+            actor,
+            input.requestKey,
+            inputHash,
+            JSON.stringify({
+              micros: input.amount,
+              note: input.note,
+              availableBeforeMicros: balance.availableMicros,
+            }),
+          ],
+        );
+        return (await saved(client, false))!;
+      });
+    } catch (error) {
+      // A concurrent duplicate lost the race on the request key: return the saved one.
+      if (!uniqueViolation(error)) throw error;
+      const client = await this.database().pool.connect();
+      try {
+        const replay = await saved(client, true);
+        if (!replay) throw error;
+        return replay;
+      } finally {
+        client.release();
+      }
+    }
+  }
+  /** Enrolled accounts with their balances per mode, for the adjustment screen. */
+  async adjustableAccounts(query = ""): Promise<AdjustableAccount[]> {
+    const q = query
+      .trim()
+      .toLowerCase()
+      .replace(/[%_\\]/g, "");
+    return (
+      await this.database().pool.query(
+        `SELECT r.workspace_id, s.name, r.funding_mode,
+                COALESCE(json_agg(json_build_object('mode',b.mode,'posted',b.posted_micros,'held',b.held_micros)
+                         ORDER BY b.mode) FILTER (WHERE b.workspace_id IS NOT NULL),'[]') AS balances
+         FROM octolab.wallet_rates r
+         JOIN octolab.workspaces s ON s.id=r.workspace_id
+         LEFT JOIN octolab.wallet_balances b ON b.workspace_id=r.workspace_id
+         WHERE $1='' OR lower(s.name || ' ' || r.workspace_id) LIKE '%' || $1 || '%'
+         GROUP BY r.workspace_id, s.name, r.funding_mode
+         ORDER BY s.name, r.workspace_id LIMIT 50`,
+        [q],
+      )
+    ).rows.map((row) => ({
+      accountId: String(row.workspace_id),
+      account: String(row.name),
+      fundingMode: row.funding_mode as StripeMode,
+      balances: (
+        row.balances as { mode: StripeMode; posted: number; held: number }[]
+      ).map((b) => ({
+        mode: b.mode,
+        postedMicros: Number(b.posted),
+        heldMicros: Number(b.held),
+        availableMicros: Math.max(0, Number(b.posted) - Number(b.held)),
+      })),
+    }));
+  }
+  /** Adjustments made with the admin action, newest first. */
+  async adjustments(): Promise<WalletAdjustment[]> {
+    return (
+      await this.database().pool.query(
+        `SELECT a.id,a.workspace_id,a.mode,a.actor,a.data,a.created_at,s.name AS account
+         FROM octolab.wallet_operator_actions a
+         LEFT JOIN octolab.workspaces s ON s.id=a.workspace_id
+         WHERE a.kind='adjustment' ORDER BY a.created_at DESC LIMIT 50`,
+      )
+    ).rows.map(adjustmentRow);
   }
 
   /**

@@ -216,6 +216,9 @@ suite("business and user account types", () => {
     for (const path of [
       "/api/account/usage",
       "/api/account/funding",
+      // Per-call charges and statements are personal Credits data too.
+      "/api/account/funding/activity",
+      "/api/account/funding/statement?from=2026-11-01&to=2026-11-17",
       "/api/observations",
       "/api/account/api-keys",
     ]) {

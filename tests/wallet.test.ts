@@ -300,7 +300,13 @@ hosted("hosted wallet enforcement", () => {
       code: "insufficient_credits",
       wallet: { requiredMicros: 7700, availableMicros: 7699 },
     });
-    expect(response.body.error).toMatch(/available credits/);
+    expect(response.body.error).toMatch(
+      /\$0\.0077 of credits available and a paid tool call needs \$0\.0077/,
+    );
+    expect(response.body.ownerAction).toEqual({
+      action: "add_credits",
+      message: expect.stringMatching(/account owner can add credits/),
+    });
     expect(search).not.toHaveBeenCalled();
   });
 

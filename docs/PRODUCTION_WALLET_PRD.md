@@ -98,6 +98,10 @@ Phase 3 is implemented behind `STRIPE_LIVE_ENABLED`, default off. Live Stripe ha
 
 Before a customer pilot, the owner still decides the refund policy and tax handling, confirms provider terms and rates, and activates the live Stripe account. Durable payment-event recovery beyond Stripe's retries, customer statements, and wallet enforcement on every enabled customer entry point remain to be verified.
 
+## Customer surface
+
+Phase 4 of the build (the PRD's "Expand" row is a rollout stage, not this work) gives the account owner one spendable balance on Credits and in the sidebar, per-call charges with provider cost, markup and total, a dated CSV statement with opening and closing balances, refusals that say what the owner can do, low-balance and frozen notices, wallet eligibility in discovery, and a top-up that is offered only when the credits could be spent. Operators get an audited adjustment action. Enrollment is still an operator step. See [customer payment surface](WALLET_CUSTOMER_SURFACE.md) for what was built, what differs from this document, and the open owner decisions.
+
 ## Acceptance and operating metrics
 
 - **Isolation and replay.** Concurrent calls from two keys cannot reserve beyond one balance. Requests from a neighboring account, fixture, preview role, or test payment cannot mutate live credits. Replaying a request after a lost response or process restart returns one receipt and one debit at most.

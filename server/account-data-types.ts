@@ -11,6 +11,8 @@ export interface ActivityItem extends Omit<ObservedCall, "result"> {
   model: string;
   reportedUsd: number | null;
   reportedCredits: number | null;
+  /** Prepaid-credit charge for this call. Absent when the wallet did not hold it. */
+  charge?: import("./wallet.js").WalletCharge;
 }
 export interface AccountUsage {
   days: number;

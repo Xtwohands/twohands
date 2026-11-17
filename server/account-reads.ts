@@ -55,7 +55,8 @@ export async function readActivity(
   }
   const query = filters?.q.trim().toLowerCase();
   if (query) {
-    const text = `LOWER(COALESCE(json_extract(s.body,'$.title'),'') || ' ' ||
+    // The call ID is searchable so a charge on Credits can be traced to its request.
+    const text = `LOWER(c.id || ' ' || COALESCE(json_extract(s.body,'$.title'),'') || ' ' ||
       COALESCE(json_extract(c.body,'$.tool'),'') || ' ' ||
       COALESCE(json_extract(c.body,'$.arguments.query'),json_extract(c.body,'$.arguments.url'),'') || ' ' ||
       COALESCE(json_extract(s.body,'$.host'),''))`;
@@ -92,21 +93,28 @@ export async function readActivity(
         ...values,
         ...(limit ? [limit, filters?.export ? 0 : (page - 1) * 20] : []),
       );
+    const items = rows.map(
+      (r) =>
+        ({
+          ...JSON.parse(r.body as string),
+          sessionTitle: r.title,
+          host: r.host,
+          model: r.model,
+          reportedUsd: nonnegative(r.usd),
+          reportedCredits: nonnegative(r.credits),
+        }) as ActivityItem,
+    );
+    // What each call was charged from prepaid credits, when the wallet held it.
+    const charges = await obs.db.wallet.charges(items.map((item) => item.id));
+    for (const item of items) {
+      const charge = charges.get(item.id);
+      if (charge) item.charge = charge;
+    }
     return {
       total,
       page,
       pageSize: filters?.export ? rows.length : filters ? 20 : rows.length,
-      items: rows.map(
-        (r) =>
-          ({
-            ...JSON.parse(r.body as string),
-            sessionTitle: r.title,
-            host: r.host,
-            model: r.model,
-            reportedUsd: nonnegative(r.usd),
-            reportedCredits: nonnegative(r.credits),
-          }) as ActivityItem,
-      ),
+      items,
     };
   });
 }

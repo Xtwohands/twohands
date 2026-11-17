@@ -99,16 +99,19 @@ One refund can be in flight per payment. Disputed payments and frozen accounts r
 
 `wallet_operator_alerts` is the durable record of a payment condition the server could not settle by itself. The admin Payment disputes page lists open alerts; `GET /api/admin/funding/alerts` returns them and `POST /api/admin/funding/alerts/:id/resolve` with `{note}` records who handled one. Resolving changes no balance. There is one open alert per kind and reference.
 
-| Kind                      | Raised when                                                                                 | What to do                                                                                        |
-| ------------------------- | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| `unmatched_live_event`    | A signed live event matched no saved deposit                                                | Find the payment in Stripe by the event ID. If it is Two Hands money, credit or refund it by hand |
-| `refund_total_unverified` | Stripe's refunded total is lower than the saved one and its refund list does not explain it | Compare the payment's refunds in Stripe. Correct the balance with an `adjustment` if needed       |
+| Kind                      | Raised when                                                                                                 | What to do                                                                                        |
+| ------------------------- | ----------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `unmatched_live_event`    | A signed live event matched no saved deposit                                                                | Find the payment in Stripe by the event ID. If it is Two Hands money, credit or refund it by hand |
+| `refund_total_unverified` | Stripe's refunded total is lower than the saved one and its refund list does not explain it                 | Compare the payment's refunds in Stripe. Correct the balance with an `adjustment` if needed       |
+| `rate_unverified`         | A billable call was refused because the account's rate expired or no longer matches the provider credential | Re-verify the rate in `wallet_rates`. Customers are told nothing is needed from them              |
 
 `GET /api/admin/funding/status` returns the configuration state of both rails, including why a rail is unavailable. Customers never see that reason: a live account is told only that top-ups are not available right now.
 
 ### Manual adjustments
 
-An `adjustment` is still an operator SQL posting; there is no admin action for it. Every journal posting must name its mode, and the column has no default, so a posting that forgets the mode is refused instead of landing in the sandbox balance of a live account. Use the account's funding mode:
+Use **Balance adjustments** on the admin Payment disputes page (`POST /api/admin/funding/adjustments`, see [customer payment surface](WALLET_CUSTOMER_SURFACE.md#balance-adjustments)). The operator names the account and the mode, and the action is recorded in `wallet_operator_actions`.
+
+The hand-written posting below still works and is the fallback if the admin page is unavailable. Every journal posting must name its mode, and the column has no default, so a posting that forgets the mode is refused instead of landing in the sandbox balance of a live account. Use the account's funding mode:
 
 ```sql
 INSERT INTO octolab.wallet_journal (workspace_id, source_id, kind, reference, wallet_micros, mode)
@@ -182,10 +185,10 @@ A live dispute cannot be simulated. Drill the release action in sandbox with Str
 ## Known gaps
 
 - **Tax.** No tax is calculated or collected at Checkout.
-- **Adjustments and enrollment** (`wallet_rates`, including `funding_mode`) are still operator database steps with no admin screen.
+- **Enrollment** (`wallet_rates`, including `funding_mode`) is still an operator database step with no admin screen. Adjustments have an admin action since [phase 4](WALLET_CUSTOMER_SURFACE.md).
 - **A released payment cannot be refunded with the refund action.** Refund it in the Stripe dashboard; the balance follows.
 - **Alerts are not pushed.** They are durable and listed on the admin page, but nothing pages an operator. There is no reconciliation queue beyond Stripe's own retries and the manual check.
-- **Statement export** and wallet eligibility in discovery quotes are not built.
+- **Statement export** and wallet eligibility in discovery were added in [phase 4](WALLET_CUSTOMER_SURFACE.md). Quote expiry and `quote_changed` are not built.
 - **Browser tests use a simulated live account.** They drive the real Credits and admin pages with the JSON a hosted live account would receive; no browser test runs against PostgreSQL accounts.
 
 ## Validation

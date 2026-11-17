@@ -8,6 +8,7 @@ import {
   RefreshCw01,
 } from "@untitledui/icons";
 import { StripeFundingPanel } from "./StripeFundingPanel";
+import { WalletUsagePanel } from "./WalletUsagePanel";
 import { Button } from "./components/ui/button";
 import { Badge } from "./components/ui/badge";
 import { Input } from "./components/ui/input";
@@ -28,6 +29,7 @@ import {
   creditChange,
   postingLabel,
   sandboxCredits,
+  spendableBalance,
   testUsdc,
 } from "./funding-format";
 export { testUsdc } from "./funding-format";
@@ -68,6 +70,17 @@ export function FundingView() {
   // sandbox features and are not shown.
   const live =
     summary?.stripe?.mode === "live" || summary?.wallet?.mode === "live";
+  // An account on credit billing has one spendable balance: its prepaid
+  // credits. Test credits it collected earlier pay for nothing, so they are
+  // kept out of the way instead of sitting beside the real balance.
+  const creditBilling = !!summary && spendableBalance(summary).wallet;
+  const [legacyOpen, setLegacyOpen] = useState(false);
+  const showLegacy = !live && (!creditBilling || legacyOpen);
+  const hasLegacy =
+    !!summary &&
+    (summary.balanceUnits > 0 ||
+      !!summary.intents.length ||
+      !!summary.entries?.length);
   return (
     <div className="ws-funding">
       <InlineError message={error} />
@@ -81,6 +94,18 @@ export function FundingView() {
               ? "Top-ups are real card payments processed by Stripe. Verified payments add prepaid credits that pay for this account’s tool calls."
               : "Card top-ups are paused. Your credits and payment history are kept."}{" "}
             {summary?.refundTerms}
+          </p>
+        </div>
+      ) : creditBilling ? (
+        <div className="ws-funding-notice">
+          <Badge variant="outline">Sandbox credits</Badge>
+          <p>
+            This account’s paid tool calls are paid from its sandbox credits.{" "}
+            {summary?.stripe?.enabled
+              ? "Top-ups are Stripe test payments. No real money is taken."
+              : (summary?.stripe?.blocked &&
+                  summary.stripe.unavailableReason) ||
+                "Top-ups are unavailable right now. Your sandbox credits are kept."}
           </p>
         </div>
       ) : (
@@ -108,10 +133,12 @@ export function FundingView() {
             ref={paymentMethods}
             className="ws-funding-grid"
             role="group"
-            aria-label={live ? "Credit top-up options" : "Test funding options"}
+            aria-label={
+              creditBilling ? "Credit top-up options" : "Test funding options"
+            }
             tabIndex={-1}
           >
-            {!live && (
+            {!creditBilling && (
               <section className="ws-panel ws-balance-card">
                 <span>Your test balance</span>
                 <strong>
@@ -124,27 +151,38 @@ export function FundingView() {
                 </p>
               </section>
             )}
-            {(live || summary?.wallet?.enforced || summary?.wallet?.active) &&
-              summary?.wallet && (
-                <section className="ws-panel ws-balance-card">
-                  <span>Available credits</span>
-                  <strong>
-                    {sandboxCredits(summary.wallet.availableMicros)}
-                    <small>{live ? "USD" : "sandbox"}</small>
-                  </strong>
-                  <p>
-                    Held for in-progress calls:{" "}
-                    {sandboxCredits(summary.wallet.heldMicros)} · Charged for
-                    tool calls: {sandboxCredits(summary.wallet.chargedMicros)}
-                    {summary.wallet.frozen
-                      ? " · Paid tools are paused while a payment is under review"
-                      : !summary.wallet.enforced
-                        ? " · Credit billing is paused; your balance is kept"
-                        : ""}
-                  </p>
-                </section>
-              )}
-            {!live && (
+            {creditBilling && summary?.wallet && (
+              <section className="ws-panel ws-balance-card">
+                <span>Available credits</span>
+                <strong>
+                  {sandboxCredits(summary.wallet.availableMicros)}
+                  <small>{live ? "USD" : "sandbox"}</small>
+                </strong>
+                <p>
+                  Held for in-progress calls:{" "}
+                  {sandboxCredits(summary.wallet.heldMicros)} · Charged for tool
+                  calls: {sandboxCredits(summary.wallet.chargedMicros)}
+                  {summary.wallet.frozen
+                    ? " · Paid tools are paused while a payment is under review"
+                    : !summary.wallet.enforced
+                      ? " · Credit billing is paused; your balance is kept"
+                      : ""}
+                </p>
+                {summary.wallet.enforced &&
+                  !!summary.wallet.callHoldMicros &&
+                  summary.wallet.callsRemaining !== null &&
+                  summary.wallet.callsRemaining !== undefined && (
+                    <p>
+                      A paid call needs{" "}
+                      {sandboxCredits(summary.wallet.callHoldMicros)} available.
+                      Your credits cover about{" "}
+                      {summary.wallet.callsRemaining.toLocaleString("en-US")}{" "}
+                      more.
+                    </p>
+                  )}
+              </section>
+            )}
+            {!creditBilling && (
               <section className="ws-panel ws-funding-method">
                 <header>
                   <div>
@@ -198,9 +236,19 @@ export function FundingView() {
                 </div>
               </section>
             )}
-            <StripeFundingPanel summary={summary} refresh={refresh} />
+            <StripeFundingPanel
+              summary={summary}
+              refresh={refresh}
+              creditBilling={creditBilling}
+            />
           </div>
-          {live && (
+          {creditBilling && summary?.wallet && (
+            <WalletUsagePanel
+              live={live}
+              refreshKey={`${summary.wallet.postedMicros}|${summary.wallet.heldMicros}`}
+            />
+          )}
+          {creditBilling && (
             <section className="ws-panel">
               <header>
                 <div>
@@ -250,7 +298,31 @@ export function FundingView() {
               </div>
             </section>
           )}
-          {!live && (summary?.enabled || !!summary?.intents.length) && (
+          {creditBilling && !live && hasLegacy && (
+            <section className="ws-panel ws-legacy-credits">
+              <header>
+                <div>
+                  <h2>Earlier test credits</h2>
+                  <p>
+                    {testUsdc(summary?.balanceUnits ?? 0)} test credits from
+                    before credit billing was turned on for this account. They
+                    are kept for your records and do not pay for tool calls.
+                  </p>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  aria-expanded={legacyOpen}
+                  onClick={() => setLegacyOpen(!legacyOpen)}
+                >
+                  {legacyOpen
+                    ? "Hide test credit history"
+                    : "Show test credit history"}
+                </Button>
+              </header>
+            </section>
+          )}
+          {showLegacy && (summary?.enabled || !!summary?.intents.length) && (
             <section className="ws-panel">
               <header>
                 <div>
@@ -346,7 +418,7 @@ export function FundingView() {
               </div>
             </section>
           )}
-          {!live &&
+          {showLegacy &&
             (summary?.enabled ||
               summary?.stripe?.enabled ||
               !!summary?.entries?.length) && (
@@ -410,7 +482,7 @@ export function FundingView() {
                 </div>
               </section>
             )}
-          {!live && (summary?.enabled || !!summary?.intents.length) && (
+          {showLegacy && (summary?.enabled || !!summary?.intents.length) && (
             <section className="ws-panel">
               <header>
                 <div>

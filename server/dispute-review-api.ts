@@ -178,6 +178,26 @@ export function disputeReviewRoutes(
       );
     }),
   );
+  // Operator balance adjustments. The operator names the account and the mode.
+  router.get(
+    "/adjustments",
+    handle(async (req, res) => {
+      const q = z
+        .object({ q: z.string().max(300).default("") })
+        .strict()
+        .parse(req.query);
+      res.json({
+        accounts: await operations.adjustableAccounts(q.q),
+        items: await operations.adjustments(),
+      });
+    }),
+  );
+  router.post(
+    "/adjustments",
+    handle(async (req, res) => {
+      res.json(await operations.adjust(req.body, res.locals.adminActor));
+    }),
+  );
   router.get(
     "/alerts",
     handle(async (_req, res) => {
