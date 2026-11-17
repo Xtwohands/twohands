@@ -13,6 +13,7 @@ export interface DatabaseSnapshot {
   keyLedgerValid: boolean;
   allowanceLedgerValid: boolean | null;
   shadowWalletValid?: boolean;
+  walletValid?: boolean;
 }
 export const sqlIdentifier = (value: string) =>
   `"${value.replaceAll('"', '""')}"`;
@@ -162,6 +163,55 @@ export async function databaseSnapshot(
         `)
       ).rowCount === 0
     : undefined;
+  // Posted closures carry exactly one debit, closed calls keep no open hold,
+  // enrolled deposits match their verified net, and the projection equals a
+  // rebuild from the journal and open holds.
+  const walletValid = tables.some(
+    (t) => t.schema === "octolab" && t.name === "wallet_journal",
+  )
+    ? (
+        await client.query(`
+          SELECT 1 FROM octolab.wallet_hold_closures c
+          LEFT JOIN octolab.wallet_journal j
+            ON j.workspace_id=c.workspace_id AND j.call_id=c.call_id
+          WHERE c.outcome='posted' AND j.source_id IS NULL
+          UNION ALL
+          SELECT 1 FROM octolab.wallet_holds h
+          LEFT JOIN octolab.wallet_hold_closures c
+            ON c.workspace_id=h.workspace_id AND c.call_id=h.call_id
+          LEFT JOIN octolab.observation_calls a
+            ON a.workspace_id=h.workspace_id AND a.id=h.call_id
+          WHERE c.call_id IS NULL
+            AND (a.id IS NULL OR a.body::jsonb->>'status' <> 'running')
+          UNION ALL
+          SELECT 1 FROM octolab.wallet_deposits e
+          JOIN octolab.stripe_deposits d
+            ON d.workspace_id=e.workspace_id AND d.id=e.deposit_id
+          LEFT JOIN octolab.wallet_journal j
+            ON j.workspace_id=e.workspace_id AND j.deposit_id=e.deposit_id
+              AND j.kind<>'dispute_release'
+          GROUP BY e.workspace_id,e.deposit_id,d.body
+          HAVING COALESCE(sum(j.wallet_micros),0)<>(d.body::jsonb->>'netCreditUnits')::bigint
+          UNION ALL
+          SELECT 1 FROM (
+            SELECT workspace_id, sum(posted) AS posted, sum(held) AS held FROM (
+              SELECT workspace_id, wallet_micros AS posted, 0::bigint AS held
+              FROM octolab.wallet_journal
+              UNION ALL
+              SELECT h.workspace_id, 0, h.maximum_micros FROM octolab.wallet_holds h
+              WHERE NOT EXISTS (
+                SELECT 1 FROM octolab.wallet_hold_closures c
+                WHERE c.workspace_id=h.workspace_id AND c.call_id=h.call_id
+              )
+            ) amounts GROUP BY workspace_id
+          ) rebuilt
+          FULL JOIN octolab.wallet_balances b USING (workspace_id)
+          WHERE COALESCE(rebuilt.posted,0)<>COALESCE(b.posted_micros,0)
+             OR COALESCE(rebuilt.held,0)<>COALESCE(b.held_micros,0)
+          LIMIT 1
+        `)
+      ).rowCount === 0
+    : undefined;
   const ledger = (
     await client.query(
       "SELECT workspace_id,source,COUNT(*)::integer AS entries,SUM(delta_units)::text AS balance_units FROM octolab.funding_ledger GROUP BY workspace_id,source ORDER BY workspace_id,source",
@@ -205,6 +255,7 @@ export async function databaseSnapshot(
     policies,
     allowanceLedgerValid,
     ...(shadowWalletValid === undefined ? {} : { shadowWalletValid }),
+    ...(walletValid === undefined ? {} : { walletValid }),
     ledger,
     audit: { events, chains: heads.size, valid },
     keyLedgerValid: inconsistent.rowCount === 0,

@@ -5,3 +5,11 @@ export function testUsdc(units: number) {
     .replace(/0+$/, "");
   return `${whole.toLocaleString("en-US")}${fraction ? `.${fraction}` : ".00"}`;
 }
+
+/** Sandbox service credits in USD micros, keeping sub-cent usage visible. */
+export function sandboxCredits(micros: number) {
+  return `$${(micros / 1_000_000).toLocaleString("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 4,
+  })}`;
+}

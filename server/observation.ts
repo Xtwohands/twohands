@@ -1060,6 +1060,7 @@ export class Observatory {
     const signature = digest(input);
     let call!: ObservedCall;
     let shadowReserved = false;
+    let walletHeld = false;
     const replay = await this.db.transaction(async () => {
       const existing = await this.db.receipt(id, input.requestKey);
       if (existing) {
@@ -1170,6 +1171,8 @@ export class Observatory {
       s.status = "active";
       await this.db.save(s);
       await this.db.saveCall(call, signature);
+      // Denies before dispatch when available credits cannot cover the hold.
+      walletHeld = await this.db.wallet.admit(call, config.keys[provider]);
       if (s.authorizationSource === "backend_policy")
         shadowReserved = await this.db.shadowWallet.recordAdmission(
           call,
@@ -1246,6 +1249,7 @@ export class Observatory {
           await this.db.save(s);
           await this.db.saveCall(call, signature);
           if (shadowReserved) await this.db.shadowWallet.close(call);
+          if (walletHeld) await this.db.wallet.close(call);
           await this.db.event(id, "tool_result", "observed", {
             callId: call.id,
             tool: call.tool,

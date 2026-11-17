@@ -127,7 +127,8 @@ function assertEvidence(snapshot: DatabaseSnapshot) {
     !snapshot.audit.valid ||
     !snapshot.keyLedgerValid ||
     snapshot.allowanceLedgerValid === false ||
-    snapshot.shadowWalletValid === false
+    snapshot.shadowWalletValid === false ||
+    snapshot.walletValid === false
   )
     throw new BackupError(
       "Audit or financial consistency checks failed. Investigate before claiming a recoverable backup.",
@@ -244,6 +245,7 @@ export async function backupDatabase(
       keyLedgerValid: manifest.snapshot.keyLedgerValid,
       allowanceLedgerValid: manifest.snapshot.allowanceLedgerValid,
       shadowWalletValid: manifest.snapshot.shadowWalletValid,
+      walletValid: manifest.snapshot.walletValid,
     };
   } catch (error) {
     await client?.query("ROLLBACK").catch(() => {});
@@ -436,6 +438,7 @@ export async function restoreDatabase(
       keyLedgerValid: snapshot.keyLedgerValid,
       allowanceLedgerValid: snapshot.allowanceLedgerValid,
       shadowWalletValid: snapshot.shadowWalletValid,
+      walletValid: snapshot.walletValid,
       ledgerGroupsVerified: snapshot.ledger.length,
     };
   } catch (error) {
