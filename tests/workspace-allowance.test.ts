@@ -10,7 +10,7 @@ import { createApp } from "../server/app";
 import { config } from "../server/config";
 import { Engine } from "../server/engine";
 import { ProviderLab } from "../server/provider-lab";
-import { createTask } from "./helpers";
+import { createTask, setAccountType } from "./helpers";
 import { grantFixtureAllowance } from "./fixtures/allowance";
 const url = process.env.OCTOLAB_TEST_POSTGRES_URL;
 const suite = url ? describe : describe.skip;
@@ -78,6 +78,8 @@ suite("operator-owned hosted workspace allowances", () => {
         [user.sessionId, user.userId],
       );
     }
+    // The workspace owner is a user account; the admin is exempt and needs no type.
+    await setAccountType(db.pool, owner.userId, "user");
     accounts = new Accounts(
       store,
       {

@@ -15,6 +15,7 @@ import {
   startTestMcpServer,
   type TestMcpServer,
 } from "./fixtures/test-mcp-server";
+import { setAccountType } from "./helpers";
 
 const url = process.env.OCTOLAB_TEST_POSTGRES_URL;
 const suite = url ? describe : describe.skip;
@@ -84,7 +85,13 @@ suite("hosted company connectors", () => {
       await db.pool.query(
         "INSERT INTO auth.sessions(id,user_id) VALUES($1,$2)",
         [identity.sessionId, identity.userId],
-      );
+      ); // Company people are business accounts; the customer is a user; admins need no type.
+      if (name !== "admin")
+        await setAccountType(
+          db.pool,
+          identity.userId,
+          name === "customer" ? "user" : "business",
+        );
     }
     const accounts = new Accounts(
       store,
@@ -317,6 +324,7 @@ suite("hosted company connectors", () => {
     const theirs = await request(app)
       .get(`/api/observations/${session.body.id}`)
       .set(as("owner"));
-    expect(theirs.status).toBe(404);
+    // The owner is a business account, so personal routes refuse it outright.
+    expect(theirs.status).toBe(403);
   });
 });

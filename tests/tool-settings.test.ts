@@ -27,6 +27,7 @@ import { config, providerRpm, providerEnabled } from "../server/config";
 import { providerWork, settingsWrite } from "../server/provider-settings-gate";
 import { providerRegistry } from "../server/provider-adapters";
 import { Observatory } from "../server/observation";
+import { setAccountType } from "./helpers";
 
 const url = process.env.OCTOLAB_ADMIN_SETTINGS_TEST_POSTGRES_URL;
 const suite = url ? describe : describe.skip;
@@ -84,6 +85,12 @@ suite("platform tool settings security and persistence", () => {
         "INSERT INTO auth.sessions(id,user_id) VALUES($1,$2)",
         [identity.sessionId, identity.userId],
       );
+      if (who !== "admin")
+        await setAccountType(
+          db.pool,
+          identity.userId,
+          who === "company" ? "business" : "user",
+        );
     }
     accounts = new Accounts(
       store,
