@@ -157,7 +157,7 @@ hosted("hosted wallet enforcement", () => {
   /** Operator-side fixture credit; the runtime role cannot post adjustments. */
   async function fund(micros = 7700, target = workspace) {
     await db.pool.query(
-      "INSERT INTO octolab.wallet_journal (workspace_id,source_id,kind,reference,wallet_micros) VALUES ($1,$2,'adjustment','isolated fixture credit',$3)",
+      "INSERT INTO octolab.wallet_journal (workspace_id,source_id,kind,reference,wallet_micros,mode) VALUES ($1,$2,'adjustment','isolated fixture credit',$3,'test')",
       [target, randomUUID(), micros],
     );
   }
@@ -640,9 +640,19 @@ hosted("hosted wallet enforcement", () => {
     expect(await walletValid()).toBe(true);
     // An operator release posting lifts the freeze.
     await db.pool.query(
-      "INSERT INTO octolab.wallet_journal (workspace_id,source_id,revision,kind,reference,wallet_micros) VALUES ($1,$2,4,'dispute_release','fixture review',0)",
+      "INSERT INTO octolab.wallet_journal (workspace_id,source_id,revision,kind,reference,wallet_micros,mode) VALUES ($1,$2,4,'dispute_release','fixture review',0,'test')",
       [workspace, payment.id],
     );
+    // A hold released by hand is not posted again by a later verification.
+    await stripe.reconcile(payment.id);
+    expect((await entries()).map((entry) => entry.kind)).toEqual([
+      "deposit",
+      "refund",
+      "dispute_hold",
+      "dispute_release",
+    ]);
+    expect(await status()).toMatchObject({ frozen: false });
+    expect(await walletValid()).toBe(true);
     expect((await run(id, call())).status).toBe("succeeded");
   });
 
@@ -837,7 +847,7 @@ hosted("hosted wallet enforcement", () => {
       await expect(
         db
           .prepare(
-            "INSERT INTO wallet_journal(workspace_id,source_id,kind,wallet_micros) VALUES (?,?,'usage',-7700)",
+            "INSERT INTO wallet_journal(workspace_id,source_id,kind,wallet_micros,mode) VALUES (?,?,'usage',-7700,'test')",
           )
           .run(workspace, receipt.id),
       ).rejects.toThrow(/row-level security/);
@@ -873,7 +883,7 @@ hosted("hosted wallet enforcement", () => {
     await expect(
       db
         .prepare(
-          "INSERT INTO wallet_journal(source_id,kind,reference,wallet_micros) VALUES (?,'adjustment','runtime',100)",
+          "INSERT INTO wallet_journal(source_id,kind,reference,wallet_micros,mode) VALUES (?,'adjustment','runtime',100,'test')",
         )
         .run(randomUUID()),
     ).rejects.toThrow(/row-level security/);
@@ -893,7 +903,7 @@ hosted("hosted wallet enforcement", () => {
     // A second debit for the same call or an altered amount cannot be stored.
     await expect(
       db.pool.query(
-        "INSERT INTO octolab.wallet_journal (workspace_id,source_id,kind,wallet_micros) VALUES ($1,$2,'usage',-7700)",
+        "INSERT INTO octolab.wallet_journal (workspace_id,source_id,kind,wallet_micros,mode) VALUES ($1,$2,'usage',-7700,'test')",
         [workspace, receipt.id],
       ),
     ).rejects.toThrow(/duplicate key/);

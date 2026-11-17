@@ -52,6 +52,10 @@ export interface FundingSummary {
   stripeIntents?: StripeDeposit[];
   entries?: FundingEntry[];
   wallet?: import("./wallet.js").WalletStatus;
+  /** Latest postings of the balance that pays for this account's calls. */
+  walletEntries?: import("./wallet.js").WalletEntry[];
+  /** Refund terms shown beside real-money top-ups. */
+  refundTerms?: string;
 }
 export interface FundingEntry {
   id: number;
@@ -62,15 +66,19 @@ export interface FundingEntry {
   reference: string;
   createdAt: string;
 }
+/** "test" is the Stripe sandbox. "live" is real money. */
+export type StripeMode = "test" | "live";
 export interface StripeFundingStatus {
   enabled: boolean;
   unavailableReason: string | null;
-  mode: "test";
+  mode: StripeMode;
   minimumCents: number;
   maximumCents: number;
 }
 export interface StripeDeposit {
   id: string;
+  /** Fixed when the checkout is requested. Absent on receipts saved before live mode existed, which are sandbox. */
+  mode?: StripeMode;
   requestKey: string;
   amountCents: number;
   status:
@@ -94,4 +102,22 @@ export interface StripeDeposit {
   updatedAt: string;
   lastCheckedAt: string | null;
   message: string;
+  /** Stripe-hosted receipt for the verified charge. */
+  receiptUrl?: string | null;
+  /** Operator refund reserved from the balance that Stripe has not reported yet. */
+  pendingRefundCents?: number;
+  /** Set when an operator releases the dispute freeze after Stripe closed the dispute. */
+  disputeResolution?: {
+    outcome: "won" | "lost";
+    restoredMicros: number;
+    releasedAt: string;
+    /** Amount Stripe took back for lost disputes. Never restored. */
+    lostCents?: number;
+    /** The Stripe disputes this release settled. A dispute not listed is a new one. */
+    disputeIds?: string[];
+  };
+  /** How many dispute cycles this payment has had. Absent means at most one. */
+  disputeCycle?: number;
+  /** Refunds Stripe reported and later failed; their credits were restored. */
+  failedRefundIds?: string[];
 }
