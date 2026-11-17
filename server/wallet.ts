@@ -2,10 +2,17 @@ import { createHash } from "node:crypto";
 import type { ObservedCall } from "./observation-types.js";
 import { shadowWalletPrice } from "./shadow-wallet.js";
 import type { Store } from "./store.js";
+import {
+  depositPosting,
+  fixedCostTavilyCall,
+  holdOutcome,
+} from "./wallet-rules.js";
 
 export interface WalletStatus {
   /** True when this account's eligible paid calls are gated by its credits. */
   enforced: boolean;
+  /** True once the account has any wallet activity, even while enforcement is paused. */
+  active: boolean;
   postedMicros: number;
   heldMicros: number;
   availableMicros: number;
@@ -45,29 +52,57 @@ export function walletCredentialDigest(credential: string) {
 }
 
 const scope = "current_setting('octolab.workspace_id')";
-const unresolvedDispute = `EXISTS (
-  SELECT 1 FROM wallet_journal d
-  WHERE d.workspace_id=${scope} AND d.kind='dispute_hold' AND NOT EXISTS (
-    SELECT 1 FROM wallet_journal r
-    WHERE r.workspace_id=d.workspace_id AND r.deposit_id=d.deposit_id AND r.kind='dispute_release'
-  ))`;
+const activeRate = `SELECT rate_version, provider_account, provider_cost_micros, verified_at, expires_at
+  FROM wallet_rates
+  WHERE workspace_id=${scope} AND verified_at<=now() AND expires_at>now()`;
+/** One row per workspace, whether or not the account has a balance row yet. */
+const balanceRow = `SELECT COALESCE(b.posted_micros,0) AS posted,
+         COALESCE(b.held_micros,0) AS held,
+         COALESCE(b.charged_micros,0) AS charged,
+         b.workspace_id IS NOT NULL AS active,
+         EXISTS (
+           SELECT 1 FROM wallet_journal d
+           WHERE d.workspace_id=${scope} AND d.kind='dispute_hold' AND NOT EXISTS (
+             SELECT 1 FROM wallet_journal r
+             WHERE r.workspace_id=d.workspace_id AND r.deposit_id=d.deposit_id
+               AND r.kind='dispute_release'
+           )) AS frozen
+  FROM (SELECT ${scope} AS id) w
+  LEFT JOIN wallet_balances b ON b.workspace_id=w.id`;
+const inactive: WalletStatus = {
+  enforced: false,
+  active: false,
+  postedMicros: 0,
+  heldMicros: 0,
+  availableMicros: 0,
+  chargedMicros: 0,
+  frozen: false,
+};
 
 /**
  * Prepaid service credits for one account. Every method runs inside the
- * caller's workspace transaction, whose lock serializes all keys and sessions
- * of that account.
+ * caller's workspace transaction or read.
  */
 export class Wallet {
+  private installed = false;
   constructor(private readonly store: Store) {}
 
-  private get hosted() {
-    return this.store.db.dialect === "postgres";
-  }
-
-  private activeRate() {
-    return `SELECT rate_version, provider_account, provider_cost_micros, verified_at, expires_at
-            FROM wallet_rates
-            WHERE workspace_id=${scope} AND verified_at<=now() AND expires_at>now()`;
+  /**
+   * False on SQLite and on a PostgreSQL schema that predates the wallet
+   * migration, where every method is a no-op. The startup migration check
+   * already refuses to serve a release whose migrations are pending; this
+   * keeps tooling and recovery paths that skip that check from failing on
+   * missing tables.
+   */
+  private async ready() {
+    if (this.installed) return true;
+    if (this.store.db.dialect !== "postgres") return false;
+    const row = await this.store.db
+      .prepare(
+        "SELECT to_regclass('octolab.wallet_journal') IS NOT NULL AS installed",
+      )
+      .get();
+    return (this.installed = row?.installed === true);
   }
 
   /**
@@ -79,40 +114,29 @@ export class Wallet {
     const { db } = this.store;
     if (
       !walletEnforcementEnabled() ||
-      !this.hosted ||
-      call.tool !== "tavily_search" ||
-      (call.arguments.searchDepth ?? "basic") !== "basic" ||
-      (call.arguments.maxResults ?? 10) !== 10 ||
-      !call.providerAccountReference ||
-      !providerCredential ||
-      call.adapter?.version !== "1.0.0"
+      !fixedCostTavilyCall(call, providerCredential) ||
+      !(await this.ready())
     )
       return false;
     const rate = await db
-      .prepare(
-        `${this.activeRate()} AND provider_account=? AND credential_digest=?`,
-      )
+      .prepare(`${activeRate} AND provider_account=? AND credential_digest=?`)
       .get(
-        call.providerAccountReference,
+        call.providerAccountReference!,
         walletCredentialDigest(providerCredential),
       );
     if (!rate) return false;
 
     const base = Number(rate.provider_cost_micros);
     const { markupBps, markupMicros, maximumMicros } = shadowWalletPrice(base);
+    // All keys and sessions of the account serialize here. The workspace
+    // transaction already holds this lock; taking it again is free and keeps
+    // the balance check correct for any future caller.
     await db
-      .prepare(
-        `INSERT INTO wallet_balances (workspace_id) VALUES (${scope}) ON CONFLICT (workspace_id) DO NOTHING`,
-      )
-      .run();
-    const balance = (await db
-      .prepare(
-        `SELECT posted_micros, held_micros, ${unresolvedDispute} AS frozen
-         FROM wallet_balances WHERE workspace_id=${scope} FOR UPDATE`,
-      )
-      .get())!;
-    const heldMicros = Number(balance.held_micros);
-    const availableMicros = Number(balance.posted_micros) - heldMicros;
+      .prepare(`SELECT pg_advisory_xact_lock(hashtextextended(${scope},0))`)
+      .get();
+    const balance = (await db.prepare(balanceRow).get())!;
+    const heldMicros = Number(balance.held);
+    const availableMicros = Number(balance.posted) - heldMicros;
     if (balance.frozen === true || availableMicros < maximumMicros)
       throw new WalletError({
         reason:
@@ -131,7 +155,7 @@ export class Wallet {
       .run(
         call.id,
         call.apiKeyId ?? null,
-        call.adapter.version,
+        call.adapter!.version,
         rate.provider_account,
         rate.rate_version,
         rate.verified_at,
@@ -151,7 +175,7 @@ export class Wallet {
    */
   async close(call: ObservedCall) {
     const { db } = this.store;
-    if (!this.hosted) return;
+    if (!(await this.ready())) return;
     const hold = await db
       .prepare(
         `SELECT h.total_micros FROM wallet_holds h
@@ -163,29 +187,12 @@ export class Wallet {
       .get(call.id);
     if (!hold) return;
 
-    const reported = (call.result?.usage as { credits?: number } | undefined)
-      ?.credits;
-    const providerRequestId = call.result?.requestId;
-    const outcome =
-      call.status === "interrupted"
-        ? "interrupted"
-        : call.status !== "succeeded"
-          ? "failed"
-          : reported !== undefined && reported !== 1
-            ? "cost_conflict"
-            : "posted";
+    const { outcome, providerRequestId, reportedCredits } = holdOutcome(call);
     await db
       .prepare(
         "INSERT INTO wallet_hold_closures(call_id,outcome,provider_request_id,reported_credits) VALUES (?,?,?,?)",
       )
-      .run(
-        call.id,
-        outcome,
-        typeof providerRequestId === "string" && providerRequestId.length
-          ? providerRequestId.slice(0, 200)
-          : null,
-        reported ?? null,
-      );
+      .run(call.id, outcome, providerRequestId, reportedCredits);
     if (outcome === "posted")
       await db
         .prepare(
@@ -194,12 +201,13 @@ export class Wallet {
         .run(call.id, -Number(hold.total_micros));
   }
 
-  /** Enrolls a new checkout intent of an enrolled account, inside its creation transaction. */
+  /** Enrolls a deposit of an account with an active rate while enforcement is on. */
   async enrollDeposit(depositId: string) {
-    if (!walletEnforcementEnabled() || !this.hosted) return;
+    if (!walletEnforcementEnabled() || !(await this.ready())) return;
     await this.store.db
       .prepare(
-        `INSERT INTO wallet_deposits(deposit_id) SELECT ? WHERE EXISTS (${this.activeRate()})`,
+        `INSERT INTO wallet_deposits(deposit_id) SELECT ? WHERE EXISTS (${activeRate})
+         ON CONFLICT (workspace_id,deposit_id) DO NOTHING`,
       )
       .run(depositId);
   }
@@ -207,15 +215,22 @@ export class Wallet {
   /**
    * Converges an enrolled deposit on its verified net amount. Replays post
    * nothing; refunds and dispute holds append negative adjustments.
+   *
+   * `firstVerification` is true only when this reconciliation is the first to
+   * see the payment as paid. A checkout prepared before the account was
+   * enrolled, but first paid while enforcement is on, is enrolled here.
+   * Payments already credited before enrollment are never backfilled.
    */
   async reconcileDeposit(
     depositId: string,
     paymentIntentId: string,
     targetMicros: number,
     disputed: boolean,
+    firstVerification = false,
   ) {
     const { db } = this.store;
-    if (!this.hosted) return;
+    if (!(await this.ready())) return;
+    if (firstVerification) await this.enrollDeposit(depositId);
     const state = await db
       .prepare(
         `SELECT EXISTS(SELECT 1 FROM wallet_deposits WHERE workspace_id=${scope} AND deposit_id=?) AS enrolled,
@@ -225,8 +240,12 @@ export class Wallet {
       )
       .get(depositId, depositId);
     if (!state?.enrolled) return;
-    const delta = targetMicros - Number(state.current);
-    if (!delta && !disputed) return;
+    const posting = depositPosting(
+      Number(state.current),
+      targetMicros,
+      disputed,
+    );
+    if (!posting) return;
     await db
       .prepare(
         `INSERT INTO wallet_journal (source_id,revision,kind,reference,target_micros,wallet_micros)
@@ -236,37 +255,27 @@ export class Wallet {
       .run(
         depositId,
         state.next_revision,
-        disputed ? "dispute_hold" : delta < 0 ? "refund" : "deposit",
+        posting.kind,
         paymentIntentId,
         targetMicros,
-        delta,
+        posting.deltaMicros,
       );
   }
 
+  /** Two single-row reads; safe to poll. */
   async status(): Promise<WalletStatus> {
-    const empty = {
-      enforced: false,
-      postedMicros: 0,
-      heldMicros: 0,
-      availableMicros: 0,
-      chargedMicros: 0,
-      frozen: false,
-    };
-    if (!this.hosted) return empty;
+    if (!(await this.ready())) return inactive;
     const row = await this.store.db
       .prepare(
-        `SELECT EXISTS (${this.activeRate()}) AS enrolled,
-                COALESCE((SELECT posted_micros FROM wallet_balances WHERE workspace_id=${scope}),0) AS posted,
-                COALESCE((SELECT held_micros FROM wallet_balances WHERE workspace_id=${scope}),0) AS held,
-                COALESCE((SELECT -sum(wallet_micros) FROM wallet_journal WHERE workspace_id=${scope} AND kind='usage'),0) AS charged,
-                ${unresolvedDispute} AS frozen`,
+        `SELECT s.*, EXISTS (${activeRate}) AS enrolled FROM (${balanceRow}) s`,
       )
       .get();
-    if (!row) return empty;
+    if (!row) return inactive;
     const postedMicros = Number(row.posted),
       heldMicros = Number(row.held);
     return {
       enforced: walletEnforcementEnabled() && row.enrolled === true,
+      active: row.active === true,
       postedMicros,
       heldMicros,
       availableMicros: Math.max(0, postedMicros - heldMicros),

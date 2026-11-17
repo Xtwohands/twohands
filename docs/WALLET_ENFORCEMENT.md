@@ -19,33 +19,38 @@ Phase 2 of the [prepaid usage billing PRD](PRODUCTION_WALLET_PRD.md). With `TWO_
 
 ## Funding
 
-A Stripe sandbox checkout intent created while the flag is on, for an account with an active rate, is enrolled in `wallet_deposits` in the transaction that saves the intent. Earlier deposits and the existing test-credit balance are never backfilled, and the test-credit ledger keeps its own behavior. After the existing test-mode payment verification, the wallet converges on the deposit's verified net amount: webhook retries post once, refunds append negative entries, and a dispute appends a `dispute_hold` that removes the payment's remaining credits and freezes paid admission. If a reversal exceeds unused credits the posted balance goes negative, which also blocks admission. Only an operator can lift a dispute freeze, by appending a `dispute_release` entry for that deposit after review.
+A Stripe sandbox checkout intent created while the flag is on, for an account with an active rate, is enrolled in `wallet_deposits` in the transaction that saves the intent. A checkout prepared earlier is enrolled when its payment is verified for the first time while the flag is on and the rate is active, so money paid under enforcement always funds the wallet and its dispute always freezes it. A payment that was already verified before enrollment is never backfilled, even if its events replay or it is checked again, and the existing test-credit balance and ledger keep their own behavior. After the existing test-mode payment verification, the wallet converges on the deposit's verified net amount: webhook retries post once, refunds append negative entries, and a dispute appends a `dispute_hold` that removes the payment's remaining credits and freezes paid admission. If a reversal exceeds unused credits the posted balance goes negative, which also blocks admission. Only an operator can lift a dispute freeze, by appending a `dispute_release` entry for that deposit after review.
 
 ## Tables
 
 All are private to the `octolab` schema, row-level-security scoped to the workspace, and independent of research retention.
 
-| Table                  | Purpose                                                                                                                       |
-| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| `wallet_rates`         | Operator-verified rate and enrollment. Runtime read-only.                                                                     |
-| `wallet_holds`         | One immutable hold per admitted call with the frozen rate, cost, markup and maximum.                                          |
-| `wallet_hold_closures` | One explicit outcome per hold: `posted`, `failed`, `interrupted` or `cost_conflict`.                                          |
-| `wallet_deposits`      | Checkout intents enrolled at creation.                                                                                        |
-| `wallet_journal`       | Append-only postings: `deposit`, `refund`, `dispute_hold`, `usage`, and operator-only `dispute_release` and `adjustment`.     |
-| `wallet_balances`      | Projection of posted and held micros, maintained by triggers in the same transaction as each journal, hold or closure insert. |
+| Table                  | Purpose                                                                                                                             |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `wallet_rates`         | Operator-verified rate and enrollment. Runtime read-only.                                                                           |
+| `wallet_holds`         | One immutable hold per admitted call with the frozen rate, cost, markup and maximum.                                                |
+| `wallet_hold_closures` | One explicit outcome per hold: `posted`, `failed`, `interrupted` or `cost_conflict`.                                                |
+| `wallet_deposits`      | Deposits enrolled at checkout creation or first verification.                                                                       |
+| `wallet_journal`       | Append-only postings: `deposit`, `refund`, `dispute_hold`, `usage`, and operator-only `dispute_release` and `adjustment`.           |
+| `wallet_balances`      | Projection of posted, held and charged micros. Runtime read-only; written only by triggers in the same transaction as each posting. |
 
-Each journal row carries both sides of the posting (`wallet_micros` and the opposite `clearing_micros`). Foreign keys tie a usage posting to a `posted` closure and to the hold's exact total, so an altered amount or a debit without a billable result cannot be stored. The runtime role can insert but not update or delete journal rows.
+Each journal row carries both sides of the posting (`wallet_micros` and the opposite `clearing_micros`). Foreign keys tie a usage posting to a `posted` closure and to the hold's exact total, so an altered amount or a debit without a billable result cannot be stored. The runtime role can insert but not update or delete journal rows, and cannot write `wallet_balances` at all: the projection that admission reads changes only through owner-run trigger functions fired by a journal, hold or closure insert. Those functions read `wallet_holds`, so the migration owner must be exempt from row-level security (a superuser or a `BYPASSRLS` role, as on the hosted project); otherwise a closure fails loudly instead of drifting.
 
 `SELECT octolab.wallet_rebuild_balances()` rebuilds every projection row from the journal and open holds; it changes nothing when the projection is already correct. Backup evidence reports `walletValid`, which fails when a posted closure lacks its debit, a finished call still has an open hold, an enrolled deposit's journal differs from its verified net credits, or the projection differs from a rebuild.
 
 ## Rollout
 
-1. Apply migration `20261117120000_wallet_enforcement.sql` with the existing release procedure. It only adds tables, functions and policies.
-2. Keep `TWO_HANDS_WALLET_ENFORCEMENT=false` until an operator has provisioned the pilot account's allowance and recorded its verified rate.
-3. Enable the flag, make a new Stripe sandbox top-up, and run the drill: successful call, provider failure, replay, partial refund and dispute.
-4. To pause, set the flag to `false`. New calls stop being held or charged; open holds, refunds and disputes for enrolled deposits continue to reconcile.
+**Apply the migration before this release is deployed.** At startup the server refuses to serve when a checked-in migration is not installed, so a deploy that reaches the hosted service first will not boot. Render redeploys the tip of `main` on any environment change, so the order is: apply the migration, then merge.
 
-Credits (`#dashboard/credits`) shows **Available credits**, **Held for in-progress calls** and **Charged for tool calls** for an enforced account, from the `wallet` object on `GET /api/account/funding`.
+1. Apply migration `20261117120000_wallet_enforcement.sql` with the existing release procedure. It only adds tables, functions and policies.
+2. Merge and deploy with `TWO_HANDS_WALLET_ENFORCEMENT=false`. With the flag off no call is held or charged and no deposit is enrolled.
+3. Provision the pilot account's operator allowance and record its verified rate in `wallet_rates`.
+4. Enable the flag, make a new Stripe sandbox top-up, and run the drill: successful call, provider failure, replay, partial refund and dispute.
+5. To pause, set the flag to `false`. New calls stop being held or charged; open holds, refunds and disputes for enrolled deposits continue to reconcile.
+
+Wallet code paths that also run with the flag off (deposit reconciliation, the Credits summary, startup recovery) check that the wallet tables exist and do nothing when they do not. That protects tooling that skips the startup check; it does not make deploy-before-migrate a supported order.
+
+Credits (`#dashboard/credits`) shows **Available credits**, **Held for in-progress calls** and **Charged for tool calls** from the `wallet` object on `GET /api/account/funding`, for an enforced account and for any account that has wallet activity. While the flag is off or the rate has lapsed the balance stays visible with a note that credit billing is paused. The summary is two single-row reads and is safe to poll.
 
 ## Not in this phase
 
@@ -53,4 +58,4 @@ Live-mode Stripe, customer statement export, quotes that include wallet eligibil
 
 ## Validation
 
-`tests/wallet.test.ts` covers the default-off flag, the structured denial before dispatch, hold and single debit with replay after a lost response, concurrent holds from two keys against one balance, in-flight holds, failure and interruption release, zero-cost and sub-cent rounding, verified deposit, refund and dispute, the separate operator allowance, unrated calls, neighbouring-account isolation, runtime posting restrictions, and projection rebuild. PostgreSQL cases need a disposable loopback database in `OCTOLAB_TEST_POSTGRES_URL` and use injected provider and Stripe fixtures only. Never run them, fixture credits or test grants against the hosted project.
+`tests/wallet.test.ts` covers the default-off flag, the structured denial before dispatch, hold and single debit with replay after a lost response, concurrent holds from two keys against one balance, in-flight holds, failure and interruption release, zero-cost and sub-cent rounding, verified deposit, refund and dispute, the separate operator allowance, unrated calls, neighbouring-account isolation, runtime posting and projection restrictions, enrollment at first verification, malformed reported quantities, a schema without the wallet tables, and projection rebuild. PostgreSQL cases need a disposable loopback database in `OCTOLAB_TEST_POSTGRES_URL` and use injected provider and Stripe fixtures only. Never run them, fixture credits or test grants against the hosted project.

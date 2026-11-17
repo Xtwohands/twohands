@@ -16,11 +16,13 @@ CREATE TABLE wallet_rates (
 );
 
 -- Transactionally maintained projection of the journal and open holds.
--- Available credits are posted_micros - held_micros.
+-- Available credits are posted_micros - held_micros. Only the trigger
+-- functions below write it; the runtime role can read its own row.
 CREATE TABLE wallet_balances (
-  workspace_id TEXT PRIMARY KEY DEFAULT current_setting('octolab.workspace_id') REFERENCES workspaces(id),
+  workspace_id TEXT PRIMARY KEY REFERENCES workspaces(id),
   posted_micros BIGINT NOT NULL DEFAULT 0,
   held_micros BIGINT NOT NULL DEFAULT 0 CHECK (held_micros >= 0),
+  charged_micros BIGINT NOT NULL DEFAULT 0 CHECK (charged_micros >= 0),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
@@ -104,19 +106,28 @@ CREATE TABLE wallet_journal (
       OR (kind = 'adjustment' AND wallet_micros <> 0 AND reference IS NOT NULL))
 );
 
+CREATE INDEX wallet_journal_disputes ON wallet_journal (workspace_id, deposit_id)
+  WHERE kind IN ('dispute_hold', 'dispute_release');
+
 -- The projection follows every journal, hold and closure insert in the same
--- transaction, whichever role writes it.
+-- transaction, whichever role writes it. The functions run as their owner so
+-- the runtime role needs no write access to the projection. Row-level security
+-- on the journal, holds and closures already confines the inserting role to
+-- its own workspace.
 CREATE FUNCTION wallet_apply_journal() RETURNS trigger
-LANGUAGE plpgsql SET search_path = octolab, pg_catalog AS $$
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = octolab, pg_catalog AS $$
 BEGIN
-  INSERT INTO wallet_balances AS b (workspace_id, posted_micros)
-  VALUES (NEW.workspace_id, NEW.wallet_micros)
+  INSERT INTO wallet_balances AS b (workspace_id, posted_micros, charged_micros)
+  VALUES (NEW.workspace_id, NEW.wallet_micros,
+          CASE WHEN NEW.kind = 'usage' THEN -NEW.wallet_micros ELSE 0 END)
   ON CONFLICT (workspace_id) DO UPDATE
-    SET posted_micros = b.posted_micros + EXCLUDED.posted_micros, updated_at = now();
+    SET posted_micros = b.posted_micros + EXCLUDED.posted_micros,
+        charged_micros = b.charged_micros + EXCLUDED.charged_micros,
+        updated_at = now();
   RETURN NULL;
 END $$;
 CREATE FUNCTION wallet_apply_hold() RETURNS trigger
-LANGUAGE plpgsql SET search_path = octolab, pg_catalog AS $$
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = octolab, pg_catalog AS $$
 BEGIN
   INSERT INTO wallet_balances AS b (workspace_id, held_micros)
   VALUES (NEW.workspace_id, NEW.maximum_micros)
@@ -125,13 +136,17 @@ BEGIN
   RETURN NULL;
 END $$;
 CREATE FUNCTION wallet_apply_closure() RETURNS trigger
-LANGUAGE plpgsql SET search_path = octolab, pg_catalog AS $$
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = octolab, pg_catalog AS $$
 BEGIN
   UPDATE wallet_balances b
   SET held_micros = b.held_micros - h.maximum_micros, updated_at = now()
   FROM wallet_holds h
   WHERE h.workspace_id = NEW.workspace_id AND h.call_id = NEW.call_id
     AND b.workspace_id = NEW.workspace_id;
+  -- Fail the closure rather than let the projection drift from its hold.
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'wallet hold % has no balance projection', NEW.call_id;
+  END IF;
   RETURN NULL;
 END $$;
 CREATE TRIGGER wallet_journal_projection AFTER INSERT ON wallet_journal
@@ -145,29 +160,32 @@ CREATE TRIGGER wallet_closure_projection AFTER INSERT ON wallet_hold_closures
 -- run this after a restore; it changes nothing when the projection is correct.
 CREATE FUNCTION wallet_rebuild_balances() RETURNS void
 LANGUAGE sql SET search_path = octolab, pg_catalog AS $$
-  INSERT INTO wallet_balances AS b (workspace_id, posted_micros, held_micros)
-  SELECT workspace_id, sum(posted), sum(held) FROM (
-    SELECT workspace_id, wallet_micros AS posted, 0::bigint AS held FROM wallet_journal
+  INSERT INTO wallet_balances AS b (workspace_id, posted_micros, held_micros, charged_micros)
+  SELECT workspace_id, sum(posted), sum(held), sum(charged) FROM (
+    SELECT workspace_id, wallet_micros AS posted, 0::bigint AS held,
+           CASE WHEN kind = 'usage' THEN -wallet_micros ELSE 0 END AS charged
+    FROM wallet_journal
     UNION ALL
-    SELECT h.workspace_id, 0, h.maximum_micros FROM wallet_holds h
+    SELECT h.workspace_id, 0, h.maximum_micros, 0 FROM wallet_holds h
     WHERE NOT EXISTS (
       SELECT 1 FROM wallet_hold_closures c
       WHERE c.workspace_id = h.workspace_id AND c.call_id = h.call_id
     )
     UNION ALL
-    SELECT workspace_id, 0, 0 FROM wallet_balances
+    SELECT workspace_id, 0, 0, 0 FROM wallet_balances
   ) amounts GROUP BY workspace_id
   ON CONFLICT (workspace_id) DO UPDATE
-    SET posted_micros = EXCLUDED.posted_micros, held_micros = EXCLUDED.held_micros, updated_at = now()
-    WHERE b.posted_micros <> EXCLUDED.posted_micros OR b.held_micros <> EXCLUDED.held_micros;
+    SET posted_micros = EXCLUDED.posted_micros, held_micros = EXCLUDED.held_micros,
+        charged_micros = EXCLUDED.charged_micros, updated_at = now()
+    WHERE b.posted_micros <> EXCLUDED.posted_micros OR b.held_micros <> EXCLUDED.held_micros
+       OR b.charged_micros <> EXCLUDED.charged_micros;
 $$;
 REVOKE ALL ON FUNCTION wallet_apply_journal(), wallet_apply_hold(), wallet_apply_closure(), wallet_rebuild_balances() FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION wallet_apply_journal(), wallet_apply_hold(), wallet_apply_closure() TO octolab_runtime;
 
 ALTER TABLE wallet_rates ENABLE ROW LEVEL SECURITY;
 ALTER TABLE wallet_rates FORCE ROW LEVEL SECURITY;
+-- Not forced: the owner-run trigger functions are the projection's only writers.
 ALTER TABLE wallet_balances ENABLE ROW LEVEL SECURITY;
-ALTER TABLE wallet_balances FORCE ROW LEVEL SECURITY;
 ALTER TABLE wallet_holds ENABLE ROW LEVEL SECURITY;
 ALTER TABLE wallet_holds FORCE ROW LEVEL SECURITY;
 ALTER TABLE wallet_hold_closures ENABLE ROW LEVEL SECURITY;
@@ -179,9 +197,8 @@ ALTER TABLE wallet_journal FORCE ROW LEVEL SECURITY;
 
 CREATE POLICY wallet_rate_read ON wallet_rates FOR SELECT TO octolab_runtime
   USING (workspace_id = current_setting('octolab.workspace_id', true));
-CREATE POLICY wallet_balance_scope ON wallet_balances TO octolab_runtime
-  USING (workspace_id = current_setting('octolab.workspace_id', true))
-  WITH CHECK (workspace_id = current_setting('octolab.workspace_id', true));
+CREATE POLICY wallet_balance_read ON wallet_balances FOR SELECT TO octolab_runtime
+  USING (workspace_id = current_setting('octolab.workspace_id', true));
 CREATE POLICY wallet_hold_scope ON wallet_holds TO octolab_runtime
   USING (workspace_id = current_setting('octolab.workspace_id', true))
   WITH CHECK (workspace_id = current_setting('octolab.workspace_id', true));
@@ -199,8 +216,7 @@ CREATE POLICY wallet_journal_post ON wallet_journal FOR INSERT TO octolab_runtim
     AND kind IN ('deposit', 'refund', 'dispute_hold', 'usage'));
 
 REVOKE ALL ON wallet_rates,wallet_balances,wallet_holds,wallet_hold_closures,wallet_deposits,wallet_journal FROM PUBLIC,octolab_runtime;
-GRANT SELECT ON wallet_rates TO octolab_runtime;
-GRANT SELECT,INSERT,UPDATE ON wallet_balances TO octolab_runtime;
+GRANT SELECT ON wallet_rates,wallet_balances TO octolab_runtime;
 GRANT SELECT,INSERT ON wallet_holds,wallet_hold_closures,wallet_deposits,wallet_journal TO octolab_runtime;
 DO $$ BEGIN
   IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname='anon') THEN

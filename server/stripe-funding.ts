@@ -474,6 +474,9 @@ export class StripeFundingService {
             502,
             "Stripe payment amount or identity does not match this deposit. No credits were added.",
           );
+        // First time this payment is seen as paid; earlier credits are never backfilled.
+        const firstVerification =
+          !current.paymentIntentId && !current.netCreditUnits;
         current.paymentIntentId = payment.id;
         current.chargeId = charge.id;
         current.refundedCents = Math.max(
@@ -508,6 +511,7 @@ export class StripeFundingService {
           payment.id,
           target,
           current.disputed,
+          firstVerification,
         );
         current.netCreditUnits = target;
         current.checkoutUrl = null;

@@ -98,7 +98,7 @@ export function FundingView() {
                 estimated tool usage
               </p>
             </section>
-            {summary?.wallet?.enforced && (
+            {(summary?.wallet?.enforced || summary?.wallet?.active) && (
               <section className="ws-panel ws-balance-card">
                 <span>Available credits</span>
                 <strong>
@@ -111,7 +111,9 @@ export function FundingView() {
                   calls: {sandboxCredits(summary.wallet.chargedMicros)}
                   {summary.wallet.frozen
                     ? " · Paid tools are paused while a payment is under review"
-                    : ""}
+                    : !summary.wallet.enforced
+                      ? " · Credit billing is paused; your balance is kept"
+                      : ""}
                 </p>
               </section>
             )}

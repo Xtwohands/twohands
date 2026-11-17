@@ -194,11 +194,13 @@ export async function databaseSnapshot(
           HAVING COALESCE(sum(j.wallet_micros),0)<>(d.body::jsonb->>'netCreditUnits')::bigint
           UNION ALL
           SELECT 1 FROM (
-            SELECT workspace_id, sum(posted) AS posted, sum(held) AS held FROM (
-              SELECT workspace_id, wallet_micros AS posted, 0::bigint AS held
+            SELECT workspace_id, sum(posted) AS posted, sum(held) AS held,
+                   sum(charged) AS charged FROM (
+              SELECT workspace_id, wallet_micros AS posted, 0::bigint AS held,
+                     CASE WHEN kind='usage' THEN -wallet_micros ELSE 0 END AS charged
               FROM octolab.wallet_journal
               UNION ALL
-              SELECT h.workspace_id, 0, h.maximum_micros FROM octolab.wallet_holds h
+              SELECT h.workspace_id, 0, h.maximum_micros, 0 FROM octolab.wallet_holds h
               WHERE NOT EXISTS (
                 SELECT 1 FROM octolab.wallet_hold_closures c
                 WHERE c.workspace_id=h.workspace_id AND c.call_id=h.call_id
@@ -208,6 +210,7 @@ export async function databaseSnapshot(
           FULL JOIN octolab.wallet_balances b USING (workspace_id)
           WHERE COALESCE(rebuilt.posted,0)<>COALESCE(b.posted_micros,0)
              OR COALESCE(rebuilt.held,0)<>COALESCE(b.held_micros,0)
+             OR COALESCE(rebuilt.charged,0)<>COALESCE(b.charged_micros,0)
           LIMIT 1
         `)
       ).rowCount === 0

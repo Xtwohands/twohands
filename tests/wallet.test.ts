@@ -22,6 +22,7 @@ import {
   walletCredentialDigest,
   walletEnforcementEnabled,
 } from "../server/wallet";
+import { holdOutcome } from "../server/wallet-rules";
 import { grantFixtureAllowance } from "./fixtures/allowance";
 import { FixtureStripeGateway, fixtureStripeSettings } from "./fixtures/stripe";
 
@@ -33,6 +34,78 @@ it("keeps wallet enforcement off unless explicitly enabled", () => {
   vi.stubEnv("TWO_HANDS_WALLET_ENFORCEMENT", "true");
   expect(walletEnforcementEnabled()).toBe(true);
   vi.unstubAllEnvs();
+});
+
+it("touches no wallet table on a schema that predates the wallet migration", async () => {
+  const queries: string[] = [];
+  const store = {
+    db: {
+      dialect: "postgres",
+      prepare(sql: string) {
+        queries.push(sql);
+        const row = { installed: false };
+        return {
+          get: async () => row,
+          all: async () => [row],
+          run: async () => ({ changes: 0 }),
+        };
+      },
+    },
+  } as unknown as Store;
+  const fixture = {
+    id: "call",
+    tool: "tavily_search",
+    arguments: {},
+    providerAccountReference: "fixture",
+    adapter: { version: "1.0.0" },
+    status: "interrupted",
+  } as unknown as Parameters<Wallet["close"]>[0];
+  for (const flag of ["false", "true"]) {
+    vi.stubEnv("TWO_HANDS_WALLET_ENFORCEMENT", flag);
+    const wallet = new Wallet(store);
+    expect(await wallet.admit(fixture, "fixture")).toBe(false);
+    await wallet.close(fixture);
+    await wallet.enrollDeposit("deposit");
+    await wallet.reconcileDeposit(
+      "deposit",
+      "pi_fixture",
+      5_000_000,
+      false,
+      true,
+    );
+    expect(await wallet.status()).toMatchObject({
+      enforced: false,
+      active: false,
+      availableMicros: 0,
+    });
+  }
+  vi.unstubAllEnvs();
+  expect(queries.length).toBeGreaterThan(0);
+  expect(queries.every((sql) => /to_regclass/.test(sql))).toBe(true);
+  expect(queries.join(" ")).not.toMatch(/FROM wallet_|INTO wallet_/);
+});
+
+it("never passes a malformed reported quantity to storage", () => {
+  const settle = (credits: unknown) =>
+    holdOutcome({
+      status: "succeeded",
+      result: { usage: { credits }, requestId: "r".repeat(300) },
+    } as unknown as Parameters<typeof holdOutcome>[0]);
+  expect(settle(1)).toMatchObject({ outcome: "posted", reportedCredits: 1 });
+  expect(settle(undefined)).toMatchObject({
+    outcome: "posted",
+    reportedCredits: null,
+  });
+  expect(settle(2)).toMatchObject({
+    outcome: "cost_conflict",
+    reportedCredits: 2,
+  });
+  for (const bad of [-1, NaN, Infinity, "1", null, {}])
+    expect(settle(bad)).toMatchObject({
+      outcome: "cost_conflict",
+      reportedCredits: null,
+    });
+  expect(settle(1).providerRequestId).toHaveLength(200);
 });
 
 const url = process.env.OCTOLAB_TEST_POSTGRES_URL;
@@ -179,7 +252,11 @@ hosted("hosted wallet enforcement", () => {
     const id = await session();
     expect((await run(id, call())).status).toBe("succeeded");
     expect(await holds()).toEqual([]);
-    expect(await status()).toMatchObject({ enforced: false, postedMicros: 0 });
+    expect(await status()).toMatchObject({
+      enforced: false,
+      active: false,
+      postedMicros: 0,
+    });
   });
 
   it("denies before dispatch with a structured response and reserves nothing", async () => {
@@ -455,10 +532,17 @@ hosted("hosted wallet enforcement", () => {
       fixtureStripeSettings,
       gateway,
     );
-    // A checkout intent created before enforcement is never backfilled.
+    // A payment verified before enforcement is never backfilled, even when
+    // its events are replayed or it is checked again later.
     vi.stubEnv("TWO_HANDS_WALLET_ENFORCEMENT", "false");
     const old = await stripe.create({ requestKey: randomUUID(), amount: "5" });
+    const oldPaid = gateway.signed(
+      "checkout.session.completed",
+      gateway.pay(old.checkoutSessionId!),
+    );
+    await stripe.webhook(oldPaid.payload, oldPaid.signature);
     vi.stubEnv("TWO_HANDS_WALLET_ENFORCEMENT", "true");
+    await stripe.reconcile(old.id);
     const payment = await stripe.create({
       requestKey: randomUUID(),
       amount: "5",
@@ -562,6 +646,80 @@ hosted("hosted wallet enforcement", () => {
     expect((await run(id, call())).status).toBe("succeeded");
   });
 
+  it("funds and freezes from a checkout prepared before enrollment but first paid under enforcement", async () => {
+    const gateway = new FixtureStripeGateway();
+    const stripe = new StripeFundingService(
+      new FundingService(store, {
+        enabled: false,
+        recipient: "",
+        rpcUrl: "https://fixture.invalid",
+      }),
+      fixtureStripeSettings,
+      gateway,
+    );
+    vi.stubEnv("TWO_HANDS_WALLET_ENFORCEMENT", "false");
+    const prepared = await stripe.create({
+      requestKey: randomUUID(),
+      amount: "5",
+    });
+    vi.stubEnv("TWO_HANDS_WALLET_ENFORCEMENT", "true");
+    const paid = gateway.signed(
+      "checkout.session.completed",
+      gateway.pay(prepared.checkoutSessionId!),
+    );
+    await stripe.webhook(paid.payload, paid.signature);
+    await stripe.webhook(paid.payload, paid.signature);
+    expect(await status()).toMatchObject({
+      postedMicros: 5_000_000,
+      frozen: false,
+    });
+    const disputed = gateway.pay(prepared.checkoutSessionId!, 0, true);
+    const dispute = gateway.signed(
+      "charge.dispute.created",
+      disputed.payment_intent.latest_charge,
+    );
+    await stripe.webhook(dispute.payload, dispute.signature);
+    expect(await status()).toMatchObject({ postedMicros: 0, frozen: true });
+    await expect(run(await session(), call())).rejects.toMatchObject({
+      wallet: { reason: "dispute_hold" },
+    });
+  });
+
+  it("releases at zero charge when the provider reports a malformed credit quantity", async () => {
+    await fund(20_000_000);
+    const id = await session();
+    for (const credits of [-1, Number.NaN, Number.POSITIVE_INFINITY, "1"]) {
+      search.mockResolvedValueOnce({
+        ...result,
+        usage: { ...result.usage, credits: credits as number },
+      });
+      // The adapter rejects most malformed usage; whatever reaches settlement
+      // must close the hold instead of failing the transaction.
+      expect(["succeeded", "failed"]).toContain((await run(id, call())).status);
+    }
+    for (const outcome of await outcomes())
+      expect(["failed", "cost_conflict"]).toContain(outcome);
+    expect(await outcomes()).toHaveLength(4);
+    expect(await debits()).toEqual([]);
+    expect(await status()).toMatchObject({
+      heldMicros: 0,
+      availableMicros: 20_000_000,
+    });
+  });
+
+  it("keeps the balance visible while enforcement is paused", async () => {
+    expect(await status()).toMatchObject({ enforced: true, active: false });
+    await fund(20_000_000);
+    await run(await session(), call());
+    vi.stubEnv("TWO_HANDS_WALLET_ENFORCEMENT", "false");
+    expect(await status()).toMatchObject({
+      enforced: false,
+      active: true,
+      availableMicros: 19_992_300,
+      chargedMicros: 7700,
+    });
+  });
+
   it("keeps the operator allowance as a separate required control", async () => {
     await fund(20_000_000);
     const id = await session();
@@ -631,14 +789,29 @@ hosted("hosted wallet enforcement", () => {
             "UPDATE wallet_balances SET posted_micros=posted_micros+1 WHERE workspace_id=?",
           )
           .run(workspace),
-      ).resolves.toMatchObject({ changes: 0 });
+      ).rejects.toThrow(/permission denied/);
     });
     expect(await status()).toMatchObject({
       postedMicros: 0,
       chargedMicros: 7700,
     });
 
-    // The runtime role cannot mint credit, rewrite history or set rates.
+    // The runtime role cannot mint credit, rewrite history or set rates, and
+    // can only read the projection that admission trusts.
+    await expect(
+      db
+        .prepare(
+          "UPDATE wallet_balances SET posted_micros=posted_micros+1000000",
+        )
+        .run(),
+    ).rejects.toThrow(/permission denied/);
+    await expect(
+      db
+        .prepare(
+          "INSERT INTO wallet_balances(workspace_id,posted_micros) VALUES (?,1000000)",
+        )
+        .run(randomUUID()),
+    ).rejects.toThrow(/permission denied/);
     await expect(
       db
         .prepare(
