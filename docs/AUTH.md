@@ -64,3 +64,13 @@ OCTOLAB_TEST_POSTGRES_URL=postgresql://... npm test -- tests/accounts.test.ts te
 ```
 
 These fixtures create a minimal synthetic Auth schema. Never point them at production Supabase.
+
+## Account types
+
+Every account is either a **business** (tool company, opens `#company`) or a **user** (opens `#dashboard`). The type is stored in `octolab.account_types` (migration `20261117120000_account_types.sql`). RLS is forced on that table, and no browser or runtime role has a grant on it.
+
+- New accounts pick Business or User on the sign-in screen, or on a one-time chooser after their first sign-in. `POST /api/auth/account-type` saves it once; `/api/auth/me` returns `accountType`.
+- A database trigger rejects every update, delete and truncate, so the type cannot change. To correct a mistake, an operator must run SQL by hand: `ALTER TABLE octolab.account_types DISABLE TRIGGER account_types_no_update_or_delete;`, fix the row, then `ENABLE` the trigger again.
+- Personal routes (dashboard, credits and payments, API keys, MCP sessions) require a user account. Company, connector and seller routes, and company registration, require a business account. Analysts must have business accounts. Platform admins on `SUPABASE_ADMIN_USER_IDS` are exempt.
+- The migration backfills existing accounts: company members become business, and other workspace owners become user.
+- Logged-out visitors to a signed-in area are sent to `/login`. `#signin` still works.
