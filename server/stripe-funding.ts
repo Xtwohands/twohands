@@ -1,16 +1,25 @@
 import { randomUUID } from "node:crypto";
 import Stripe from "stripe";
 import { z } from "zod";
+import { PostgresDatabase } from "./database.js";
 import { ShadowWallet } from "./shadow-wallet.js";
 import { Wallet } from "./wallet.js";
 import { FundingError, type FundingService } from "./funding.js";
-import type { StripeDeposit, StripeFundingStatus } from "./funding-types.js";
+import { REFUND_TERMS } from "./refund-policy.js";
+import type {
+  StripeDeposit,
+  StripeFundingStatus,
+  StripeMode,
+} from "./funding-types.js";
 export type StripeSettings = {
   enabled: boolean;
   secretKey: string;
   webhookSecret: string;
   appUrl: string;
+  /** Largest single top-up. Only the live rail sets it. */
+  maximumCents?: number;
 };
+/** Sandbox rail. It only ever accepts test keys and test-mode objects. */
 export function stripeSettings(): StripeSettings {
   return {
     enabled: process.env.STRIPE_TEST_ENABLED === "true",
@@ -19,6 +28,27 @@ export function stripeSettings(): StripeSettings {
     appUrl: process.env.PUBLIC_APP_URL || "http://127.0.0.1:5173",
   };
 }
+/**
+ * Real-money rail. It has its own flag, key and webhook secret, and is off
+ * unless `STRIPE_LIVE_ENABLED` is exactly "true". It never reads the sandbox
+ * variables, so a test key cannot be picked up by mistake.
+ */
+export function liveStripeSettings(): StripeSettings {
+  const cap = Number(process.env.STRIPE_LIVE_MAX_TOPUP_USD || "100");
+  return {
+    enabled: process.env.STRIPE_LIVE_ENABLED === "true",
+    secretKey: process.env.STRIPE_LIVE_SECRET_KEY || "",
+    webhookSecret: process.env.STRIPE_LIVE_WEBHOOK_SECRET || "",
+    appUrl: process.env.PUBLIC_APP_URL || "",
+    // An unreadable cap falls back to the minimum top-up, never to no cap.
+    maximumCents:
+      Number.isInteger(cap) && cap >= 5 && cap <= 1000 ? cap * 100 : 500,
+  };
+}
+export type StripeRail = { settings: StripeSettings; gateway: StripeGateway };
+/** The deposit's own mode. Receipts saved before live mode existed are sandbox. */
+export const stripeModeOf = (value: { mode?: StripeMode }): StripeMode =>
+  value.mode === "live" ? "live" : "test";
 export function appOrigin(value: string) {
   try {
     const u = new URL(value);
@@ -48,6 +78,14 @@ export interface StripeGateway {
   retrieve(id: string): Promise<unknown>;
   payment(id: string): Promise<unknown>;
   event(payload: Buffer, signature: string, secret: string): Stripe.Event;
+  /** Disputes Stripe holds for one payment. */
+  disputes(paymentIntentId: string): Promise<unknown[]>;
+  /** Refunds Stripe holds for one payment. */
+  refunds(paymentIntentId: string): Promise<unknown[]>;
+  refund(
+    params: { paymentIntentId: string; amountCents: number; requestId: string },
+    key: string,
+  ): Promise<unknown>;
 }
 export function stripeGateway(settings: StripeSettings): StripeGateway {
   const client = new Stripe(settings.secretKey || "sk_test_unconfigured", {
@@ -64,6 +102,20 @@ export function stripeGateway(settings: StripeSettings): StripeGateway {
     payment: (id) => client.paymentIntents.retrieve(id),
     event: (payload, signature, secret) =>
       client.webhooks.constructEvent(payload, signature, secret),
+    disputes: async (payment_intent) =>
+      (await client.disputes.list({ payment_intent, limit: 100 })).data,
+    refunds: async (payment_intent) =>
+      (await client.refunds.list({ payment_intent, limit: 100 })).data,
+    refund: (params, key) =>
+      client.refunds.create(
+        {
+          payment_intent: params.paymentIntentId,
+          amount: params.amountCents,
+          reason: "requested_by_customer",
+          metadata: { octolab_refund_request_id: params.requestId },
+        },
+        { idempotencyKey: key },
+      ),
   };
 }
 export const stripeDepositInput = z
@@ -83,44 +135,115 @@ export const stripeDepositInput = z
         z
           .number()
           .int()
-          .min(500, "Minimum card deposit is $5 in test mode.")
-          .max(100000, "Maximum card deposit is $1,000 in test mode."),
+          .min(500, "Minimum card deposit is $5.")
+          .max(100000, "Maximum card deposit is $1,000."),
       ),
   })
   .strict();
 const metadata = z.record(z.string(), z.string()).nullable();
-const sessionSchema = z.object({
-  id: z.string().startsWith("cs_test_"),
-  livemode: z.literal(false),
-  mode: z.literal("payment"),
-  amount_total: z.number().int(),
-  currency: z.string(),
-  client_reference_id: z.string().nullable(),
-  metadata,
-  status: z.enum(["open", "complete", "expired"]),
-  payment_status: z.enum(["paid", "unpaid", "no_payment_required"]),
-  url: z.string().nullable().optional(),
-  payment_intent: z.unknown().optional(),
-});
-const paymentSchema = z.object({
-  id: z.string().startsWith("pi_"),
-  livemode: z.literal(false),
-  status: z.literal("succeeded"),
-  amount: z.number().int(),
-  amount_received: z.number().int(),
-  currency: z.literal("usd"),
-  latest_charge: z.object({
-    id: z.string().startsWith("ch_"),
-    livemode: z.literal(false),
-    paid: z.literal(true),
-    captured: z.literal(true),
-    amount: z.number().int(),
-    amount_captured: z.number().int(),
-    currency: z.literal("usd"),
-    amount_refunded: z.number().int().min(0),
-    disputed: z.boolean(),
-  }),
-});
+/**
+ * Stripe objects are accepted only in the mode of the rail that read them: a
+ * live object fails the sandbox schemas and a test object fails the live ones.
+ */
+function stripeSchemas(mode: StripeMode) {
+  const livemode = z.literal(mode === "live");
+  return {
+    session: z.object({
+      id: z.string().startsWith(`cs_${mode}_`),
+      livemode,
+      mode: z.literal("payment"),
+      amount_total: z.number().int(),
+      currency: z.string(),
+      client_reference_id: z.string().nullable(),
+      metadata,
+      status: z.enum(["open", "complete", "expired"]),
+      payment_status: z.enum(["paid", "unpaid", "no_payment_required"]),
+      url: z.string().nullable().optional(),
+      payment_intent: z.unknown().optional(),
+    }),
+    payment: z.object({
+      id: z.string().startsWith("pi_"),
+      livemode,
+      status: z.literal("succeeded"),
+      amount: z.number().int(),
+      amount_received: z.number().int(),
+      currency: z.literal("usd"),
+      latest_charge: z.object({
+        id: z.string().startsWith("ch_"),
+        livemode,
+        paid: z.literal(true),
+        captured: z.literal(true),
+        amount: z.number().int(),
+        amount_captured: z.number().int(),
+        currency: z.literal("usd"),
+        amount_refunded: z.number().int().min(0),
+        disputed: z.boolean(),
+        receipt_url: z.string().nullable().optional(),
+      }),
+    }),
+    paymentIdentity: z.object({ id: z.string(), livemode, metadata }),
+    dispute: z.object({
+      id: z.string().startsWith("d"),
+      livemode,
+      amount: z.number().int().min(0),
+      currency: z.literal("usd"),
+      status: z.string(),
+      payment_intent: z.string(),
+    }),
+    refund: z.object({
+      id: z.string().startsWith("re_"),
+      amount: z.number().int().positive(),
+      currency: z.literal("usd"),
+      status: z.string().nullable(),
+      payment_intent: z.string(),
+      metadata,
+    }),
+  };
+}
+const SCHEMAS = { test: stripeSchemas("test"), live: stripeSchemas("live") };
+/** Customer-facing wording. Sandbox copy never appears on a real-money receipt. */
+const COPY = {
+  test: {
+    product: "octolab test credits",
+    description:
+      "Sandbox funding only. Test credits do not pay for live provider calls.",
+    ready: "Continue to Stripe to complete the test payment.",
+    disputed:
+      "This payment is disputed. Its test credits are held for operator review.",
+    refunded:
+      "Stripe reports a refund. The test-credit balance has been adjusted.",
+    credited: "Stripe verified the test payment and added the credits once.",
+    wrongMode: "Only Stripe test-mode events are accepted.",
+    unconfigured:
+      "Stripe test verification is not configured. No credits were added.",
+  },
+  live: {
+    product: "Two Hands service credits",
+    description: "Prepaid credits for tool calls made through Two Hands.",
+    ready: "Continue to Stripe to complete the payment.",
+    disputed:
+      "This payment is disputed. Its credits are held and paid tools are paused while it is reviewed.",
+    refunded: "Stripe reports a refund. Your credits have been adjusted.",
+    credited: "Stripe verified the payment and added the credits once.",
+    wrongMode: "Only Stripe live-mode events are accepted on this endpoint.",
+    unconfigured:
+      "Card payment verification is not configured. No credits were added.",
+  },
+} as const;
+/** A Stripe-hosted receipt link, or null. Anything else is dropped. */
+function receiptUrl(value: string | null | undefined) {
+  try {
+    const url = new URL(value || "");
+    return url.protocol === "https:" &&
+      !url.username &&
+      !url.password &&
+      /(^|\.)stripe\.com$/.test(url.hostname)
+      ? url.toString()
+      : null;
+  } catch {
+    return null;
+  }
+}
 const EVENTS = new Set([
   "checkout.session.completed",
   "checkout.session.async_payment_succeeded",
@@ -132,6 +255,7 @@ const EVENTS = new Set([
   "charge.refunded",
   "charge.dispute.created",
   "charge.dispute.closed",
+  "refund.failed",
 ]);
 export interface WebhookIdentity {
   eventId: string;
@@ -147,61 +271,128 @@ export class StripeFundingService {
   readonly active = new Map<string, Promise<StripeDeposit>>();
   readonly creating = new Map<string, Promise<StripeDeposit>>();
   private readonly shadowWallet: ShadowWallet;
-  private readonly wallet: Wallet;
+  readonly wallet: Wallet;
   private manualChecks = new Map<string, number>();
+  private readonly rails: Record<StripeMode, StripeRail>;
+  /**
+   * `settings` and `gateway` are the sandbox rail, as before live mode
+   * existed. The live rail is separate and is built from its own environment
+   * variables unless a test injects one.
+   */
   constructor(
     public funding: FundingService,
     public settings = stripeSettings(),
-    private gateway = stripeGateway(settings),
+    gateway = stripeGateway(settings),
     private now = () => Date.now(),
+    live?: StripeRail,
   ) {
     this.shadowWallet = new ShadowWallet(funding.store);
     this.wallet = new Wallet(funding.store);
+    const liveSettings = live?.settings ?? liveStripeSettings();
+    this.rails = {
+      test: { settings, gateway },
+      live: live ?? {
+        settings: liveSettings,
+        gateway: stripeGateway(liveSettings),
+      },
+    };
   }
-  status(): StripeFundingStatus {
-    const reason = !this.settings.enabled
-      ? "Stripe test deposits are not enabled on this server."
-      : !/^sk_test_|^rk_test_/.test(this.settings.secretKey)
+  rail(mode: StripeMode) {
+    return this.rails[mode];
+  }
+  /** Why this rail cannot verify payments, or null. Each rail accepts only its own key type. */
+  private misconfigured(mode: StripeMode) {
+    const { settings } = this.rails[mode];
+    if (mode === "test")
+      return !/^sk_test_|^rk_test_/.test(settings.secretKey)
         ? "Configure a Stripe test secret key on the server. Live keys are not supported."
-        : !this.settings.webhookSecret.startsWith("whsec_")
+        : !settings.webhookSecret.startsWith("whsec_")
           ? "Configure the Stripe webhook signing secret on the server."
-          : !appOrigin(this.settings.appUrl)
+          : !appOrigin(settings.appUrl)
             ? "Configure a valid PUBLIC_APP_URL on the server."
             : null;
+    return !(this.funding.store.db instanceof PostgresDatabase)
+      ? "Card payments need the hosted account wallet."
+      : !/^sk_live_|^rk_live_/.test(settings.secretKey)
+        ? "Configure a Stripe live secret key on the server. Test keys are not accepted for live payments."
+        : !settings.webhookSecret.startsWith("whsec_") ||
+            settings.webhookSecret === this.rails.test.settings.webhookSecret
+          ? "Configure the live Stripe webhook signing secret on the server. It must differ from the test secret."
+          : !appOrigin(settings.appUrl)?.startsWith("https://")
+            ? "Configure an HTTPS PUBLIC_APP_URL on the server."
+            : null;
+  }
+  status(mode: StripeMode = "test"): StripeFundingStatus {
+    const { settings } = this.rails[mode];
+    const reason = !settings.enabled
+      ? mode === "test"
+        ? "Stripe test deposits are not enabled on this server."
+        : "Card payments are not enabled on this server."
+      : this.misconfigured(mode);
     return {
       enabled: !reason,
       unavailableReason: reason,
-      mode: "test",
+      mode,
       minimumCents: 500,
-      maximumCents: 100000,
+      maximumCents: settings.maximumCents ?? 100000,
     };
   }
-  private ensureConfigured() {
-    if (
-      !/^sk_test_|^rk_test_/.test(this.settings.secretKey) ||
-      !this.settings.webhookSecret.startsWith("whsec_") ||
-      !appOrigin(this.settings.appUrl)
-    )
-      throw new FundingError(
-        409,
-        "Stripe test verification is not configured. No credits were added.",
-      );
+  /**
+   * What this account can do on Credits. The account's funding mode picks the
+   * rail; the caller never does. A live account that cannot currently spend a
+   * top-up is not offered one.
+   */
+  async accountStatus(): Promise<StripeFundingStatus> {
+    const mode = await this.wallet.fundingMode();
+    const status = this.status(mode);
+    if (mode === "live" && status.enabled && !(await this.liveEligible()))
+      return {
+        ...status,
+        enabled: false,
+        unavailableReason:
+          "Card top-ups are not available for this account right now.",
+      };
+    return status;
+  }
+  private liveEligible() {
+    return this.wallet.liveTopUpEligible();
+  }
+  private ensureConfigured(mode: StripeMode) {
+    if (this.misconfigured(mode))
+      throw new FundingError(409, COPY[mode].unconfigured);
+  }
+  /**
+   * On PostgreSQL the immutable `mode` column is the authority for a deposit's
+   * mode; the copy inside the saved receipt is only a convenience for readers.
+   */
+  private receipt(row: Record<string, unknown>): StripeDeposit {
+    const value = JSON.parse(row.body as string) as StripeDeposit;
+    value.mode =
+      row.mode === "live" || row.mode === "test"
+        ? row.mode
+        : stripeModeOf(value);
+    return value;
+  }
+  private get columns() {
+    return this.funding.store.db instanceof PostgresDatabase
+      ? "body,mode"
+      : "body";
   }
   async get(id: string): Promise<StripeDeposit> {
     const row = await this.funding.store.db
-      .prepare("SELECT body FROM stripe_deposits WHERE id=?")
+      .prepare(`SELECT ${this.columns} FROM stripe_deposits WHERE id=?`)
       .get(id);
     if (!row) throw new FundingError(404, "Card deposit not found.");
-    return JSON.parse(row.body as string);
+    return this.receipt(row);
   }
   async list(): Promise<StripeDeposit[]> {
     return (
       await this.funding.store.db
         .prepare(
-          "SELECT body FROM stripe_deposits ORDER BY rowid DESC LIMIT 100",
+          `SELECT ${this.columns} FROM stripe_deposits ORDER BY rowid DESC LIMIT 100`,
         )
         .all()
-    ).map((r) => JSON.parse(r.body as string));
+    ).map((row) => this.receipt(row));
   }
   private async save(value: StripeDeposit, event: string) {
     value.updatedAt = new Date(this.now()).toISOString();
@@ -257,12 +448,28 @@ export class StripeFundingService {
             "This checkout needs reconciliation before it can be retried. Its original request key will not be reused with new payment details.",
           );
       } else {
-        const status = this.status();
+        // The account's funding mode decides the rail. A live account is never
+        // sent to sandbox checkout, and a sandbox account never to live.
+        const mode = await this.wallet.fundingMode();
+        const status = this.status(mode);
         if (!status.enabled)
           throw new FundingError(409, status.unavailableReason!);
+        if (mode === "live") {
+          if (!(await this.liveEligible()))
+            throw new FundingError(
+              409,
+              "Card top-ups are not available for this account right now. No payment was started.",
+            );
+          if (input.amount > status.maximumCents)
+            throw new FundingError(
+              400,
+              `Maximum card top-up is $${status.maximumCents / 100}.`,
+            );
+        }
         const at = new Date(this.now()).toISOString();
         value = {
           id: randomUUID(),
+          mode,
           requestKey: input.requestKey,
           amountCents: input.amount,
           status: "creating",
@@ -292,16 +499,25 @@ export class StripeFundingService {
             );
           await this.funding.store.db
             .prepare(
-              "INSERT INTO stripe_deposits VALUES (?,?,NULL,NULL,NULL,?)",
+              mode === "live"
+                ? "INSERT INTO stripe_deposits(id,request_key,body,mode) VALUES (?,?,?,'live')"
+                : "INSERT INTO stripe_deposits VALUES (?,?,NULL,NULL,NULL,?)",
             )
             .run(value.id, input.requestKey, JSON.stringify(value));
           await this.save(value, "checkout_requested");
-          await this.shadowWallet.enrollSandboxDeposit(value.id);
-          await this.wallet.enrollDeposit(value.id);
+          if (mode === "live") {
+            // Real money has one ledger: the live wallet. It never reaches the
+            // test-credit ledger or the shadow wallet.
+            await this.wallet.enrollDeposit(value.id, "live");
+          } else {
+            await this.shadowWallet.enrollSandboxDeposit(value.id);
+            await this.wallet.enrollDeposit(value.id);
+          }
         }
       }
-      if (!this.status().enabled)
-        throw new FundingError(409, this.status().unavailableReason!);
+      const status = this.status(stripeModeOf(value));
+      if (!status.enabled)
+        throw new FundingError(409, status.unavailableReason!);
       return value;
     });
     if (value.checkoutSessionId) return value;
@@ -316,9 +532,11 @@ export class StripeFundingService {
     }
   }
   private async createCheckout(value: StripeDeposit): Promise<StripeDeposit> {
+    const mode = stripeModeOf(value);
+    const { settings, gateway } = this.rails[mode];
     try {
-      const origin = appOrigin(this.settings.appUrl)!;
-      const raw = await this.gateway.create(
+      const origin = appOrigin(settings.appUrl)!;
+      const raw = await gateway.create(
         {
           mode: "payment",
           allowed_payment_method_types: ["card"],
@@ -336,9 +554,8 @@ export class StripeFundingService {
                 currency: "usd",
                 unit_amount: value.amountCents,
                 product_data: {
-                  name: "octolab test credits",
-                  description:
-                    "Sandbox funding only. Test credits do not pay for live provider calls.",
+                  name: COPY[mode].product,
+                  description: COPY[mode].description,
                 },
               },
             },
@@ -368,7 +585,7 @@ export class StripeFundingService {
         current.checkoutSessionId = session.id;
         current.checkoutUrl = session.url!;
         current.status = "checkout_ready";
-        current.message = "Continue to Stripe to complete the test payment.";
+        current.message = COPY[mode].ready;
         return await this.save(current, "checkout_created");
       });
     } catch (error) {
@@ -388,7 +605,7 @@ export class StripeFundingService {
     }
   }
   private validSession(raw: unknown, value: StripeDeposit) {
-    const session = sessionSchema.parse(raw);
+    const session = SCHEMAS[stripeModeOf(value)].session.parse(raw);
     if (
       session.amount_total !== value.amountCents ||
       session.currency !== "usd" ||
@@ -403,7 +620,7 @@ export class StripeFundingService {
     return session;
   }
   async reconcile(id: string, manual = false): Promise<StripeDeposit> {
-    this.ensureConfigured();
+    this.ensureConfigured(stripeModeOf(await this.get(id)));
     const existing = this.active.get(id);
     if (existing) return existing;
     if (manual) {
@@ -430,9 +647,10 @@ export class StripeFundingService {
         409,
         "Retry this deposit request to recover its Stripe checkout first.",
       );
+    const mode = stripeModeOf(value);
     try {
       const session = this.validSession(
-        await this.gateway.retrieve(value.checkoutSessionId),
+        await this.rails[mode].gateway.retrieve(value.checkoutSessionId),
         value,
       );
       return await this.funding.store.transaction(async () => {
@@ -459,7 +677,7 @@ export class StripeFundingService {
               : "Payment has not been confirmed by Stripe yet.";
           return await this.save(current, "payment_pending");
         }
-        const payment = paymentSchema.parse(session.payment_intent);
+        const payment = SCHEMAS[mode].payment.parse(session.payment_intent);
         const charge = payment.latest_charge;
         if (
           payment.amount !== current.amountCents ||
@@ -484,35 +702,65 @@ export class StripeFundingService {
           charge.amount_refunded,
         );
         current.disputed ||= charge.disputed;
+        current.receiptUrl =
+          receiptUrl(charge.receipt_url) ?? current.receiptUrl ?? null;
+        // An operator refund in flight is already out of the balance; count it
+        // until Stripe's own total catches up, so a check or a replayed event
+        // in between cannot hand the credits back.
+        const reserved = Math.min(
+          current.amountCents,
+          Math.max(
+            current.refundedCents,
+            await this.wallet.pendingRefundedCents(id),
+          ),
+        );
+        current.pendingRefundCents = reserved - current.refundedCents;
         const target = current.disputed
           ? 0
-          : (current.amountCents - current.refundedCents) * 10000;
-        const old = await this.funding.ledger.net("stripe", id);
-        await this.funding.ledger.settle(
-          "stripe",
-          id,
-          target,
-          payment.id,
-          current.disputed
-            ? "dispute_hold"
-            : target < old
-              ? "refund"
-              : "deposit",
-          current.lastCheckedAt!,
-        );
-        await this.shadowWallet.reconcileSandboxDeposit(
-          id,
-          payment.id,
-          target,
-          current.disputed,
-        );
-        await this.wallet.reconcileDeposit(
-          id,
-          payment.id,
-          target,
-          current.disputed,
-          firstVerification,
-        );
+          : (current.amountCents - reserved) * 10000;
+        if (mode === "live") {
+          if (
+            !(await this.wallet.reconcileDeposit(
+              id,
+              payment.id,
+              target,
+              current.disputed,
+              false,
+              "live",
+            ))
+          )
+            throw new FundingError(
+              500,
+              "This payment is not attached to an account wallet. Nothing was credited; an operator must review it.",
+            );
+        } else {
+          const old = await this.funding.ledger.net("stripe", id);
+          await this.funding.ledger.settle(
+            "stripe",
+            id,
+            target,
+            payment.id,
+            current.disputed
+              ? "dispute_hold"
+              : target < old
+                ? "refund"
+                : "deposit",
+            current.lastCheckedAt!,
+          );
+          await this.shadowWallet.reconcileSandboxDeposit(
+            id,
+            payment.id,
+            target,
+            current.disputed,
+          );
+          await this.wallet.reconcileDeposit(
+            id,
+            payment.id,
+            target,
+            current.disputed,
+            firstVerification,
+          );
+        }
         current.netCreditUnits = target;
         current.checkoutUrl = null;
         current.status = current.disputed
@@ -522,11 +770,17 @@ export class StripeFundingService {
             : current.refundedCents
               ? "partially_refunded"
               : "credited";
-        current.message = current.disputed
-          ? "This payment is disputed. Its test credits are held for operator review."
-          : current.refundedCents
-            ? "Stripe reports a refund. The test-credit balance has been adjusted."
-            : "Stripe verified the test payment and added the credits once.";
+        current.message = current.disputeResolution
+          ? current.disputeResolution.restoredMicros
+            ? "The dispute on this payment was closed and its remaining credits were restored."
+            : "The dispute on this payment was closed. Its credits were not restored."
+          : current.disputed
+            ? COPY[mode].disputed
+            : current.pendingRefundCents
+              ? "A refund to your card is in progress. Your credits have been adjusted."
+              : current.refundedCents
+                ? COPY[mode].refunded
+                : COPY[mode].credited;
         return await this.save(current, "payment_reconciled");
       });
     } catch (error) {
@@ -537,20 +791,22 @@ export class StripeFundingService {
       );
     }
   }
-  async webhook(payload: Buffer, signature: string) {
-    this.ensureConfigured();
+  /**
+   * `mode` comes from the endpoint the event was delivered to, never from the
+   * payload. Each endpoint verifies with its own signing secret and then
+   * refuses an event whose `livemode` does not match.
+   */
+  async webhook(payload: Buffer, signature: string, mode: StripeMode = "test") {
+    this.ensureConfigured(mode);
+    const { settings, gateway } = this.rails[mode];
     let event: Stripe.Event;
     try {
-      event = this.gateway.event(
-        payload,
-        signature,
-        this.settings.webhookSecret,
-      );
+      event = gateway.event(payload, signature, settings.webhookSecret);
     } catch {
       throw new FundingError(400, "Invalid Stripe webhook signature.");
     }
-    if (event.livemode || !event.id.startsWith("evt_"))
-      throw new FundingError(400, "Only Stripe test-mode events are accepted.");
+    if (event.livemode !== (mode === "live") || !event.id.startsWith("evt_"))
+      throw new FundingError(400, COPY[mode].wrongMode);
     if (this.accountScopeForWebhook) {
       if (!EVENTS.has(event.type)) return { received: true, ignored: true };
       const object = event.data.object as unknown as Record<string, unknown>;
@@ -561,7 +817,7 @@ export class StripeFundingService {
             ?.octolab_deposit_id || "",
         ),
         sessionId:
-          typeof object.id === "string" && object.id.startsWith("cs_test_")
+          typeof object.id === "string" && object.id.startsWith(`cs_${mode}_`)
             ? object.id
             : "",
         paymentId:
@@ -578,12 +834,12 @@ export class StripeFundingService {
       let workspace = await this.accountScopeForWebhook(identity);
       if (
         !workspace &&
-        event.type.startsWith("charge.") &&
+        /^(charge|refund)\./.test(event.type) &&
         /^pi_/.test(identity.paymentId)
       ) {
-        const payment = z
-          .object({ id: z.string(), livemode: z.literal(false), metadata })
-          .parse(await this.gateway.payment(identity.paymentId));
+        const payment = SCHEMAS[mode].paymentIdentity.parse(
+          await gateway.payment(identity.paymentId),
+        );
         if (payment.id !== identity.paymentId)
           throw new FundingError(
             502,
@@ -594,12 +850,13 @@ export class StripeFundingService {
       }
       if (!workspace) return { received: true, ignored: true };
       return this.funding.store.scope.run(workspace, () =>
-        this.webhookEvent(event),
+        this.webhookEvent(event, mode),
       );
     }
-    return this.webhookEvent(event);
+    return this.webhookEvent(event, mode);
   }
-  private async webhookEvent(event: Stripe.Event) {
+  private async webhookEvent(event: Stripe.Event, mode: StripeMode) {
+    const { gateway } = this.rails[mode];
     if (
       await this.funding.store.db
         .prepare("SELECT id FROM stripe_webhook_receipts WHERE id=?")
@@ -617,7 +874,7 @@ export class StripeFundingService {
       : undefined;
     if (!row) {
       const sessionId =
-        typeof object.id === "string" && object.id.startsWith("cs_test_")
+        typeof object.id === "string" && object.id.startsWith(`cs_${mode}_`)
           ? object.id
           : "";
       const paymentId =
@@ -636,14 +893,14 @@ export class StripeFundingService {
       // Charge/refund/dispute events can arrive before checkout completion.
       // Resolve our own PaymentIntent metadata, then still verify the saved
       // Checkout Session before changing any credits or acknowledging the event.
-      if (!row && event.type.startsWith("charge.") && /^pi_/.test(paymentId)) {
-        const payment = z
-          .object({
-            id: z.string(),
-            livemode: z.literal(false),
-            metadata,
-          })
-          .parse(await this.gateway.payment(paymentId));
+      if (
+        !row &&
+        /^(charge|refund)\./.test(event.type) &&
+        /^pi_/.test(paymentId)
+      ) {
+        const payment = SCHEMAS[mode].paymentIdentity.parse(
+          await gateway.payment(paymentId),
+        );
         if (payment.id !== paymentId)
           throw new FundingError(
             502,
@@ -658,6 +915,17 @@ export class StripeFundingService {
     }
     if (!row) return { received: true, ignored: true };
     id = String(row.id);
+    // A signed event may only ever touch a deposit created in its own mode.
+    if (stripeModeOf(await this.get(id)) !== mode) {
+      console.error(
+        `Stripe ${mode}-mode event ${event.id} referenced a deposit of the other mode and was ignored.`,
+      );
+      return { received: true, ignored: true };
+    }
+    if (event.type === "refund.failed")
+      console.error(
+        `Stripe reports a failed refund for card deposit ${id}. Credits are not restored automatically; an operator must review it.`,
+      );
     // Checkout can finish before the create response is saved. Recover only its own signed session identity.
     if (
       !(await this.get(id)).checkoutSessionId &&
@@ -697,10 +965,52 @@ export class StripeFundingService {
   }
   async summary() {
     return {
-      stripe: this.status(),
+      stripe: await this.accountStatus(),
       stripeIntents: await this.list(),
       entries: await this.funding.ledger.entries(),
       wallet: await this.wallet.status(),
+      walletEntries: await this.wallet.entries(),
+      refundTerms: REFUND_TERMS,
     };
+  }
+  /** Stripe's disputes for one saved payment, validated in the payment's mode. */
+  async disputesFor(value: StripeDeposit) {
+    const mode = stripeModeOf(value);
+    this.ensureConfigured(mode);
+    return (await this.rails[mode].gateway.disputes(value.paymentIntentId!))
+      .map((raw) => SCHEMAS[mode].dispute.parse(raw))
+      .filter((d) => d.payment_intent === value.paymentIntentId);
+  }
+  /** Stripe's refunds for one saved payment. */
+  async refundsFor(value: StripeDeposit) {
+    const mode = stripeModeOf(value);
+    this.ensureConfigured(mode);
+    return (await this.rails[mode].gateway.refunds(value.paymentIntentId!))
+      .map((raw) => SCHEMAS[mode].refund.parse(raw))
+      .filter((r) => r.payment_intent === value.paymentIntentId);
+  }
+  /** Sends one operator refund to Stripe. The same request always uses the same idempotency key. */
+  async refundAtStripe(
+    value: StripeDeposit,
+    requestId: string,
+    amountCents: number,
+  ) {
+    const mode = stripeModeOf(value);
+    this.ensureConfigured(mode);
+    const refund = SCHEMAS[mode].refund.parse(
+      await this.rails[mode].gateway.refund(
+        { paymentIntentId: value.paymentIntentId!, amountCents, requestId },
+        `octolab-refund-${requestId}`,
+      ),
+    );
+    if (
+      refund.payment_intent !== value.paymentIntentId ||
+      refund.amount !== amountCents
+    )
+      throw new FundingError(
+        502,
+        "Stripe returned a refund that does not match this request.",
+      );
+    return refund;
   }
 }

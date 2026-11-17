@@ -13,7 +13,7 @@ import { WrongAccountArea } from "./ChooseAccountType";
 import { OperatorAllowanceNotice } from "./OperatorAllowanceNotice";
 import { AccountControls, useAccount } from "./AccountGate";
 import { CustomerFunding, useCustomerFunding } from "./customer-funding";
-import { testUsdc } from "./funding-format";
+import { sandboxCredits, testUsdc } from "./funding-format";
 const DisputeReviewView = lazy(() =>
   import("./DisputeReviewView").then((m) => ({ default: m.DisputeReviewView })),
 );
@@ -820,7 +820,12 @@ export function ObservationApp() {
                   Credits
                   {funding.summary && (
                     <span className="customer-navigation-balance">
-                      {testUsdc(funding.summary.balanceUnits)} test
+                      {funding.summary.wallet?.mode === "live" ? (
+                        // A live account's balance is its real-money wallet.
+                        sandboxCredits(funding.summary.wallet.availableMicros)
+                      ) : (
+                        <>{testUsdc(funding.summary.balanceUnits)} test</>
+                      )}
                       <span className="sr-only"> credits</span>
                     </span>
                   )}
@@ -838,7 +843,9 @@ export function ObservationApp() {
                       setMenuOpen(false);
                     }}
                   >
-                    Add test funds
+                    {funding.summary?.wallet?.mode === "live"
+                      ? "Add credits"
+                      : "Add test funds"}
                   </a>
                 </Button>
               </>

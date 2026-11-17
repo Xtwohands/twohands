@@ -8,7 +8,17 @@ import {
   holdOutcome,
 } from "./wallet-rules.js";
 
+/** Stripe mode of a balance. Sandbox and real-money credits never share one. */
+export type WalletMode = "test" | "live";
+export interface WalletEntry {
+  kind: string;
+  micros: number;
+  reference: string | null;
+  createdAt: string;
+}
 export interface WalletStatus {
+  /** The balance that pays for this account's calls: real money when "live". */
+  mode: WalletMode;
   /** True when this account's eligible paid calls are gated by its credits. */
   enforced: boolean;
   /** True once the account has any wallet activity, even while enforcement is paused. */
@@ -64,23 +74,29 @@ export function walletCredentialDigest(credential: string) {
 const scope = "current_setting('octolab.workspace_id')";
 /** A rate row enrolls the account, whether or not the rate is still current. */
 const enrollment = `SELECT rate_version, provider_account, credential_digest, provider_cost_micros,
-         verified_at, expires_at, (verified_at<=now() AND expires_at>now()) AS current
+         verified_at, expires_at, (verified_at<=now() AND expires_at>now()) AS current, funding_mode
   FROM wallet_rates WHERE workspace_id=${scope}`;
-/** One row per workspace, whether or not the account has a balance row yet. */
-const balanceRow = `SELECT COALESCE(b.posted_micros,0) AS posted,
+/** The account's funding mode; an account without a rate has only sandbox funding. */
+const fundingMode = `COALESCE((SELECT funding_mode FROM wallet_rates WHERE workspace_id=${scope}),'test')`;
+/**
+ * One row per workspace for the balance of one mode (the single parameter),
+ * whether or not that balance exists yet. A dispute freezes only its own mode.
+ */
+const balanceRow = `SELECT w.mode, COALESCE(b.posted_micros,0) AS posted,
          COALESCE(b.held_micros,0) AS held,
          COALESCE(b.charged_micros,0) AS charged,
          b.workspace_id IS NOT NULL AS active,
          EXISTS (
            SELECT 1 FROM wallet_journal d
-           WHERE d.workspace_id=${scope} AND d.kind='dispute_hold' AND NOT EXISTS (
+           WHERE d.workspace_id=${scope} AND d.mode=w.mode AND d.kind='dispute_hold' AND NOT EXISTS (
              SELECT 1 FROM wallet_journal r
              WHERE r.workspace_id=d.workspace_id AND r.deposit_id=d.deposit_id
                AND r.kind='dispute_release'
            )) AS frozen
-  FROM (SELECT ${scope} AS id) w
-  LEFT JOIN wallet_balances b ON b.workspace_id=w.id`;
+  FROM (SELECT ${scope} AS id, ?::text AS mode) w
+  LEFT JOIN wallet_balances b ON b.workspace_id=w.id AND b.mode=w.mode`;
 const inactive: WalletStatus = {
+  mode: "test",
   enforced: false,
   active: false,
   postedMicros: 0,
@@ -96,6 +112,7 @@ const inactive: WalletStatus = {
  */
 export class Wallet {
   private installed = false;
+  private refunds = false;
   constructor(private readonly store: Store) {}
 
   /**
@@ -147,7 +164,8 @@ export class Wallet {
     await db
       .prepare(`SELECT pg_advisory_xact_lock(hashtextextended(${scope},0))`)
       .get();
-    const balance = (await db.prepare(balanceRow).get())!;
+    const mode: WalletMode = rate.funding_mode === "live" ? "live" : "test";
+    const balance = (await db.prepare(balanceRow).get(mode))!;
     const heldMicros = Number(balance.held);
     const availableMicros = Number(balance.posted) - heldMicros;
     const deny = (reason: WalletDenial["reason"]) =>
@@ -176,8 +194,8 @@ export class Wallet {
       .prepare(
         `INSERT INTO wallet_holds
          (call_id,key_id,tool,search_depth,max_results,adapter_version,provider_account,
-          rate_version,rate_verified_at,rate_expires_at,provider_cost_micros,markup_bps,markup_micros,maximum_micros)
-         VALUES (?,?,'tavily_search','basic',10,?,?,?,?,?,?,?,?,?)`,
+          rate_version,rate_verified_at,rate_expires_at,provider_cost_micros,markup_bps,markup_micros,maximum_micros,mode)
+         VALUES (?,?,'tavily_search','basic',10,?,?,?,?,?,?,?,?,?,?)`,
       )
       .run(
         call.id,
@@ -191,6 +209,7 @@ export class Wallet {
         markupBps,
         markupMicros,
         maximumMicros,
+        mode,
       );
     return true;
   }
@@ -205,7 +224,7 @@ export class Wallet {
     if (!(await this.ready())) return;
     const hold = await db
       .prepare(
-        `SELECT h.total_micros FROM wallet_holds h
+        `SELECT h.total_micros, h.mode FROM wallet_holds h
          WHERE h.workspace_id=${scope} AND h.call_id=? AND NOT EXISTS (
            SELECT 1 FROM wallet_hold_closures c
            WHERE c.workspace_id=h.workspace_id AND c.call_id=h.call_id
@@ -223,20 +242,51 @@ export class Wallet {
     if (outcome === "posted")
       await db
         .prepare(
-          "INSERT INTO wallet_journal(source_id,kind,wallet_micros) VALUES (?,'usage',?)",
+          "INSERT INTO wallet_journal(source_id,kind,wallet_micros,mode) VALUES (?,'usage',?,?)",
         )
-        .run(call.id, -Number(hold.total_micros));
+        .run(call.id, -Number(hold.total_micros), hold.mode);
   }
 
-  /** Enrolls a deposit of an enrolled account while enforcement is on. */
-  async enrollDeposit(depositId: string) {
-    if (!walletEnforcementEnabled() || !(await this.ready())) return;
+  /**
+   * The Stripe mode this account's top-ups are created in. Only an account an
+   * operator has enrolled for live funding gets "live".
+   */
+  async fundingMode(): Promise<WalletMode> {
+    if (!(await this.ready())) return "test";
+    const row = await this.store.db
+      .prepare(`SELECT ${fundingMode} AS mode`)
+      .get();
+    return row?.mode === "live" ? "live" : "test";
+  }
+
+  /**
+   * A live top-up is offered only while the account could spend it: enrolled
+   * for live funding, with a current verified rate, and enforcement on.
+   */
+  async liveTopUpEligible() {
+    if (!walletEnforcementEnabled() || !(await this.ready())) return false;
+    const rate = await this.store.db.prepare(enrollment).get();
+    return rate?.funding_mode === "live" && rate.current === true;
+  }
+
+  /**
+   * Enrolls a deposit in the wallet of its own mode.
+   *
+   * A sandbox deposit is enrolled while enforcement is on for an account
+   * funded in sandbox mode. A live deposit is always enrolled: live checkout
+   * creation is already gated, and money that has been taken must always be
+   * recorded, whatever the flags say later.
+   */
+  async enrollDeposit(depositId: string, mode: WalletMode = "test") {
+    if (!(await this.ready())) return;
+    if (mode === "test" && !walletEnforcementEnabled()) return;
     await this.store.db
       .prepare(
-        `INSERT INTO wallet_deposits(deposit_id) SELECT ? WHERE EXISTS (${enrollment})
+        `INSERT INTO wallet_deposits(deposit_id,mode)
+         SELECT ?,? WHERE EXISTS (${enrollment} AND funding_mode=?)
          ON CONFLICT (workspace_id,deposit_id) DO NOTHING`,
       )
-      .run(depositId);
+      .run(depositId, mode, mode);
   }
 
   /**
@@ -244,49 +294,100 @@ export class Wallet {
    * nothing; refunds and dispute holds append negative adjustments.
    *
    * `firstVerification` is true only when this reconciliation is the first to
-   * see the payment as paid. A checkout prepared before the account was
-   * enrolled, but first paid while enforcement is on, is enrolled here.
+   * see the payment as paid. A sandbox checkout prepared before the account
+   * was enrolled, but first paid while enforcement is on, is enrolled here.
    * Payments already credited before enrollment are never backfilled.
+   *
+   * Returns false when the deposit is not a wallet deposit. A live caller
+   * treats that as an error, because live money has no other ledger.
    */
   async reconcileDeposit(
     depositId: string,
-    paymentIntentId: string,
+    reference: string,
     targetMicros: number,
     disputed: boolean,
     firstVerification = false,
+    mode: WalletMode = "test",
   ) {
     const { db } = this.store;
-    if (!(await this.ready())) return;
-    if (firstVerification) await this.enrollDeposit(depositId);
+    if (!(await this.ready())) return false;
+    if (firstVerification) await this.enrollDeposit(depositId, mode);
     const state = await db
       .prepare(
-        `SELECT EXISTS(SELECT 1 FROM wallet_deposits WHERE workspace_id=${scope} AND deposit_id=?) AS enrolled,
-                COALESCE(sum(wallet_micros),0) AS current,
+        `SELECT EXISTS(SELECT 1 FROM wallet_deposits WHERE workspace_id=${scope} AND deposit_id=? AND mode=?) AS enrolled,
+                COALESCE(sum(wallet_micros) FILTER (WHERE kind<>'dispute_release'),0) AS current,
                 COALESCE(max(revision),0)+1 AS next_revision
          FROM wallet_journal WHERE workspace_id=${scope} AND deposit_id=?`,
       )
-      .get(depositId, depositId);
-    if (!state?.enrolled) return;
+      .get(depositId, mode, depositId);
+    if (!state?.enrolled) return false;
     const posting = depositPosting(
       Number(state.current),
       targetMicros,
       disputed,
     );
-    if (!posting) return;
+    if (!posting) return true;
     await db
       .prepare(
-        `INSERT INTO wallet_journal (source_id,revision,kind,reference,target_micros,wallet_micros)
-         VALUES (?,?,?,?,?,?)
+        `INSERT INTO wallet_journal (source_id,revision,kind,reference,target_micros,wallet_micros,mode)
+         VALUES (?,?,?,?,?,?,?)
          ON CONFLICT (workspace_id,deposit_id,dispute_marker) DO NOTHING`,
       )
       .run(
         depositId,
         state.next_revision,
         posting.kind,
-        paymentIntentId,
+        reference,
         targetMicros,
         posting.deltaMicros,
+        mode,
       );
+    return true;
+  }
+
+  /**
+   * Stripe's cumulative refunded total that an operator refund in flight will
+   * produce for this payment, or 0. Reconciliation keeps that amount out of
+   * the balance before Stripe reports it.
+   */
+  async pendingRefundedCents(depositId: string) {
+    if (!(await this.ready())) return 0;
+    if (!this.refunds) {
+      const row = await this.store.db
+        .prepare(
+          "SELECT to_regclass('octolab.wallet_refund_requests') IS NOT NULL AS installed",
+        )
+        .get();
+      if (row?.installed !== true) return 0;
+      this.refunds = true;
+    }
+    const row = await this.store.db
+      .prepare(
+        `SELECT COALESCE(max(expected_refunded_cents),0) AS cents FROM wallet_refund_requests
+         WHERE workspace_id=${scope} AND deposit_id=? AND status IN ('reserved','submitted')`,
+      )
+      .get(depositId);
+    return Number(row?.cents ?? 0);
+  }
+
+  /** Latest postings of the balance that pays for this account's calls. */
+  async entries(): Promise<WalletEntry[]> {
+    if (!(await this.ready())) return [];
+    return (
+      await this.store.db
+        .prepare(
+          `SELECT kind, wallet_micros, reference, created_at FROM wallet_journal
+           WHERE workspace_id=${scope} AND mode=${fundingMode}
+           ORDER BY created_at DESC, revision DESC LIMIT 100`,
+        )
+        .all()
+    ).map((row) => ({
+      kind: String(row.kind),
+      micros: Number(row.wallet_micros),
+      // Usage rows have no reference; payment references are Stripe IDs the owner already sees.
+      reference: row.reference === null ? null : String(row.reference),
+      createdAt: new Date(row.created_at as string).toISOString(),
+    }));
   }
 
   /** Two single-row reads; safe to poll. */
@@ -294,13 +395,15 @@ export class Wallet {
     if (!(await this.ready())) return inactive;
     const row = await this.store.db
       .prepare(
-        `SELECT s.*, EXISTS (${enrollment}) AS enrolled FROM (${balanceRow}) s`,
+        `SELECT s.*, EXISTS (${enrollment}) AS enrolled
+         FROM (${balanceRow.replace("?::text", fundingMode)}) s`,
       )
       .get();
     if (!row) return inactive;
     const postedMicros = Number(row.posted),
       heldMicros = Number(row.held);
     return {
+      mode: row.mode === "live" ? "live" : "test",
       enforced: walletEnforcementEnabled() && row.enrolled === true,
       active: row.active === true,
       postedMicros,

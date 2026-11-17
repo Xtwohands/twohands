@@ -11,7 +11,35 @@ export const fixtureStripeSettings: StripeSettings = {
   webhookSecret: "whsec_fixture_only",
   appUrl: "http://127.0.0.1:3102",
 };
+/** Fixture-only live rail. These are not Stripe credentials and reach no network. */
+export const fixtureLiveStripeSettings: StripeSettings = {
+  enabled: true,
+  secretKey: "sk_live_fixture_only",
+  webhookSecret: "whsec_fixture_live_only",
+  appUrl: "https://fixture.invalid",
+  maximumCents: 10000,
+};
 export class FixtureStripeGateway implements StripeGateway {
+  /** "live" makes this an in-memory stand-in for Stripe live mode. */
+  constructor(
+    readonly mode: "test" | "live" = "test",
+    private secret = mode === "live"
+      ? fixtureLiveStripeSettings.webhookSecret
+      : fixtureStripeSettings.webhookSecret,
+  ) {}
+  /** Dispute status Stripe reports per PaymentIntent. */
+  readonly disputeStatus = new Map<
+    string,
+    { status: string; amount?: number }
+  >();
+  readonly refundCalls: {
+    paymentIntentId: string;
+    amountCents: number;
+    key: string;
+  }[] = [];
+  readonly issued = new Map<string, any>();
+  /** How the next refund request behaves at the fixture. */
+  refundBehavior: "succeed" | "refuse" | "lost" | "pending" = "succeed";
   readonly sessions = new Map<string, any>();
   readonly keys = new Map<string, string>();
   readonly creates: {
@@ -24,11 +52,11 @@ export class FixtureStripeGateway implements StripeGateway {
     this.creates.push({ params: structuredClone(params), key });
     const known = this.keys.get(key);
     if (known) return structuredClone(this.sessions.get(known));
-    const id = `cs_test_fixture_${randomUUID().replaceAll("-", "")}`;
+    const id = `cs_${this.mode}_fixture_${randomUUID().replaceAll("-", "")}`;
     const value = {
       id,
       object: "checkout.session",
-      livemode: false,
+      livemode: this.mode === "live",
       mode: "payment",
       amount_total: params.line_items![0].price_data!.unit_amount,
       currency: "usd",
@@ -58,10 +86,71 @@ export class FixtureStripeGateway implements StripeGateway {
     }
     throw new Error("Unknown fixture payment");
   }
+  private sessionOf(paymentIntentId: string) {
+    for (const session of this.sessions.values())
+      if (session.payment_intent?.id === paymentIntentId) return session;
+    throw new Error("Unknown fixture payment");
+  }
+  async disputes(paymentIntentId: string) {
+    const session = this.sessionOf(paymentIntentId);
+    const dispute = this.disputeStatus.get(paymentIntentId);
+    return dispute
+      ? [
+          {
+            id: `dp_fixture_${paymentIntentId}`,
+            livemode: this.mode === "live",
+            amount: dispute.amount ?? session.amount_total,
+            currency: "usd",
+            status: dispute.status,
+            payment_intent: paymentIntentId,
+          },
+        ]
+      : [];
+  }
+  async refunds(paymentIntentId: string) {
+    return [...this.issued.values()]
+      .filter((r) => r.payment_intent === paymentIntentId)
+      .map((r) => structuredClone(r));
+  }
+  async refund(
+    params: { paymentIntentId: string; amountCents: number; requestId: string },
+    key: string,
+  ) {
+    this.refundCalls.push({
+      paymentIntentId: params.paymentIntentId,
+      amountCents: params.amountCents,
+      key,
+    });
+    const known = this.issued.get(key);
+    if (known) return structuredClone(known);
+    if (this.refundBehavior === "refuse")
+      throw new Stripe.errors.StripeInvalidRequestError({
+        type: "invalid_request_error",
+        message: "Fixture refusal",
+      });
+    const session = this.sessionOf(params.paymentIntentId);
+    const pending = this.refundBehavior === "pending";
+    const refund = {
+      id: `re_fixture_${randomUUID().replaceAll("-", "")}`,
+      amount: params.amountCents,
+      currency: "usd",
+      status: pending ? "pending" : "succeeded",
+      payment_intent: params.paymentIntentId,
+      metadata: { octolab_refund_request_id: params.requestId },
+    };
+    this.issued.set(key, refund);
+    // Stripe moved the money even when the response never arrives.
+    if (!pending)
+      session.payment_intent.latest_charge.amount_refunded +=
+        params.amountCents;
+    if (this.refundBehavior === "lost") throw new Error("Fixture timeout");
+    return structuredClone(refund);
+  }
   pay(id: string, refundedCents = 0, disputed = false) {
     const value = this.sessions.get(id);
     if (!value) throw new Error("Unknown fixture checkout");
-    const suffix = id.replace("cs_test_", "");
+    const suffix = id.replace(/^cs_(test|live)_/, "");
+    const livemode = this.mode === "live";
     Object.assign(value, {
       status: "complete",
       payment_status: "paid",
@@ -69,14 +158,15 @@ export class FixtureStripeGateway implements StripeGateway {
       payment_intent: {
         metadata: structuredClone(value.metadata),
         id: `pi_${suffix}`,
-        livemode: false,
+        livemode,
         status: "succeeded",
         amount: value.amount_total,
         amount_received: value.amount_total,
         currency: "usd",
         latest_charge: {
           id: `ch_${suffix}`,
-          livemode: false,
+          livemode,
+          receipt_url: `https://pay.stripe.com/receipts/fixture/${suffix}`,
           paid: true,
           captured: true,
           amount: value.amount_total,
@@ -99,7 +189,7 @@ export class FixtureStripeGateway implements StripeGateway {
       JSON.stringify({
         id,
         object: "event",
-        livemode: false,
+        livemode: this.mode === "live",
         type,
         data: { object },
         ...extra,
@@ -107,7 +197,7 @@ export class FixtureStripeGateway implements StripeGateway {
     );
     const signature = this.sdk.webhooks.generateTestHeaderString({
       payload: payload.toString(),
-      secret: fixtureStripeSettings.webhookSecret,
+      secret: this.secret,
     });
     return { payload, signature, id };
   }

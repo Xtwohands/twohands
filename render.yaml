@@ -55,6 +55,18 @@ services:
       # makes enrolled accounts fail closed until their rate is re-verified.
       - key: TAVILY_ACCOUNT_REFERENCE
         value: tavily-primary
+      # Real-money top-ups stay off until the live Stripe key and webhook
+      # secret are entered in the dashboard and the rollout in
+      # docs/STRIPE_LIVE.md is complete. Refunds of unused credits stay off
+      # until a refund policy is approved.
+      - key: STRIPE_LIVE_ENABLED
+        value: "false"
+      - key: TWO_HANDS_UNUSED_REFUNDS
+        value: "false"
+      - key: STRIPE_LIVE_SECRET_KEY
+        sync: false
+      - key: STRIPE_LIVE_WEBHOOK_SECRET
+        sync: false
       # Session pooler connection string on port 5432.
       - key: DATABASE_URL
         sync: false

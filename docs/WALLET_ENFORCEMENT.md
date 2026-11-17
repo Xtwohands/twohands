@@ -1,6 +1,8 @@
-# Wallet enforcement (sandbox)
+# Wallet enforcement
 
-Phase 2 of the [prepaid usage billing PRD](PRODUCTION_WALLET_PRD.md). With `TWO_HANDS_WALLET_ENFORCEMENT=true`, an enrolled account's prepaid service-credit balance gates and pays for eligible hosted paid tool calls. Funding is Stripe **test mode** only: these are sandbox credits, no real money is accepted, and live-mode Stripe is a later phase. The flag is off by default, and with it off admission is unchanged.
+Phase 2 of the [prepaid usage billing PRD](PRODUCTION_WALLET_PRD.md). With `TWO_HANDS_WALLET_ENFORCEMENT=true`, an enrolled account's prepaid service-credit balance gates and pays for eligible hosted paid tool calls. The flag is off by default, and with it off admission is unchanged.
+
+An account is funded in one Stripe mode, chosen by an operator in `wallet_rates.funding_mode`. The default, `test`, is the sandbox described here: Stripe test-mode credits and no real money. `live` is real money and is covered in [Stripe live mode](STRIPE_LIVE.md). Each mode has its own balance, holds and journal postings, and a call is admitted, held and charged against the balance of the account's funding mode only. Everything below applies to both modes unless it says sandbox.
 
 ## What is enforced
 
@@ -21,20 +23,22 @@ Phase 2 of the [prepaid usage billing PRD](PRODUCTION_WALLET_PRD.md). With `TWO_
 
 ## Funding
 
-A Stripe sandbox checkout intent created while the flag is on, for an account with an active rate, is enrolled in `wallet_deposits` in the transaction that saves the intent. A checkout prepared earlier is enrolled when its payment is verified for the first time while the flag is on and the rate is active, so money paid under enforcement always funds the wallet and its dispute always freezes it. A payment that was already verified before enrollment is never backfilled, even if its events replay or it is checked again, and the existing test-credit balance and ledger keep their own behavior. After the existing test-mode payment verification, the wallet converges on the deposit's verified net amount: webhook retries post once, refunds append negative entries, and a dispute appends a `dispute_hold` that removes the payment's remaining credits and freezes paid admission. If a reversal exceeds unused credits the posted balance goes negative, which also blocks admission. Only an operator can lift a dispute freeze, by appending a `dispute_release` entry for that deposit after review.
+A Stripe sandbox checkout intent created while the flag is on, for an account with an active rate, is enrolled in `wallet_deposits` in the transaction that saves the intent. A checkout prepared earlier is enrolled when its payment is verified for the first time while the flag is on and the rate is active, so money paid under enforcement always funds the wallet and its dispute always freezes it. A payment that was already verified before enrollment is never backfilled, even if its events replay or it is checked again, and the existing test-credit balance and ledger keep their own behavior. After the existing test-mode payment verification, the wallet converges on the deposit's verified net amount: webhook retries post once, refunds append negative entries, and a dispute appends a `dispute_hold` that removes the payment's remaining credits and freezes paid admission. If a reversal exceeds unused credits the posted balance goes negative, which also blocks admission. Only an operator can lift a dispute freeze, with the [release action](STRIPE_LIVE.md#release-a-dispute-freeze) on the admin Payment disputes page, after Stripe has closed the dispute. A dispute freezes only the balance of its own mode.
 
 ## Tables
 
 All are private to the `octolab` schema, row-level-security scoped to the workspace, and independent of research retention.
 
-| Table                  | Purpose                                                                                                                             |
-| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| `wallet_rates`         | Operator-verified rate and enrollment. Runtime read-only.                                                                           |
-| `wallet_holds`         | One immutable hold per admitted call with the frozen rate, cost, markup and maximum.                                                |
-| `wallet_hold_closures` | One explicit outcome per hold: `posted`, `failed`, `interrupted` or `cost_conflict`.                                                |
-| `wallet_deposits`      | Deposits enrolled at checkout creation or first verification.                                                                       |
-| `wallet_journal`       | Append-only postings: `deposit`, `refund`, `dispute_hold`, `usage`, and operator-only `dispute_release` and `adjustment`.           |
-| `wallet_balances`      | Projection of posted, held and charged micros. Runtime read-only; written only by triggers in the same transaction as each posting. |
+| Table                     | Purpose                                                                                                                                                           |
+| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `wallet_rates`            | Operator-verified rate, enrollment and `funding_mode`. Runtime read-only.                                                                                         |
+| `wallet_holds`            | One immutable hold per admitted call with the frozen rate, cost, markup and maximum.                                                                              |
+| `wallet_hold_closures`    | One explicit outcome per hold: `posted`, `failed`, `interrupted` or `cost_conflict`.                                                                              |
+| `wallet_deposits`         | Deposits enrolled at checkout creation or first verification.                                                                                                     |
+| `wallet_journal`          | Append-only postings: `deposit`, `refund`, `dispute_hold`, `usage`, and operator-only `dispute_release` and `adjustment`.                                         |
+| `wallet_balances`         | Projection of posted, held and charged micros, one row per account and mode. Runtime read-only; written only by triggers in the same transaction as each posting. |
+| `wallet_refund_requests`  | Operator refunds of unused credit and their state. Runtime read-only.                                                                                             |
+| `wallet_operator_actions` | Immutable record of dispute releases and refund actions with the administrator. No runtime access.                                                                |
 
 Each journal row carries both sides of the posting (`wallet_micros` and the opposite `clearing_micros`). Foreign keys tie a usage posting to a `posted` closure and to the hold's exact total, so an altered amount or a debit without a billable result cannot be stored. The runtime role can insert but not update or delete journal rows, and cannot write `wallet_balances` at all: the projection that admission reads changes only through owner-run trigger functions fired by a journal, hold or closure insert. Those functions read `wallet_holds`, so the migration owner must be exempt from row-level security (a superuser or a `BYPASSRLS` role, as on the hosted project); otherwise a closure fails loudly instead of drifting.
 
@@ -56,7 +60,7 @@ Credits (`#dashboard/credits`) shows **Available credits**, **Held for in-progre
 
 ## Not in this phase
 
-Live-mode Stripe, customer statement export, quotes that include wallet eligibility in discovery, a bounded recovery window for unresolved holds beyond startup recovery, an operator interface for adjustments and dispute release, and requested unused-balance refunds.
+Customer statement export, quotes that include wallet eligibility in discovery, a bounded recovery window for unresolved holds beyond startup recovery, and an operator interface for adjustments and enrollment. Live-mode Stripe, dispute release and unused-balance refunds were added in [phase 3](STRIPE_LIVE.md).
 
 ## Validation
 

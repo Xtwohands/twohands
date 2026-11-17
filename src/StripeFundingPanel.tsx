@@ -49,6 +49,17 @@ export function StripeFundingPanel({
   const [returned, setReturned] = useState(false);
   const key = useRef(crypto.randomUUID());
   const handledReturn = useRef(false);
+  // Real-money wording for a live account. A saved receipt keeps the wording
+  // of its own mode, so an old sandbox payment is never shown as real money.
+  const live = summary?.stripe?.mode === "live";
+  const isLive = (deposit?: StripeDeposit) =>
+    deposit ? deposit.mode === "live" : live;
+  const unit = (deposit?: StripeDeposit) =>
+    isLive(deposit) ? "USD" : "test USD";
+  const maximum = usd(summary?.stripe?.maximumCents ?? 100000).replace(
+    /\.00$/,
+    "",
+  );
   useEffect(() => {
     const current = summary?.stripeIntents?.find((i) => i.id === selected?.id);
     if (current) setSelected(current);
@@ -97,7 +108,11 @@ export function StripeFundingPanel({
         <header>
           <div>
             <h2>Card via Stripe</h2>
-            <p>Hosted Checkout · USD test payments</p>
+            <p>
+              {live
+                ? "Hosted Checkout · USD card payments"
+                : "Hosted Checkout · USD test payments"}
+            </p>
           </div>
           <Badge variant="outline">
             {summary?.stripe?.enabled ? "Available" : "Unavailable"}
@@ -105,16 +120,22 @@ export function StripeFundingPanel({
         </header>
         <div>
           <p>
-            {summary?.stripe?.enabled
-              ? "Complete a test payment on Stripe’s secure checkout. Each verified test dollar adds one test credit. Refunds and disputed payments adjust the credit balance."
-              : "Card payments are not available yet. There is nothing to configure in your account."}
+            {!summary?.stripe?.enabled
+              ? live
+                ? "Card top-ups are paused for this account. Your credits are kept."
+                : "Card payments are not available yet. There is nothing to configure in your account."
+              : live
+                ? "Pay by card on Stripe’s secure checkout. Each verified dollar adds one dollar of credits. Refunds and disputed payments adjust your credits."
+                : "Complete a test payment on Stripe’s secure checkout. Each verified test dollar adds one test credit. Refunds and disputed payments adjust the credit balance."}
           </p>
           {!summary?.stripe?.enabled && (
             <div className="ws-funding-setup">
               <strong>Card deposits are unavailable</strong>
               <p>
-                You can continue setting up your agent without a payment method.
-                No card details are needed.
+                {live
+                  ? (summary?.stripe?.unavailableReason ??
+                    "Card top-ups are not available right now.")
+                  : "You can continue setting up your agent without a payment method. No card details are needed."}
               </p>
             </div>
           )}
@@ -128,7 +149,7 @@ export function StripeFundingPanel({
               setOpen(true);
             }}
           >
-            Deposit with Stripe
+            {live ? "Add credits" : "Deposit with Stripe"}
             <ArrowRight />
           </Button>
         </div>
@@ -137,10 +158,14 @@ export function StripeFundingPanel({
         <section className="ws-panel">
           <header>
             <div>
-              <h2>Card deposit history</h2>
-              <p>Test payments and their current credit adjustments.</p>
+              <h2>{live ? "Card payments" : "Card deposit history"}</h2>
+              <p>
+                {live
+                  ? "Your top-ups, their receipts and any refunds."
+                  : "Test payments and their current credit adjustments."}
+              </p>
             </div>
-            <Badge variant="outline">Test mode</Badge>
+            {!live && <Badge variant="outline">Test mode</Badge>}
           </header>
           {summary?.stripeIntents?.length ? (
             <div
@@ -165,7 +190,7 @@ export function StripeFundingPanel({
                   {summary.stripeIntents.map((i) => (
                     <tr key={i.id}>
                       <td>
-                        <strong>{usd(i.amountCents)}</strong> test USD
+                        <strong>{usd(i.amountCents)}</strong> {unit(i)}
                       </td>
                       <td>{labels[i.status]}</td>
                       <td>{date(i.createdAt)}</td>
@@ -185,7 +210,7 @@ export function StripeFundingPanel({
                             setOpen(true);
                           }}
                         >
-                          View card deposit
+                          {live ? "View payment" : "View card deposit"}
                           <ArrowRight />
                         </Button>
                       </td>
@@ -195,8 +220,12 @@ export function StripeFundingPanel({
               </table>
             </div>
           ) : (
-            <Empty title="No card deposits yet">
-              Verified Stripe test payments will appear here.
+            <Empty
+              title={live ? "No card payments yet" : "No card deposits yet"}
+            >
+              {live
+                ? "Verified card payments will appear here."
+                : "Verified Stripe test payments will appear here."}
             </Empty>
           )}
         </section>
@@ -210,10 +239,18 @@ export function StripeFundingPanel({
         <DialogContent className="ws-detail-dialog customer-funding-dialog translate-x-0 translate-y-0">
           <DialogHeader>
             <DialogTitle>
-              {selected ? "Card deposit details" : "Deposit with Stripe"}
+              {selected
+                ? isLive(selected)
+                  ? "Card payment details"
+                  : "Card deposit details"
+                : live
+                  ? "Add credits"
+                  : "Deposit with Stripe"}
             </DialogTitle>
             <DialogDescription>
-              Stripe test mode. Test credits cannot pay for live tool calls.
+              {isLive(selected)
+                ? "Card payment processed by Stripe. Credits pay for this account’s tool calls."
+                : "Stripe test mode. Test credits cannot pay for live tool calls."}
             </DialogDescription>
           </DialogHeader>
           <InlineError message={error} />
@@ -235,16 +272,26 @@ export function StripeFundingPanel({
               <div className="ws-detail-facts">
                 <div>
                   <span>Requested payment</span>
-                  <strong>{usd(selected.amountCents)} test USD</strong>
+                  <strong>
+                    {usd(selected.amountCents)} {unit(selected)}
+                  </strong>
                 </div>
                 <div>
-                  <span>Net test credits</span>
+                  <span>
+                    {isLive(selected) ? "Net credits" : "Net test credits"}
+                  </span>
                   <strong>{(selected.netCreditUnits / 1e6).toFixed(2)}</strong>
                 </div>
                 <div>
                   <span>Refund reported</span>
                   <strong>{usd(selected.refundedCents)}</strong>
                 </div>
+                {!!selected.pendingRefundCents && (
+                  <div>
+                    <span>Refund in progress</span>
+                    <strong>{usd(selected.pendingRefundCents)}</strong>
+                  </div>
+                )}
                 <div>
                   <span>Last verified</span>
                   <strong>
@@ -258,6 +305,17 @@ export function StripeFundingPanel({
                 <code>{selected.id}</code>
                 <CopyButton text={selected.id} />
               </div>
+              {selected.receiptUrl && (
+                <a
+                  className="ws-text-link"
+                  href={selected.receiptUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  View Stripe receipt
+                  <ArrowUpRight size={14} />
+                </a>
+              )}
               {selected.checkoutUrl && selected.status === "checkout_ready" && (
                 <Button asChild>
                   <a
@@ -308,6 +366,7 @@ export function StripeFundingPanel({
                 Credits post once after server verification. If a payment is
                 refunded or disputed, this receipt and the credit ledger retain
                 the adjustment.
+                {isLive(selected) && ` ${summary?.refundTerms ?? ""}`}
               </p>
             </div>
           ) : busy ? (
@@ -321,7 +380,7 @@ export function StripeFundingPanel({
               }}
             >
               <label>
-                <span>Amount in test USD</span>
+                <span>{live ? "Amount in USD" : "Amount in test USD"}</span>
                 <Input
                   aria-label="Card deposit amount"
                   inputMode="decimal"
@@ -333,11 +392,13 @@ export function StripeFundingPanel({
                     key.current = crypto.randomUUID();
                   }}
                 />
-                <small>$5–$1,000 · Up to two decimal places</small>
+                <small>$5–{maximum} · Up to two decimal places</small>
               </label>
               <p>
                 Enter card details on Stripe. Two Hands never receives your card
                 number.
+                {live &&
+                  ` This is a real card payment. ${summary?.refundTerms ?? ""}`}
               </p>
               <Button
                 type="submit"
