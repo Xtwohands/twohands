@@ -8,6 +8,8 @@ import {
 import { useConnectAgent } from "./ConnectAgentDialog";
 
 import { AdminNavigation } from "./AdminNavigation";
+import { canOpen, homeRoute } from "./account-type";
+import { WrongAccountArea } from "./ChooseAccountType";
 import { OperatorAllowanceNotice } from "./OperatorAllowanceNotice";
 import { AccountControls, useAccount } from "./AccountGate";
 import { CustomerFunding, useCustomerFunding } from "./customer-funding";
@@ -635,6 +637,22 @@ export function ObservationApp() {
               ? "Tool access"
               : pages.find((p) => p.id === route.page)?.label || "Sessions";
   if (route.page === "home") return <LandingView />;
+  // Business accounts use #company and user accounts use #dashboard; admins can
+  // open both. The server enforces the same rule on every request.
+  if (
+    account.enabled &&
+    account.profile &&
+    (route.page === "dashboard" || route.page === "company") &&
+    !canOpen(account.profile, "#" + route.page)
+  )
+    return (
+      <WrongAccountArea
+        accountType={account.profile.accountType ?? "user"}
+        email={account.profile.user.email}
+        home={homeRoute(account.profile)}
+        onSignOut={account.signOut}
+      />
+    );
   if (account.enabled && route.page === "settings") return <AccountSettings />;
   if (account.enabled && route.page === "company")
     return (

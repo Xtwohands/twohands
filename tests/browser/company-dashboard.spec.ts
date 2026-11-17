@@ -94,6 +94,7 @@ async function fixture(page: Page, unbound = false) {
     return route.fulfill({
       json: {
         user: { id: userId, email: "owner@fixture.invalid" },
+        accountType: state.admin ? null : "business",
         isAdmin: state.admin && !preview,
         canPreview: state.admin,
         workspaces: [],

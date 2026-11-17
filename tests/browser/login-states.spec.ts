@@ -101,6 +101,7 @@ async function fixture(page: Page) {
     route.fulfill({
       json: {
         user: accountUser,
+        accountType: "user",
         hasPersonalAccount: true,
         isAdmin: false,
         companies: [],
@@ -429,7 +430,8 @@ test("a disabled Google provider hides the Google option and offers email", asyn
   await expect(
     page.getByRole("button", { name: "Continue with Google" }),
   ).toHaveCount(0);
-  await expect(page).toHaveURL(/127\.0\.0\.1:3101\/#dashboard$/);
+  // Signed-out visitors are sent to /login, keeping the page they asked for.
+  await expect(page).toHaveURL(/127\.0\.0\.1:3101\/login#dashboard$/);
   await page.getByRole("button", { name: "Continue with email" }).click();
   await expect(
     page.getByRole("heading", { name: "Sign in with email" }),

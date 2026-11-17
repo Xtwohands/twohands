@@ -994,7 +994,12 @@ export function AccountSettings() {
   const [busy, setBusy] = useState(false);
   const canPreview = account.profile?.canPreview || account.profile?.isAdmin;
   const current =
-    account.previewRole || (account.profile?.isAdmin ? "admin" : "user");
+    account.previewRole ||
+    (account.profile?.isAdmin
+      ? "admin"
+      : account.profile?.accountType === "business"
+        ? "company"
+        : "user");
   const [experience, setExperience] = useState(current);
   const [target, setTarget] = useState(account.previewTarget || "");
   const selectedTarget = target || account.previewTargets[0]?.target || "";

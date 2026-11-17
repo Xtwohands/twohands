@@ -156,6 +156,9 @@ export function hostedConnectorRoutes(
     try {
       if (!sameOriginWrite(req, res)) return;
       res.locals.account = await accounts.identity(req);
+      // Company connectors are for business accounts; /admin/connectors stays admin-only.
+      if (/^\/companies\//i.test(req.path))
+        await accounts.assertAccountType(res.locals.account, "business");
       next();
     } catch (error) {
       accountFailure(error, res);

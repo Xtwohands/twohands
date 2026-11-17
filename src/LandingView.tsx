@@ -186,7 +186,7 @@ function Header() {
         <div className="th-header-actions">
           {canSignIn && (
             <Button asChild variant="ghost" size="sm">
-              <a href="#signin">Sign in</a>
+              <a href="/login">Sign in</a>
             </Button>
           )}
           <Button asChild variant="brand" size="sm">
@@ -995,7 +995,7 @@ function Footer() {
           <div>
             <h2>Account</h2>
             <a href={dashboard}>Dashboard</a>
-            {enabled && !profile && <a href="#signin">Sign in</a>}
+            {enabled && !profile && <a href="/login">Sign in</a>}
           </div>
           <div>
             <h2>Developers</h2>

@@ -14,6 +14,7 @@ import { config } from "../server/config";
 import { FundingService } from "../server/funding";
 import { StripeFundingService } from "../server/stripe-funding";
 import { FixtureStripeGateway, fixtureStripeSettings } from "./fixtures/stripe";
+import { setAccountType } from "./helpers";
 const url = process.env.OCTOLAB_TEST_POSTGRES_URL;
 const suite = url ? describe : describe.skip;
 suite("authenticated account and tenant boundaries", () => {
@@ -24,9 +25,12 @@ suite("authenticated account and tenant boundaries", () => {
     funding: FundingService,
     stripe: StripeFundingService,
     gateway: FixtureStripeGateway;
+  // a and b are user accounts; ca and cb are business (tool company) accounts.
   const ids = {
     a: randomUUID(),
     b: randomUUID(),
+    ca: randomUUID(),
+    cb: randomUUID(),
     admin: randomUUID(),
     legacy: randomUUID(),
   };
@@ -56,7 +60,7 @@ suite("authenticated account and tenant boundaries", () => {
     await db.pool.query(
       "CREATE SCHEMA IF NOT EXISTS auth; CREATE TABLE IF NOT EXISTS auth.users(id UUID PRIMARY KEY,deleted_at TIMESTAMPTZ,banned_until TIMESTAMPTZ); ALTER TABLE auth.users ADD COLUMN IF NOT EXISTS email TEXT; ALTER TABLE auth.users ADD COLUMN IF NOT EXISTS email_confirmed_at TIMESTAMPTZ; CREATE TABLE IF NOT EXISTS auth.sessions(id UUID PRIMARY KEY,user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,not_after TIMESTAMPTZ);",
     );
-    for (const name of ["a", "b", "admin"] as const) {
+    for (const name of ["a", "b", "ca", "cb", "admin"] as const) {
       const identity = {
         userId: ids[name],
         email: name + "@fixture.invalid",
@@ -72,6 +76,13 @@ suite("authenticated account and tenant boundaries", () => {
         "INSERT INTO auth.sessions(id,user_id) VALUES($1,$2)",
         [identity.sessionId, identity.userId],
       );
+      // The admin is exempt from account types and needs none.
+      if (name !== "admin")
+        await setAccountType(
+          db.pool,
+          identity.userId,
+          name.startsWith("c") ? "business" : "user",
+        );
     }
     await db.pool.query(
       "INSERT INTO octolab.workspaces(id,name) VALUES($1,'Historical private workspace')",
@@ -240,6 +251,20 @@ suite("authenticated account and tenant boundaries", () => {
         (item: { accountId: string }) => item.accountId === ids.legacy,
       ),
     ).toBe(false);
+    // A brand-new account must choose its type before any personal data loads.
+    const untyped = await request(app)
+      .get("/api/account/usage")
+      .set(headers("fixture-setup"));
+    expect(untyped.status).toBe(403);
+    expect(untyped.body.code).toBe("account_type_required");
+    expect(
+      (
+        await request(app)
+          .post("/api/auth/account-type")
+          .set(headers("fixture-setup"))
+          .send({ accountType: "user" })
+      ).status,
+    ).toBe(200);
     const responses = await Promise.all(
       Array.from({ length: 4 }, () =>
         request(app).get("/api/account/usage").set(headers("fixture-setup")),
@@ -467,7 +492,7 @@ suite("authenticated account and tenant boundaries", () => {
     };
     const created = await request(app)
       .post("/api/auth/companies")
-      .set(headers("fixture-a"))
+      .set(headers("fixture-ca"))
       .send(body);
     expect(created.status).toBe(201);
     const id = created.body.id;
@@ -480,7 +505,7 @@ suite("authenticated account and tenant boundaries", () => {
       (
         await request(app)
           .post("/api/auth/companies")
-          .set(headers("fixture-a"))
+          .set(headers("fixture-ca"))
           .send(body)
       ).body.id,
     ).toBe(id);
@@ -488,24 +513,30 @@ suite("authenticated account and tenant boundaries", () => {
       (
         await request(app)
           .post("/api/auth/companies")
-          .set(headers("fixture-a"))
+          .set(headers("fixture-ca"))
           .send({ ...body, providerId: "exa", status: "approved" })
       ).status,
     ).toBe(400);
     expect(
-      (await request(app).get(`/api/companies/${id}`).set(headers("fixture-b")))
-        .status,
+      (
+        await request(app)
+          .get(`/api/companies/${id}`)
+          .set(headers("fixture-cb"))
+      ).status,
     ).toBe(404);
     expect(
       (
         await request(app)
           .get(`/api/companies/${id}/insights`)
-          .set(headers("fixture-a"))
+          .set(headers("fixture-ca"))
       ).status,
     ).toBe(403);
     expect(
-      (await request(app).get("/api/admin/companies").set(headers("fixture-a")))
-        .status,
+      (
+        await request(app)
+          .get("/api/admin/companies")
+          .set(headers("fixture-ca"))
+      ).status,
     ).toBe(403);
     for (const path of [
       "/api/company-insights/exa?source=local&scope=workspace",
@@ -527,7 +558,7 @@ suite("authenticated account and tenant boundaries", () => {
       (
         await request(app)
           .post(`/api/admin/companies/${id}/review`)
-          .set(headers("fixture-a"))
+          .set(headers("fixture-ca"))
           .send(review)
       ).status,
     ).toBe(403);
@@ -545,7 +576,7 @@ suite("authenticated account and tenant boundaries", () => {
       (
         await request(app)
           .get(`/api/companies/${id}/insights`)
-          .set(headers("fixture-a"))
+          .set(headers("fixture-ca"))
       ).body,
     ).toMatchObject({ status: "awaiting_release", metrics: null });
     expect(
@@ -566,7 +597,7 @@ suite("authenticated account and tenant boundaries", () => {
     ).toBe(200);
     const report = await request(app)
       .get(`/api/companies/${id}/insights`)
-      .set(headers("fixture-a", bWorkspace));
+      .set(headers("fixture-ca", bWorkspace));
     expect(report.status).toBe(200);
     expect(report.body).toMatchObject({
       status: "available",
@@ -585,14 +616,16 @@ suite("authenticated account and tenant boundaries", () => {
       (
         await request(app)
           .get(`/api/admin/companies/${id}/history`)
-          .set(headers("fixture-a"))
+          .set(headers("fixture-ca"))
       ).status,
     ).toBe(403);
     const companyProfile = await request(app)
       .get("/api/auth/me")
-      .set(headers("fixture-a"));
+      .set(headers("fixture-ca"));
     expect(companyProfile.body.companies[0].id).toBe(id);
-    expect(companyProfile.body.hasPersonalAccount).toBe(true);
+    // Business accounts never get a personal account created for them.
+    expect(companyProfile.body.accountType).toBe("business");
+    expect(companyProfile.body.hasPersonalAccount).toBe(false);
     expect(
       (
         await request(app)
@@ -610,7 +643,7 @@ suite("authenticated account and tenant boundaries", () => {
       (
         await request(app)
           .get(`/api/companies/${id}/insights`)
-          .set(headers("fixture-a"))
+          .set(headers("fixture-ca"))
       ).status,
     ).toBe(403);
   });
@@ -624,7 +657,7 @@ suite("authenticated account and tenant boundaries", () => {
     };
     const created = await request(app)
       .post("/api/auth/companies")
-      .set(headers("fixture-b"))
+      .set(headers("fixture-cb"))
       .send(input);
     const id = created.body.id;
     const decision = {
@@ -652,13 +685,13 @@ suite("authenticated account and tenant boundaries", () => {
       (
         await request(app)
           .post(`/api/companies/${id}/resubmit`)
-          .set(headers("fixture-a"))
+          .set(headers("fixture-ca"))
           .send(changed)
       ).status,
     ).toBe(404);
     const resubmitted = await request(app)
       .post(`/api/companies/${id}/resubmit`)
-      .set(headers("fixture-b"))
+      .set(headers("fixture-cb"))
       .send(changed);
     expect(resubmitted.status).toBe(200);
     expect(resubmitted.body).toMatchObject({
@@ -671,7 +704,7 @@ suite("authenticated account and tenant boundaries", () => {
       (
         await request(app)
           .post(`/api/companies/${id}/resubmit`)
-          .set(headers("fixture-b"))
+          .set(headers("fixture-cb"))
           .send(changed)
       ).status,
     ).toBe(409);
@@ -700,43 +733,43 @@ suite("authenticated account and tenant boundaries", () => {
     };
     const registration = await request(app)
       .post("/api/auth/companies")
-      .set(headers("fixture-a"))
+      .set(headers("fixture-ca"))
       .send(input);
     const id = registration.body.id;
     expect(
       (
         await request(app)
           .get(`/api/companies/${id}/members`)
-          .set(headers("fixture-b"))
+          .set(headers("fixture-cb"))
       ).status,
     ).toBe(403);
     expect(
       (
         await request(app)
           .post(`/api/companies/${id}/members`)
-          .set(headers("fixture-a"))
+          .set(headers("fixture-ca"))
           .send({
             action: "grant",
-            email: "a@fixture.invalid",
+            email: "ca@fixture.invalid",
             requestKey: randomUUID(),
           })
       ).status,
     ).toBe(409);
     const grant = {
       action: "grant",
-      email: "b@fixture.invalid",
+      email: "cb@fixture.invalid",
       requestKey: randomUUID(),
     };
     const granted = await request(app)
       .post(`/api/companies/${id}/members`)
-      .set(headers("fixture-a"))
+      .set(headers("fixture-ca"))
       .send(grant);
     expect(granted.status).toBe(200);
     expect(
       (
         await request(app)
           .post(`/api/companies/${id}/members`)
-          .set(headers("fixture-a"))
+          .set(headers("fixture-ca"))
           .send({ ...grant, requestKey: randomUUID() })
       ).status,
     ).toBe(409);
@@ -744,35 +777,38 @@ suite("authenticated account and tenant boundaries", () => {
       (
         await request(app)
           .post(`/api/companies/${id}/members`)
-          .set(headers("fixture-a"))
+          .set(headers("fixture-ca"))
           .send(grant)
       ).body.replayed,
     ).toBe(true);
     const memberProfile = await request(app)
       .get("/api/auth/me")
-      .set(headers("fixture-b"));
+      .set(headers("fixture-cb"));
     expect(
       memberProfile.body.companies.find((c: any) => c.id === id)?.role,
     ).toBe("analyst");
     expect(
-      (await request(app).get(`/api/companies/${id}`).set(headers("fixture-b")))
-        .status,
+      (
+        await request(app)
+          .get(`/api/companies/${id}`)
+          .set(headers("fixture-cb"))
+      ).status,
     ).toBe(200);
     expect(
       (
         await request(app)
           .get(`/api/companies/${id}/members`)
-          .set(headers("fixture-b"))
+          .set(headers("fixture-cb"))
       ).status,
     ).toBe(403);
     expect(
       (
         await request(app)
           .post(`/api/companies/${id}/members`)
-          .set(headers("fixture-b"))
+          .set(headers("fixture-cb"))
           .send({
             ...grant,
-            email: "a@fixture.invalid",
+            email: "ca@fixture.invalid",
             requestKey: randomUUID(),
           })
       ).status,
@@ -781,8 +817,8 @@ suite("authenticated account and tenant boundaries", () => {
       (
         await request(app)
           .post(`/api/companies/${id}/members`)
-          .set(headers("fixture-a"))
-          .send({ action: "revoke", userId: ids.a, requestKey: randomUUID() })
+          .set(headers("fixture-ca"))
+          .send({ action: "revoke", userId: ids.ca, requestKey: randomUUID() })
       ).status,
     ).toBe(409);
     expect(
@@ -801,45 +837,48 @@ suite("authenticated account and tenant boundaries", () => {
     ).toBe(200);
     const report = await request(app)
       .get(`/api/companies/${id}/insights`)
-      .set(headers("fixture-b"));
+      .set(headers("fixture-cb"));
     expect(report.status).toBe(200);
     expect(report.body.metrics).not.toBeNull();
     const audit = await request(app)
       .get(`/api/companies/${id}/access-history`)
-      .set(headers("fixture-a"));
+      .set(headers("fixture-ca"));
     expect(
       audit.body.some(
-        (e: any) => e.action === "report_accessed" && e.actorId === ids.b,
+        (e: any) => e.action === "report_accessed" && e.actorId === ids.cb,
       ),
     ).toBe(true);
     expect(
       (
         await request(app)
           .post(`/api/companies/${id}/members`)
-          .set(headers("fixture-a"))
-          .send({ action: "revoke", userId: ids.b, requestKey: randomUUID() })
+          .set(headers("fixture-ca"))
+          .send({ action: "revoke", userId: ids.cb, requestKey: randomUUID() })
       ).status,
     ).toBe(200);
     expect(
       (
         await request(app)
           .get(`/api/companies/${id}/insights`)
-          .set(headers("fixture-b"))
+          .set(headers("fixture-cb"))
       ).status,
     ).toBe(404);
     await request(app)
       .post(`/api/companies/${id}/members`)
-      .set(headers("fixture-a"))
+      .set(headers("fixture-ca"))
       .send(grant);
     expect(
-      (await request(app).get(`/api/companies/${id}`).set(headers("fixture-b")))
-        .status,
+      (
+        await request(app)
+          .get(`/api/companies/${id}`)
+          .set(headers("fixture-cb"))
+      ).status,
     ).toBe(404);
   });
   it("reports first-workspace usage and excludes ineligible offers and calls before exposure", async () => {
     const registration = await request(app)
       .post("/api/auth/companies")
-      .set(headers("fixture-b"))
+      .set(headers("fixture-cb"))
       .send({
         name: "Metric fixture company",
         website: "https://metrics.fixture.invalid",
@@ -864,7 +903,7 @@ suite("authenticated account and tenant boundaries", () => {
     ).toBe(200);
     const empty = await request(app)
       .get(`/api/companies/${id}/insights`)
-      .set(headers("fixture-b"));
+      .set(headers("fixture-cb"));
     expect(empty.body).toMatchObject({
       status: "available",
       minimumCohort: 0,
@@ -941,7 +980,7 @@ suite("authenticated account and tenant boundaries", () => {
       tenants.push({ workspace, session, event: event.rows[0].id, call });
       if (n === 0) {
         for (const identityHeaders of [
-          headers("fixture-b"),
+          headers("fixture-cb"),
           {
             ...headers("fixture-admin"),
             "X-Octolab-Preview": "company",
@@ -970,7 +1009,7 @@ suite("authenticated account and tenant boundaries", () => {
     const get = () =>
       request(app)
         .get(`/api/companies/${id}/insights`)
-        .set(headers("fixture-b"));
+        .set(headers("fixture-cb"));
     expect((await get()).body).toMatchObject({
       status: "available",
       minimumCohort: 0,
@@ -1017,7 +1056,7 @@ suite("authenticated account and tenant boundaries", () => {
       (
         await request(app)
           .get(`/api/companies/${id}/insights`)
-          .set(headers("fixture-a"))
+          .set(headers("fixture-ca"))
       ).status,
     ).toBe(404);
   });
@@ -1031,7 +1070,7 @@ suite("authenticated account and tenant boundaries", () => {
     };
     const created = await request(app)
       .post("/api/auth/companies")
-      .set(headers("fixture-b"))
+      .set(headers("fixture-cb"))
       .send(input);
     expect(created.status).toBe(201);
     const id = created.body.id;
@@ -1055,7 +1094,7 @@ suite("authenticated account and tenant boundaries", () => {
       (
         await request(app)
           .get("/api/auth/preview-targets")
-          .set(headers("fixture-a"))
+          .set(headers("fixture-ca"))
       ).status,
     ).toBe(403);
     const profile = await request(app).get("/api/auth/me").set(preview);
@@ -1103,7 +1142,7 @@ suite("authenticated account and tenant boundaries", () => {
           .set(preview)
           .send({
             action: "grant",
-            email: "a@fixture.invalid",
+            email: "ca@fixture.invalid",
             requestKey: randomUUID(),
           })
       ).status,
@@ -1143,14 +1182,14 @@ suite("authenticated account and tenant boundaries", () => {
         )
       ).rowCount,
     ).toBe(0);
-    for (const token of ["fixture-a", "oct_key_forged", "unknown-session"]) {
+    for (const token of ["fixture-ca", "oct_key_forged", "unknown-session"]) {
       expect(
         (
           await request(app)
             .get("/api/auth/me")
             .set({ ...preview, ...headers(token) })
         ).status,
-      ).toBe(token === "fixture-a" ? 403 : 401);
+      ).toBe(token === "fixture-ca" ? 403 : 401);
     }
     expect(
       (

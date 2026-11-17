@@ -7,7 +7,12 @@ import { PERSONAL_ACCOUNT_SCOPE } from "./personal-account.js";
 import { Companies } from "./companies.js";
 import { PostgresDatabase } from "./database.js";
 import type { Store } from "./store.js";
-import type { AccountProfile, AuthPublicConfig } from "./account-types.js";
+import {
+  accountTypes,
+  type AccountProfile,
+  type AccountType,
+  type AuthPublicConfig,
+} from "./account-types.js";
 export class AccountError extends Error {
   constructor(
     public status: number,
@@ -254,6 +259,7 @@ export class Accounts {
       ).rowCount;
     return {
       user: { id: identity.userId, email: identity.email },
+      accountType: await this.accountType(identity.userId),
       hasPersonalAccount,
       isAdmin: this.isAdmin(identity.userId),
       canPreview: this.settings.adminUserIds.includes(identity.userId),
@@ -261,6 +267,71 @@ export class Accounts {
       companies: await this.companies.list(identity),
     };
   }
+  // ---------------------------------------------------------------------------
+  // Account types (business or user). Stored in octolab.account_types, where a
+  // database trigger makes each row permanent. See the migration for details.
+  // ---------------------------------------------------------------------------
+
+  /** The stored type for this account, or null if it hasn't chosen one yet. */
+  async accountType(userId: string): Promise<AccountType | null> {
+    const result = await this.database.pool.query<{
+      account_type: AccountType;
+    }>("SELECT account_type FROM octolab.account_types WHERE user_id=$1", [
+      userId,
+    ]);
+    return result.rows[0]?.account_type ?? null;
+  }
+
+  /**
+   * Record the account's type the first time it is chosen. Choosing the same type
+   * again is harmless; choosing a different one is refused. The database trigger
+   * blocks changes too, so this is not the only safeguard.
+   */
+  async chooseAccountType(
+    identity: VerifiedIdentity,
+    input: unknown,
+  ): Promise<{ accountType: AccountType }> {
+    const { accountType } = z
+      .object({ accountType: z.enum(accountTypes) })
+      .parse(input);
+    await this.database.pool.query(
+      "INSERT INTO octolab.account_types(user_id,account_type,source) VALUES($1,$2,'chosen') ON CONFLICT(user_id) DO NOTHING",
+      [identity.userId, accountType],
+    );
+    const stored = await this.accountType(identity.userId);
+    if (stored !== accountType)
+      throw new AccountError(
+        409,
+        `This account is already a ${stored} account. Account types can't be changed.`,
+        "account_type_locked",
+      );
+    return { accountType: stored };
+  }
+
+  /**
+   * Refuse the request unless the account has the required type. Platform
+   * administrators (the SUPABASE_ADMIN_USER_IDS allowlist) are exempt so they can
+   * review companies and preview both areas.
+   */
+  async assertAccountType(identity: VerifiedIdentity, required: AccountType) {
+    if (this.isPlatformAdmin(identity.userId)) return;
+    const actual = await this.accountType(identity.userId);
+    if (!actual)
+      throw new AccountError(
+        403,
+        "Choose whether this is a business or user account first.",
+        "account_type_required",
+      );
+    if (actual !== required)
+      throw new AccountError(
+        403,
+        required === "business"
+          ? "This area is for business accounts. You're signed in with a user account."
+          : "This area is for user accounts. You're signed in with a business account.",
+        "wrong_account_type",
+      );
+  }
+
   async keyAccountScope(secret: string): Promise<string> {
     if (!/^oct_key_[A-Za-z0-9_-]{43}$/.test(secret))
       throw new AccountError(401, "Invalid API key.");

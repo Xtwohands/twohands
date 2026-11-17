@@ -11,6 +11,7 @@ import {
 } from "../server/accounts";
 import { createApp } from "../server/app";
 import { loadSellerDataHosted } from "../server/seller-hosted";
+import { setAccountType } from "./helpers";
 
 const url = process.env.OCTOLAB_TEST_POSTGRES_URL;
 const suite = url ? describe : describe.skip;
@@ -143,7 +144,9 @@ suite("hosted seller tools", () => {
       await db.pool.query(
         "INSERT INTO auth.sessions(id,user_id) VALUES($1,$2)",
         [identity.sessionId, identity.userId],
-      );
+      ); // Company people are business accounts; admins need no type.
+      if (name !== "admin")
+        await setAccountType(db.pool, identity.userId, "business");
     }
     // Earlier runs against the same disposable database must not hold the provider.
     await db.pool.query(
