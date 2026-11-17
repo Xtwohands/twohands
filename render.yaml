@@ -40,9 +40,10 @@ services:
       # Supabase's public root CA, added as a secret file named supabase-ca.crt.
       - key: NODE_EXTRA_CA_CERTS
         value: /etc/secrets/supabase-ca.crt
-      # Payments stay off until they are deliberately enabled.
+      # Stripe sandbox deposits are on (test keys only; live keys are refused).
+      # On-chain test deposits stay off until they are deliberately enabled.
       - key: STRIPE_TEST_ENABLED
-        value: "false"
+        value: "true"
       - key: DEPOSITS_TESTNET_ENABLED
         value: "false"
       # Session pooler connection string on port 5432.
