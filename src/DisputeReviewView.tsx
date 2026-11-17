@@ -400,7 +400,7 @@ export function DisputeReviewView() {
               </Button>
             </div>
           </section>
-          {account.enabled && <WalletRefundsPanel admin={admin} />}
+          <WalletRefundsPanel admin={admin} />
         </>
       )}
       <Dialog
@@ -583,7 +583,7 @@ export function DisputeReviewView() {
                   {busy ? "Saving…" : "Save review · retain hold"}
                 </Button>
               </form>
-              {account.enabled && !detail.item.payment.disputeResolution && (
+              {!detail.item.payment.disputeResolution && (
                 <div className="ws-deposit-form">
                   <p className="field-hint">
                     Releasing the hold lifts the freeze on this account’s paid

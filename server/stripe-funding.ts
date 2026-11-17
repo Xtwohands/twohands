@@ -201,6 +201,12 @@ function stripeSchemas(mode: StripeMode) {
   };
 }
 const SCHEMAS = { test: stripeSchemas("test"), live: stripeSchemas("live") };
+type Schemas = ReturnType<typeof stripeSchemas>;
+export type StripeRefund = z.infer<Schemas["refund"]>;
+export type StripeDispute = z.infer<Schemas["dispute"]>;
+/** Stripe gave up on this refund; the money did not reach the customer. */
+export const refundFailed = (refund: { status: string | null }) =>
+  refund.status === "failed" || refund.status === "canceled";
 /** Customer-facing wording. Sandbox copy never appears on a real-money receipt. */
 const COPY = {
   test: {
@@ -230,6 +236,8 @@ const COPY = {
       "Card payment verification is not configured. No credits were added.",
   },
 } as const;
+const LIVE_UNAVAILABLE =
+  "Card top-ups are not available for this account right now.";
 /** A Stripe-hosted receipt link, or null. Anything else is dropped. */
 function receiptUrl(value: string | null | undefined) {
   try {
@@ -273,6 +281,16 @@ export class StripeFundingService {
   private readonly shadowWallet: ShadowWallet;
   readonly wallet: Wallet;
   private manualChecks = new Map<string, number>();
+  /** Deposits whose next verification must read Stripe's individual refunds. */
+  private readonly refundChecks = new Set<string>();
+  /**
+   * Set by the operator tooling. Called with Stripe's refunds for a payment
+   * so that an operator refund request whose refund failed is closed.
+   */
+  refundsObserved?: (
+    depositId: string,
+    refunds: StripeRefund[],
+  ) => Promise<void>;
   private readonly rails: Record<StripeMode, StripeRail>;
   /**
    * `settings` and `gateway` are the sandbox rail, as before live mode
@@ -345,13 +363,10 @@ export class StripeFundingService {
   async accountStatus(): Promise<StripeFundingStatus> {
     const mode = await this.wallet.fundingMode();
     const status = this.status(mode);
-    if (mode === "live" && status.enabled && !(await this.liveEligible()))
-      return {
-        ...status,
-        enabled: false,
-        unavailableReason:
-          "Card top-ups are not available for this account right now.",
-      };
+    // A live customer is told only that top-ups are unavailable. The reason
+    // can be server configuration, which is for operators (`status("live")`).
+    if (mode === "live" && !(status.enabled && (await this.liveEligible())))
+      return { ...status, enabled: false, unavailableReason: LIVE_UNAVAILABLE };
     return status;
   }
   private liveEligible() {
@@ -452,20 +467,19 @@ export class StripeFundingService {
         // sent to sandbox checkout, and a sandbox account never to live.
         const mode = await this.wallet.fundingMode();
         const status = this.status(mode);
-        if (!status.enabled)
-          throw new FundingError(409, status.unavailableReason!);
         if (mode === "live") {
-          if (!(await this.liveEligible()))
+          if (!status.enabled || !(await this.liveEligible()))
             throw new FundingError(
               409,
-              "Card top-ups are not available for this account right now. No payment was started.",
+              `${LIVE_UNAVAILABLE} No payment was started.`,
             );
           if (input.amount > status.maximumCents)
             throw new FundingError(
               400,
               `Maximum card top-up is $${status.maximumCents / 100}.`,
             );
-        }
+        } else if (!status.enabled)
+          throw new FundingError(409, status.unavailableReason!);
         const at = new Date(this.now()).toISOString();
         value = {
           id: randomUUID(),
@@ -517,7 +531,12 @@ export class StripeFundingService {
       }
       const status = this.status(stripeModeOf(value));
       if (!status.enabled)
-        throw new FundingError(409, status.unavailableReason!);
+        throw new FundingError(
+          409,
+          stripeModeOf(value) === "live"
+            ? `${LIVE_UNAVAILABLE} No payment was started.`
+            : status.unavailableReason!,
+        );
       return value;
     });
     if (value.checkoutSessionId) return value;
@@ -648,11 +667,35 @@ export class StripeFundingService {
         "Retry this deposit request to recover its Stripe checkout first.",
       );
     const mode = stripeModeOf(value);
+    const refundCheck = this.refundChecks.delete(id);
     try {
       const session = this.validSession(
         await this.rails[mode].gateway.retrieve(value.checkoutSessionId),
         value,
       );
+      // Read Stripe's individual refunds and disputes, outside the
+      // transaction, only when the totals alone cannot settle the payment.
+      let refunds: StripeRefund[] | undefined;
+      let disputes: StripeDispute[] | undefined;
+      const seen = SCHEMAS[mode].payment.safeParse(session.payment_intent);
+      if (
+        seen.success &&
+        session.payment_status === "paid" &&
+        session.status === "complete"
+      ) {
+        const verified = { ...value, paymentIntentId: seen.data.id };
+        if (
+          refundCheck ||
+          value.pendingRefundCents ||
+          seen.data.latest_charge.amount_refunded < value.refundedCents
+        ) {
+          refunds = await this.refundsFor(verified);
+          // An operator refund that failed at Stripe stops reserving credits.
+          await this.refundsObserved?.(id, refunds);
+        }
+        if (value.disputeResolution?.disputeIds)
+          disputes = await this.disputesFor(verified);
+      }
       return await this.funding.store.transaction(async () => {
         const current = await this.get(id);
         current.lastCheckedAt = new Date(this.now()).toISOString();
@@ -697,11 +740,38 @@ export class StripeFundingService {
           !current.paymentIntentId && !current.netCreditUnits;
         current.paymentIntentId = payment.id;
         current.chargeId = charge.id;
-        current.refundedCents = Math.max(
-          current.refundedCents,
-          charge.amount_refunded,
-        );
+        // A refund total never drops because of an older read. It drops only
+        // when Stripe's own list shows a failed or canceled refund and the
+        // refunds still standing add up to the charge's refunded total.
+        if (charge.amount_refunded < current.refundedCents) {
+          const failed = (refunds ?? []).filter(refundFailed);
+          const standing = (refunds ?? [])
+            .filter((r) => !refundFailed(r))
+            .reduce((sum, r) => sum + r.amount, 0);
+          if (failed.length && standing === charge.amount_refunded) {
+            current.refundedCents = charge.amount_refunded;
+            current.failedRefundIds = [
+              ...new Set([
+                ...(current.failedRefundIds ?? []),
+                ...failed.map((r) => r.id),
+              ]),
+            ];
+          } else
+            await this.wallet.alert(mode, "refund_total_unverified", id, {
+              savedRefundedCents: current.refundedCents,
+              stripeRefundedCents: charge.amount_refunded,
+              standingRefundCents: refunds ? standing : null,
+            });
+        } else current.refundedCents = charge.amount_refunded;
         current.disputed ||= charge.disputed;
+        // A dispute Stripe opened after the last release starts a new cycle:
+        // the payment is held again until an operator releases it again.
+        const known = current.disputeResolution?.disputeIds;
+        if (known && disputes?.some((d) => !known.includes(d.id))) {
+          current.disputeCycle = (current.disputeCycle ?? 1) + 1;
+          delete current.disputeResolution;
+        }
+        const released = !!current.disputeResolution;
         current.receiptUrl =
           receiptUrl(charge.receipt_url) ?? current.receiptUrl ?? null;
         // An operator refund in flight is already out of the balance; count it
@@ -715,18 +785,31 @@ export class StripeFundingService {
           ),
         );
         current.pendingRefundCents = reserved - current.refundedCents;
+        // The test-credit ledger and the shadow wallet keep a dispute hold
+        // for good. The wallet follows the release: what Stripe did not take
+        // back (refunds and lost disputes) is the payment's credit again.
         const target = current.disputed
           ? 0
           : (current.amountCents - reserved) * 10000;
+        const walletTarget = released
+          ? Math.max(
+              0,
+              current.amountCents -
+                reserved -
+                (current.disputeResolution!.lostCents ?? 0),
+            ) * 10000
+          : target;
+        const dispute = { cycle: current.disputeCycle ?? 1, released };
         if (mode === "live") {
           if (
             !(await this.wallet.reconcileDeposit(
               id,
               payment.id,
-              target,
+              walletTarget,
               current.disputed,
               false,
               "live",
+              dispute,
             ))
           )
             throw new FundingError(
@@ -756,20 +839,23 @@ export class StripeFundingService {
           await this.wallet.reconcileDeposit(
             id,
             payment.id,
-            target,
+            walletTarget,
             current.disputed,
             firstVerification,
+            "test",
+            dispute,
           );
         }
-        current.netCreditUnits = target;
+        current.netCreditUnits = walletTarget;
         current.checkoutUrl = null;
-        current.status = current.disputed
-          ? "disputed"
-          : current.refundedCents === current.amountCents
-            ? "refunded"
-            : current.refundedCents
-              ? "partially_refunded"
-              : "credited";
+        current.status =
+          current.disputed && !released
+            ? "disputed"
+            : current.refundedCents === current.amountCents
+              ? "refunded"
+              : current.refundedCents
+                ? "partially_refunded"
+                : "credited";
         current.message = current.disputeResolution
           ? current.disputeResolution.restoredMicros
             ? "The dispute on this payment was closed and its remaining credits were restored."
@@ -848,12 +934,32 @@ export class StripeFundingService {
         identity.depositId = payment.metadata?.octolab_deposit_id || "";
         workspace = await this.accountScopeForWebhook(identity);
       }
-      if (!workspace) return { received: true, ignored: true };
+      if (!workspace) return this.unmatched(event, mode);
       return this.funding.store.scope.run(workspace, () =>
         this.webhookEvent(event, mode),
       );
     }
     return this.webhookEvent(event, mode);
+  }
+  /**
+   * A signed payment event that belongs to no saved deposit. In live mode
+   * that is real money this server cannot place, so it leaves a durable
+   * operator alert before the event is acknowledged.
+   */
+  private async unmatched(event: Stripe.Event, mode: StripeMode) {
+    if (mode === "live") {
+      console.error(
+        `Stripe live event ${event.id} (${event.type}) matched no account. An operator must review it.`,
+      );
+      const { db } = this.funding.store;
+      if (db instanceof PostgresDatabase)
+        await db.pool.query(
+          `INSERT INTO octolab.wallet_operator_alerts(workspace_id,mode,kind,reference,detail)
+           VALUES (NULL,'live','unmatched_live_event',$1,$2) ON CONFLICT DO NOTHING`,
+          [event.id, JSON.stringify({ type: event.type })],
+        );
+    }
+    return { received: true, ignored: true };
   }
   private async webhookEvent(event: Stripe.Event, mode: StripeMode) {
     const { gateway } = this.rails[mode];
@@ -913,7 +1019,7 @@ export class StripeFundingService {
             .get(depositId);
       }
     }
-    if (!row) return { received: true, ignored: true };
+    if (!row) return this.unmatched(event, mode);
     id = String(row.id);
     // A signed event may only ever touch a deposit created in its own mode.
     if (stripeModeOf(await this.get(id)) !== mode) {
@@ -922,10 +1028,9 @@ export class StripeFundingService {
       );
       return { received: true, ignored: true };
     }
-    if (event.type === "refund.failed")
-      console.error(
-        `Stripe reports a failed refund for card deposit ${id}. Credits are not restored automatically; an operator must review it.`,
-      );
+    // The next verification reads the payment's refunds one by one, so the
+    // failed refund's credits are restored (or an alert is left if not).
+    if (event.type === "refund.failed") this.refundChecks.add(id);
     // Checkout can finish before the create response is saved. Recover only its own signed session identity.
     if (
       !(await this.get(id)).checkoutSessionId &&

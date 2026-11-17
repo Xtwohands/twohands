@@ -133,8 +133,7 @@ export function StripeFundingPanel({
               <strong>Card deposits are unavailable</strong>
               <p>
                 {live
-                  ? (summary?.stripe?.unavailableReason ??
-                    "Card top-ups are not available right now.")
+                  ? "Card top-ups are not available for this account right now. Your credits are kept."
                   : "You can continue setting up your agent without a payment method. No card details are needed."}
               </p>
             </div>

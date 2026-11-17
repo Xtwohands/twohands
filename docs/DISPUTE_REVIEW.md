@@ -51,6 +51,9 @@ In PostgreSQL mode, all routes below require `Authorization: Bearer <account acc
 | GET    | `/api/admin/funding/refunds/:id`                   | Refund quote and refund requests for one payment.                                                                       |
 | POST   | `/api/admin/funding/refunds/:id`                   | Refund unused credits to the card. `{requestKey, amount, note}`. Refused unless `TWO_HANDS_UNUSED_REFUNDS=true`.        |
 | POST   | `/api/admin/funding/refund-requests/:id/resolve`   | Settle a refund whose outcome is unknown by asking Stripe; body `{}`.                                                   |
+| GET    | `/api/admin/funding/alerts`                        | Open payment alerts across accounts.                                                                                    |
+| POST   | `/api/admin/funding/alerts/:id/resolve`            | Record who handled an alert. `{note}`. Changes no balance.                                                              |
+| GET    | `/api/admin/funding/status`                        | Configuration state of the sandbox and live rails, for operators only.                                                  |
 
 The queue is one case per disputed payment, not an inventory of individual Stripe dispute objects. Bank-dispute reason codes, response deadlines, document uploads, evidence submission, and credit restoration are not implemented in this checkpoint. Inspect Stripe directly for those operations. Notes and audit evidence are stored in funding-only tables and excluded from provider/model statistics and commercial observation exports.
 

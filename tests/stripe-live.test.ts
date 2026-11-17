@@ -390,7 +390,7 @@ hosted("Stripe live mode into the prepaid wallet", { timeout: 30_000 }, () => {
     stripe.rail("live").settings.enabled = false;
     await expect(
       stripe.create({ requestKey: randomUUID(), amount: "5" }),
-    ).rejects.toThrow(/not enabled/);
+    ).rejects.toThrow(/not available for this account/);
     expect(test.creates).toHaveLength(0);
     stripe.rail("live").settings.enabled = true;
 
@@ -753,7 +753,7 @@ hosted("Stripe live mode into the prepaid wallet", { timeout: 30_000 }, () => {
     );
     expect(await journal(won.id)).toHaveLength(3);
     expect(await stripe.get(won.id)).toMatchObject({
-      status: "disputed",
+      status: "credited",
       disputeResolution: { outcome: "won", restoredMicros: 10_000_000 },
       message: expect.stringMatching(/restored/),
     });
@@ -1034,6 +1034,428 @@ hosted("Stripe live mode into the prepaid wallet", { timeout: 30_000 }, () => {
     await expect(refund(payment.id)).rejects.toThrow(/At most \$0\.00/);
     expect(live.refundCalls).toHaveLength(0);
     await expect(refund(randomUUID())).rejects.toMatchObject({ status: 404 });
+  });
+
+  it("keeps reconciling a released payment against Stripe's refunds", async () => {
+    const payment = await topUp("10");
+    await deliver(
+      live,
+      "charge.dispute.created",
+      charge(live, payment.checkoutSessionId!, 0, true),
+    );
+    live.disputeStatus.set(payment.paymentIntentId!, { status: "won" });
+    await ops.releaseDispute(
+      payment.id,
+      { requestKey: randomUUID(), note: "Stripe shows the dispute as won." },
+      "account fixture-admin",
+    );
+    expect(await balances()).toEqual({ live: 10_000_000 });
+    expect(await stripe.get(payment.id)).toMatchObject({
+      status: "credited",
+      disputed: true,
+      netCreditUnits: 10_000_000,
+    });
+
+    // Stripe refunds $3 to the card after the release. The charge still says
+    // "disputed", as Stripe charges do for good; the credits must follow.
+    const refunded = live.signed(
+      "charge.refunded",
+      charge(live, payment.checkoutSessionId!, 300, true),
+    );
+    await stripe.webhook(refunded.payload, refunded.signature, "live");
+    await stripe.webhook(refunded.payload, refunded.signature, "live");
+    await stripe.reconcile(payment.id);
+    expect(await journal(payment.id)).toEqual([
+      { kind: "deposit", mode: "live", micros: 10_000_000 },
+      { kind: "dispute_hold", mode: "live", micros: -10_000_000 },
+      { kind: "dispute_release", mode: "live", micros: 10_000_000 },
+      { kind: "refund", mode: "live", micros: -3_000_000 },
+    ]);
+    expect(await status()).toMatchObject({
+      postedMicros: 7_000_000,
+      frozen: false,
+    });
+    expect(await stripe.get(payment.id)).toMatchObject({
+      status: "partially_refunded",
+      refundedCents: 300,
+      netCreditUnits: 7_000_000,
+    });
+    // A full refund takes the rest.
+    await deliver(
+      live,
+      "charge.refunded",
+      charge(live, payment.checkoutSessionId!, 1000, true),
+    );
+    expect(await balances()).toEqual({ live: 0 });
+    expect(await walletValid()).toBe(true);
+  });
+
+  it("holds a payment again when Stripe opens another dispute after a release", async () => {
+    const payment = await topUp("10");
+    const other = await topUp("5");
+    const disputed = () =>
+      deliver(
+        live,
+        "charge.dispute.created",
+        charge(live, payment.checkoutSessionId!, 0, true),
+      );
+    const release = () =>
+      ops.releaseDispute(
+        payment.id,
+        { requestKey: randomUUID(), note: "Checked the outcome at Stripe." },
+        "account fixture-admin",
+      );
+    await disputed();
+    live.disputeStatus.set(payment.paymentIntentId!, { status: "won" });
+    await release();
+    expect(await status()).toMatchObject({
+      postedMicros: 15_000_000,
+      frozen: false,
+    });
+    // The same dispute's events arriving again change nothing.
+    await disputed();
+    await stripe.reconcile(payment.id);
+    expect(await journal(payment.id)).toHaveLength(3);
+
+    // A second dispute: the restored credits come out and the account freezes.
+    live.laterDisputes.set(payment.paymentIntentId!, [
+      { id: "dp_fixture_second", status: "needs_response" },
+    ]);
+    await disputed();
+    await disputed();
+    expect(await journal(payment.id)).toEqual([
+      { kind: "deposit", mode: "live", micros: 10_000_000 },
+      { kind: "dispute_hold", mode: "live", micros: -10_000_000 },
+      { kind: "dispute_release", mode: "live", micros: 10_000_000 },
+      { kind: "dispute_hold", mode: "live", micros: -10_000_000 },
+    ]);
+    expect(await status()).toMatchObject({
+      postedMicros: 5_000_000,
+      frozen: true,
+    });
+    expect(await stripe.get(payment.id)).toMatchObject({
+      status: "disputed",
+      disputeCycle: 2,
+      netCreditUnits: 0,
+    });
+    expect((await stripe.get(payment.id)).disputeResolution).toBeUndefined();
+    await expect(paidCall()).rejects.toMatchObject({
+      wallet: { reason: "dispute_hold" },
+    });
+    await expect(release()).rejects.toThrow(/has not closed/);
+
+    // Lost this time: released with nothing restored, and the account thaws.
+    live.laterDisputes.set(payment.paymentIntentId!, [
+      { id: "dp_fixture_second", status: "lost" },
+    ]);
+    expect(await release()).toMatchObject({
+      outcome: "lost",
+      restoredMicros: 0,
+    });
+    expect(await status()).toMatchObject({
+      postedMicros: 5_000_000,
+      frozen: false,
+    });
+    await stripe.reconcile(payment.id);
+    expect(await journal(payment.id)).toHaveLength(5);
+    expect((await stripe.get(other.id)).status).toBe("credited");
+    expect(await walletValid()).toBe(true);
+  });
+
+  it("releases on every final dispute status and restores nothing for one it does not recognise", async () => {
+    const prevented = await topUp("5");
+    const unknown = await topUp("5");
+    for (const p of [prevented, unknown])
+      await deliver(
+        live,
+        "charge.dispute.created",
+        charge(live, p.checkoutSessionId!, 0, true),
+      );
+    const release = (id: string) =>
+      ops.releaseDispute(
+        id,
+        { requestKey: randomUUID(), note: "Checked the outcome at Stripe." },
+        "account fixture-admin",
+      );
+    for (const open of [
+      "needs_response",
+      "under_review",
+      "warning_needs_response",
+      "warning_under_review",
+    ]) {
+      live.disputeStatus.set(prevented.paymentIntentId!, { status: open });
+      await expect(release(prevented.id)).rejects.toThrow(/has not closed/);
+    }
+    live.disputeStatus.set(prevented.paymentIntentId!, { status: "prevented" });
+    expect(await release(prevented.id)).toMatchObject({
+      outcome: "won",
+      restoredMicros: 5_000_000,
+    });
+    // A final status this code has never seen is not stuck and not restored.
+    live.disputeStatus.set(unknown.paymentIntentId!, {
+      status: "some_future_final_status",
+    });
+    expect(await release(unknown.id)).toMatchObject({
+      outcome: "lost",
+      restoredMicros: 0,
+    });
+    expect((await status()).frozen).toBe(false);
+    const audit = await db.pool.query(
+      "SELECT data FROM octolab.wallet_operator_actions WHERE workspace_id=$1 AND deposit_id=$2",
+      [workspace, unknown.id],
+    );
+    expect(audit.rows[0].data.unrecognisedStatuses).toEqual([
+      "some_future_final_status",
+    ]);
+  });
+
+  it("restores the credits of a refund that Stripe later reports as failed", async () => {
+    const payment = await topUp("5");
+    const session = payment.checkoutSessionId!;
+    const kept = live.dashboardRefund(session, 100);
+    const failing = live.dashboardRefund(session, 150);
+    await deliver(live, "charge.refunded", live.chargeOf(session));
+    expect(await stripe.get(payment.id)).toMatchObject({ refundedCents: 250 });
+    expect(await balances()).toEqual({ live: 2_500_000 });
+
+    // The $1.50 refund fails. Stripe takes it out of the charge's total.
+    live.failRefund(failing);
+    const event = live.signed("refund.failed", {
+      ...failing,
+      status: "failed",
+    });
+    expect(
+      await stripe.webhook(event.payload, event.signature, "live"),
+    ).toEqual({ received: true, replayed: false });
+    await stripe.webhook(event.payload, event.signature, "live");
+    await stripe.reconcile(payment.id);
+    expect(await stripe.get(payment.id)).toMatchObject({
+      status: "partially_refunded",
+      refundedCents: 100,
+      netCreditUnits: 4_000_000,
+      failedRefundIds: [failing.id],
+    });
+    expect(await journal(payment.id)).toEqual([
+      { kind: "deposit", mode: "live", micros: 5_000_000 },
+      { kind: "refund", mode: "live", micros: -2_500_000 },
+      { kind: "deposit", mode: "live", micros: 1_500_000 },
+    ]);
+    expect(await count("wallet_operator_alerts")).toBe(0);
+    expect(kept.status).toBe("succeeded");
+    expect(await walletValid()).toBe(true);
+  });
+
+  it("keeps the saved refund total and leaves an alert when a lower total cannot be verified", async () => {
+    const payment = await topUp("5");
+    const session = payment.checkoutSessionId!;
+    live.dashboardRefund(session, 200);
+    await deliver(live, "charge.refunded", live.chargeOf(session));
+    expect(await balances()).toEqual({ live: 3_000_000 });
+    // Stripe's total drops, but no refund in its list has failed.
+    live.sessions.get(session).payment_intent.latest_charge.amount_refunded =
+      50;
+    await stripe.reconcile(payment.id);
+    clock += 11_000;
+    await stripe.reconcile(payment.id);
+    expect(await stripe.get(payment.id)).toMatchObject({ refundedCents: 200 });
+    expect(await balances()).toEqual({ live: 3_000_000 });
+    const alerts = (await ops.alerts()).filter(
+      (a) => a.reference === payment.id,
+    );
+    expect(alerts).toMatchObject([
+      {
+        mode: "live",
+        kind: "refund_total_unverified",
+        detail: { savedRefundedCents: 200, stripeRefundedCents: 50 },
+      },
+    ]);
+    // Resolving is an audited acknowledgement; it changes no balance.
+    await expect(
+      ops.resolveAlert(
+        alerts[0].id,
+        { note: "short" },
+        "account fixture-admin",
+      ),
+    ).rejects.toThrow();
+    await ops.resolveAlert(
+      alerts[0].id,
+      { note: "Confirmed with Stripe support; total is correct." },
+      "account fixture-admin",
+    );
+    expect(
+      (await ops.alerts()).filter((a) => a.reference === payment.id),
+    ).toEqual([]);
+    expect(await balances()).toEqual({ live: 3_000_000 });
+    // The runtime role can raise an alert for its own account only, and read none.
+    await expect(
+      store.db.prepare("SELECT 1 FROM wallet_operator_alerts").all(),
+    ).rejects.toThrow(/permission denied/);
+    await expect(
+      store.db
+        .prepare(
+          "INSERT INTO wallet_operator_alerts(workspace_id,mode,kind,reference,detail) VALUES (?,'live','fixture','x','{}')",
+        )
+        .run(randomUUID()),
+    ).rejects.toThrow();
+  });
+
+  it("returns reserved credits when an operator refund fails at Stripe after it was accepted", async () => {
+    const payment = await topUp("5");
+    live.refundBehavior = "pending";
+    const quote = await ops.requestRefund(
+      payment.id,
+      {
+        requestKey: randomUUID(),
+        amount: "2",
+        note: "Customer asked for unused credit back.",
+      },
+      "account fixture-admin",
+    );
+    expect(quote.requests[0].status).toBe("submitted");
+    expect(await balances()).toEqual({ live: 3_000_000 });
+    // Stripe gives up on the refund. No operator action is needed.
+    const refund = live.failRefund([...live.issued.values()].at(-1));
+    await deliver(live, "refund.failed", refund);
+    expect(await balances()).toEqual({ live: 5_000_000 });
+    expect((await ops.refundQuote(payment.id)).requests).toMatchObject([
+      { status: "failed" },
+    ]);
+    expect(await stripe.get(payment.id)).toMatchObject({
+      status: "credited",
+      pendingRefundCents: 0,
+      netCreditUnits: 5_000_000,
+    });
+    const actions = await db.pool.query(
+      "SELECT kind,actor FROM octolab.wallet_operator_actions WHERE workspace_id=$1 ORDER BY created_at",
+      [workspace],
+    );
+    expect(actions.rows).toMatchObject([
+      { kind: "refund_request", actor: "account fixture-admin" },
+      { kind: "refund_resolution", actor: expect.stringMatching(/^system/) },
+    ]);
+    expect(await walletValid()).toBe(true);
+  });
+
+  it("never refunds credit that did not come from a card and refuses an adjustment without a mode", async () => {
+    await expect(
+      db.pool.query(
+        "INSERT INTO octolab.wallet_journal (workspace_id,source_id,kind,reference,wallet_micros) VALUES ($1,$2,'adjustment','forgot the mode',1000000)",
+        [workspace, randomUUID()],
+      ),
+    ).rejects.toThrow(/null value in column "mode"/);
+    const adjust = (micros: number) =>
+      db.pool.query(
+        "INSERT INTO octolab.wallet_journal (workspace_id,source_id,kind,reference,wallet_micros,mode) VALUES ($1,$2,'adjustment','fixture goodwill credit',$3,'live')",
+        [workspace, randomUUID(), micros],
+      );
+    await adjust(10_000_000);
+    const payment = await topUp("5");
+    expect((await paidCall()).status).toBe("succeeded");
+    // $14.9923 available, but only the card's $5 less usage can go to a card.
+    expect(await ops.refundQuote(payment.id)).toMatchObject({
+      availableMicros: 14_992_300,
+      refundableCents: 499,
+    });
+    await expect(
+      ops.requestRefund(
+        payment.id,
+        {
+          requestKey: randomUUID(),
+          amount: "5",
+          note: "Customer asked for unused credit back.",
+        },
+        "account fixture-admin",
+      ),
+    ).rejects.toThrow(/At most \$4\.99/);
+    // A negative adjustment reduces what can be refunded.
+    await adjust(-12_000_000);
+    expect((await ops.refundQuote(payment.id)).refundableCents).toBe(299);
+  });
+
+  it("answers a concurrent duplicate operator request as a replay", async () => {
+    const payment = await topUp("5");
+    const refund = {
+      requestKey: randomUUID(),
+      amount: "1",
+      note: "Customer asked for unused credit back.",
+    };
+    const refunds = await Promise.all([
+      ops.requestRefund(payment.id, refund, "account fixture-admin"),
+      ops.requestRefund(payment.id, refund, "account fixture-admin"),
+    ]);
+    expect(refunds.map((r) => r.requests.length)).toEqual([1, 1]);
+    expect(live.refundCalls).toHaveLength(1);
+    expect(await balances()).toEqual({ live: 4_000_000 });
+
+    await deliver(live, "charge.dispute.created", {
+      ...live.chargeOf(payment.checkoutSessionId!),
+      disputed: true,
+    });
+    live.sessions.get(
+      payment.checkoutSessionId!,
+    ).payment_intent.latest_charge.disputed = true;
+    live.disputeStatus.set(payment.paymentIntentId!, { status: "won" });
+    const release = {
+      requestKey: randomUUID(),
+      note: "Stripe shows the dispute as won.",
+    };
+    const releases = await Promise.all([
+      ops.releaseDispute(payment.id, release, "account fixture-admin"),
+      ops.releaseDispute(payment.id, release, "account fixture-admin"),
+    ]);
+    expect(releases.map((r) => r.restoredMicros)).toEqual([
+      4_000_000, 4_000_000,
+    ]);
+    expect(releases.map((r) => r.replayed).sort()).toEqual([false, true]);
+    expect(await balances()).toEqual({ live: 4_000_000 });
+  });
+
+  it("records a live event that matches no account and tells customers nothing about configuration", async () => {
+    const stray = live.signed("charge.refunded", {
+      id: "ch_fixture_unknown",
+      payment_intent: null,
+      metadata: {},
+    });
+    expect(
+      await stripe.webhook(stray.payload, stray.signature, "live"),
+    ).toEqual({ received: true, ignored: true });
+    await stripe.webhook(stray.payload, stray.signature, "live");
+    expect(
+      (await ops.alerts()).filter((a) => a.reference === stray.id),
+    ).toMatchObject([
+      {
+        mode: "live",
+        kind: "unmatched_live_event",
+        account: null,
+        detail: { type: "charge.refunded" },
+      },
+    ]);
+    // The same stray event in sandbox is only ignored.
+    const sandbox = test.signed("charge.refunded", {
+      id: "ch_fixture_unknown_test",
+      payment_intent: null,
+      metadata: {},
+    });
+    await stripe.webhook(sandbox.payload, sandbox.signature, "test");
+    expect(
+      (await ops.alerts()).filter((a) => a.reference === sandbox.id),
+    ).toEqual([]);
+
+    // A misconfigured live rail: operators get the reason, customers do not.
+    stripe.rail("live").settings.secretKey = "sk_test_fixture_only";
+    expect(ops.railStatus().live.unavailableReason).toMatch(
+      /Configure a Stripe live secret key/,
+    );
+    const customer = await store.db.read(() => stripe.accountStatus());
+    expect(customer).toMatchObject({
+      enabled: false,
+      mode: "live",
+      unavailableReason:
+        "Card top-ups are not available for this account right now.",
+    });
+    await expect(
+      stripe.create({ requestKey: randomUUID(), amount: "5" }),
+    ).rejects.toThrow(/^Card top-ups are not available/);
   });
 
   it("serves the live webhook and the operator actions over HTTP", async () => {

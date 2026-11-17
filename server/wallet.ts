@@ -2,11 +2,7 @@ import { createHash } from "node:crypto";
 import type { ObservedCall } from "./observation-types.js";
 import { shadowWalletPrice } from "./shadow-wallet.js";
 import type { Store } from "./store.js";
-import {
-  depositPosting,
-  fixedCostTavilyCall,
-  holdOutcome,
-} from "./wallet-rules.js";
+import { fixedCostTavilyCall, holdOutcome } from "./wallet-rules.js";
 
 /** Stripe mode of a balance. Sandbox and real-money credits never share one. */
 export type WalletMode = "test" | "live";
@@ -80,7 +76,8 @@ const enrollment = `SELECT rate_version, provider_account, credential_digest, pr
 const fundingMode = `COALESCE((SELECT funding_mode FROM wallet_rates WHERE workspace_id=${scope}),'test')`;
 /**
  * One row per workspace for the balance of one mode (the single parameter),
- * whether or not that balance exists yet. A dispute freezes only its own mode.
+ * whether or not that balance exists yet. A dispute freezes only its own mode,
+ * and a payment freezes the account while it has more holds than releases.
  */
 const balanceRow = `SELECT w.mode, COALESCE(b.posted_micros,0) AS posted,
          COALESCE(b.held_micros,0) AS held,
@@ -88,11 +85,11 @@ const balanceRow = `SELECT w.mode, COALESCE(b.posted_micros,0) AS posted,
          b.workspace_id IS NOT NULL AS active,
          EXISTS (
            SELECT 1 FROM wallet_journal d
-           WHERE d.workspace_id=${scope} AND d.mode=w.mode AND d.kind='dispute_hold' AND NOT EXISTS (
-             SELECT 1 FROM wallet_journal r
-             WHERE r.workspace_id=d.workspace_id AND r.deposit_id=d.deposit_id
-               AND r.kind='dispute_release'
-           )) AS frozen
+           WHERE d.workspace_id=${scope} AND d.mode=w.mode
+             AND d.kind IN ('dispute_hold','dispute_release')
+           GROUP BY d.deposit_id
+           HAVING count(*) FILTER (WHERE d.kind='dispute_hold')
+                > count(*) FILTER (WHERE d.kind='dispute_release')) AS frozen
   FROM (SELECT ${scope} AS id, ?::text AS mode) w
   LEFT JOIN wallet_balances b ON b.workspace_id=w.id AND b.mode=w.mode`;
 const inactive: WalletStatus = {
@@ -291,7 +288,15 @@ export class Wallet {
 
   /**
    * Converges an enrolled deposit on its verified net amount. Replays post
-   * nothing; refunds and dispute holds append negative adjustments.
+   * nothing; refunds append negative adjustments.
+   *
+   * Disputes run in cycles. `dispute.cycle` is how many disputes Stripe has
+   * opened on the payment so far. While the payment is disputed and not
+   * released, one `dispute_hold` per cycle removes whatever the payment still
+   * holds, and nothing else is posted. Once an operator has released the
+   * current cycle (`dispute.released`), the payment converges on
+   * `targetMicros` again like any other, so a refund Stripe reports later
+   * still comes out of the restored credits.
    *
    * `firstVerification` is true only when this reconciliation is the first to
    * see the payment as paid. A sandbox checkout prepared before the account
@@ -308,6 +313,7 @@ export class Wallet {
     disputed: boolean,
     firstVerification = false,
     mode: WalletMode = "test",
+    dispute: { cycle?: number; released?: boolean } = {},
   ) {
     const { db } = this.store;
     if (!(await this.ready())) return false;
@@ -315,34 +321,76 @@ export class Wallet {
     const state = await db
       .prepare(
         `SELECT EXISTS(SELECT 1 FROM wallet_deposits WHERE workspace_id=${scope} AND deposit_id=? AND mode=?) AS enrolled,
-                COALESCE(sum(wallet_micros) FILTER (WHERE kind<>'dispute_release'),0) AS current,
+                COALESCE(sum(wallet_micros),0) AS current,
+                count(*) FILTER (WHERE kind='dispute_hold') AS holds,
                 COALESCE(max(revision),0)+1 AS next_revision
          FROM wallet_journal WHERE workspace_id=${scope} AND deposit_id=?`,
       )
       .get(depositId, mode, depositId);
     if (!state?.enrolled) return false;
-    const posting = depositPosting(
-      Number(state.current),
-      targetMicros,
-      disputed,
-    );
-    if (!posting) return true;
+    const current = Number(state.current);
+    let kind: "deposit" | "refund" | "dispute_hold";
+    let deltaMicros: number;
+    if (disputed && !dispute.released) {
+      // Already held for this dispute. This also covers a hold that was
+      // released by hand before the release action existed.
+      if (Number(state.holds) >= (dispute.cycle ?? 1)) return true;
+      kind = "dispute_hold";
+      deltaMicros = -current;
+      targetMicros = 0;
+    } else {
+      deltaMicros = targetMicros - current;
+      if (!deltaMicros) return true;
+      kind = deltaMicros < 0 ? "refund" : "deposit";
+    }
     await db
       .prepare(
         `INSERT INTO wallet_journal (source_id,revision,kind,reference,target_micros,wallet_micros,mode)
-         VALUES (?,?,?,?,?,?,?)
-         ON CONFLICT (workspace_id,deposit_id,dispute_marker) DO NOTHING`,
+         VALUES (?,?,?,?,?,?,?)`,
       )
       .run(
         depositId,
         state.next_revision,
-        posting.kind,
+        kind,
         reference,
         targetMicros,
-        posting.deltaMicros,
+        deltaMicros,
         mode,
       );
     return true;
+  }
+
+  /**
+   * Records a payment condition that needs an operator, once per kind and
+   * reference while it is open. Durable, unlike a log line. Call inside the
+   * account's transaction.
+   */
+  async alert(
+    mode: WalletMode,
+    kind: string,
+    reference: string,
+    detail: Record<string, unknown>,
+  ) {
+    console.error(
+      `Wallet operator alert ${kind} for ${reference}: ${JSON.stringify(detail)}`,
+    );
+    if (!(await this.ready()) || !(await this.phase3())) return;
+    await this.store.db
+      .prepare(
+        "INSERT OR IGNORE INTO wallet_operator_alerts(mode,kind,reference,detail) VALUES (?,?,?,?)",
+      )
+      .run(mode, kind, reference, JSON.stringify(detail));
+  }
+
+  /** True once the live-mode migration (refund requests, alerts) is installed. */
+  private async phase3() {
+    if (this.refunds) return true;
+    const row = await this.store.db
+      .prepare(
+        "SELECT to_regclass('octolab.wallet_refund_requests') IS NOT NULL AS installed",
+      )
+      .get();
+    return (this.refunds = row?.installed === true);
   }
 
   /**
@@ -351,16 +399,7 @@ export class Wallet {
    * the balance before Stripe reports it.
    */
   async pendingRefundedCents(depositId: string) {
-    if (!(await this.ready())) return 0;
-    if (!this.refunds) {
-      const row = await this.store.db
-        .prepare(
-          "SELECT to_regclass('octolab.wallet_refund_requests') IS NOT NULL AS installed",
-        )
-        .get();
-      if (row?.installed !== true) return 0;
-      this.refunds = true;
-    }
+    if (!(await this.ready()) || !(await this.phase3())) return 0;
     const row = await this.store.db
       .prepare(
         `SELECT COALESCE(max(expected_refunded_cents),0) AS cents FROM wallet_refund_requests

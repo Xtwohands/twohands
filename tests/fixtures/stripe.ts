@@ -28,6 +28,11 @@ export class FixtureStripeGateway implements StripeGateway {
       : fixtureStripeSettings.webhookSecret,
   ) {}
   /** Dispute status Stripe reports per PaymentIntent. */
+  /** Disputes Stripe opened on a PaymentIntent after its first one. */
+  readonly laterDisputes = new Map<
+    string,
+    { id: string; status: string; amount?: number }[]
+  >();
   readonly disputeStatus = new Map<
     string,
     { status: string; amount?: number }
@@ -94,6 +99,14 @@ export class FixtureStripeGateway implements StripeGateway {
   async disputes(paymentIntentId: string) {
     const session = this.sessionOf(paymentIntentId);
     const dispute = this.disputeStatus.get(paymentIntentId);
+    const later = (this.laterDisputes.get(paymentIntentId) ?? []).map((d) => ({
+      id: d.id,
+      livemode: this.mode === "live",
+      amount: d.amount ?? session.amount_total,
+      currency: "usd",
+      status: d.status,
+      payment_intent: paymentIntentId,
+    }));
     return dispute
       ? [
           {
@@ -104,8 +117,42 @@ export class FixtureStripeGateway implements StripeGateway {
             status: dispute.status,
             payment_intent: paymentIntentId,
           },
+          ...later,
         ]
-      : [];
+      : later;
+  }
+  /** A refund issued from the Stripe dashboard rather than by an operator request. */
+  dashboardRefund(sessionId: string, amountCents: number) {
+    const session = this.sessions.get(sessionId);
+    const refund = {
+      id: `re_fixture_${randomUUID().replaceAll("-", "")}`,
+      amount: amountCents,
+      currency: "usd",
+      status: "succeeded",
+      payment_intent: session.payment_intent.id,
+      charge: session.payment_intent.latest_charge.id,
+      metadata: {},
+    };
+    this.issued.set(refund.id, refund);
+    session.payment_intent.latest_charge.amount_refunded += amountCents;
+    return refund;
+  }
+  /** Stripe reports an earlier refund as failed and takes it out of the charge's total. */
+  failRefund(refund: { id: string }) {
+    const saved = [...this.issued.values()].find((r) => r.id === refund.id);
+    if (saved.status !== "pending" && saved.status !== "succeeded")
+      return saved;
+    const charge = this.sessionOf(saved.payment_intent).payment_intent
+      .latest_charge;
+    if (saved.counted !== false) charge.amount_refunded -= saved.amount;
+    saved.status = "failed";
+    return saved;
+  }
+  /** The saved charge as Stripe would send it in an event. */
+  chargeOf(sessionId: string) {
+    return structuredClone(
+      this.sessions.get(sessionId).payment_intent.latest_charge,
+    );
   }
   async refunds(paymentIntentId: string) {
     return [...this.issued.values()]
@@ -143,6 +190,8 @@ export class FixtureStripeGateway implements StripeGateway {
     if (!pending)
       session.payment_intent.latest_charge.amount_refunded +=
         params.amountCents;
+    // This fixture does not count a pending refund in the charge's total.
+    else (refund as { counted?: boolean }).counted = false;
     if (this.refundBehavior === "lost") throw new Error("Fixture timeout");
     return structuredClone(refund);
   }

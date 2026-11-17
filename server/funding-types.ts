@@ -111,5 +111,13 @@ export interface StripeDeposit {
     outcome: "won" | "lost";
     restoredMicros: number;
     releasedAt: string;
+    /** Amount Stripe took back for lost disputes. Never restored. */
+    lostCents?: number;
+    /** The Stripe disputes this release settled. A dispute not listed is a new one. */
+    disputeIds?: string[];
   };
+  /** How many dispute cycles this payment has had. Absent means at most one. */
+  disputeCycle?: number;
+  /** Refunds Stripe reported and later failed; their credits were restored. */
+  failedRefundIds?: string[];
 }

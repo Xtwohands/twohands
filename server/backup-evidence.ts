@@ -197,9 +197,14 @@ export async function databaseSnapshot(
             ON d.workspace_id=e.workspace_id AND d.id=e.deposit_id
           LEFT JOIN octolab.wallet_journal j
             ON j.workspace_id=e.workspace_id AND j.deposit_id=e.deposit_id
-              AND j.kind<>'dispute_release'
           GROUP BY e.workspace_id,e.deposit_id,d.body
-          HAVING COALESCE(sum(j.wallet_micros),0)<>(d.body::jsonb->>'netCreditUnits')::bigint
+          -- A payment released by the operator action carries its restored
+          -- credits in its net amount. A hold released by hand before that
+          -- action existed keeps a net of zero beside its release posting.
+          HAVING COALESCE(sum(j.wallet_micros) FILTER (
+                   WHERE j.kind<>'dispute_release'
+                      OR d.body::jsonb ?| array['disputeResolution','disputeCycle']),0)
+                 <>(d.body::jsonb->>'netCreditUnits')::bigint
           UNION ALL
           SELECT 1 FROM (
             SELECT workspace_id, ${walletMode} AS mode, sum(posted) AS posted,

@@ -50,6 +50,17 @@ ALTER TABLE wallet_journal
     FOREIGN KEY (workspace_id, deposit_id, mode) REFERENCES wallet_deposits(workspace_id, deposit_id, mode),
   ADD CONSTRAINT wallet_journal_call_mode_fkey
     FOREIGN KEY (workspace_id, call_id, mode) REFERENCES wallet_holds(workspace_id, call_id, mode);
+-- Every posting names its mode. Without a default, a hand-written adjustment
+-- that forgets the mode is refused instead of landing in the sandbox balance
+-- of a live account.
+ALTER TABLE wallet_journal ALTER COLUMN mode DROP DEFAULT;
+-- A payment can be disputed again after an earlier dispute was released. The
+-- journal therefore allows one hold and one release per dispute cycle, and an
+-- account is frozen while any payment has more holds than releases. The
+-- application posts a hold only when the payment is not already held.
+ALTER TABLE wallet_journal
+  DROP CONSTRAINT wallet_journal_workspace_id_deposit_id_dispute_marker_key,
+  DROP CONSTRAINT wallet_journal_workspace_id_deposit_id_release_marker_key;
 
 -- One balance projection per account and mode.
 ALTER TABLE wallet_balances
@@ -161,20 +172,47 @@ CREATE TABLE wallet_operator_actions (
 );
 CREATE INDEX wallet_operator_actions_deposit ON wallet_operator_actions (workspace_id, deposit_id, created_at);
 
+-- Durable operator-visible record of a payment condition the server could not
+-- settle by itself, such as a live event that matched no account or a refund
+-- total it could not verify. One open alert per kind and reference. The
+-- runtime can raise an alert for its own account; only the owner connection
+-- (the admin API) reads and resolves them.
+CREATE TABLE wallet_operator_alerts (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  workspace_id TEXT DEFAULT current_setting('octolab.workspace_id', true) REFERENCES workspaces(id),
+  mode TEXT NOT NULL CHECK (mode IN ('test', 'live')),
+  kind TEXT NOT NULL CHECK (length(kind) BETWEEN 1 AND 80),
+  reference TEXT NOT NULL CHECK (length(reference) BETWEEN 1 AND 200),
+  detail JSONB NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  resolved_at TIMESTAMPTZ,
+  resolved_by TEXT CHECK (length(resolved_by) BETWEEN 1 AND 200),
+  resolution_note TEXT CHECK (length(resolution_note) BETWEEN 10 AND 4000),
+  CHECK ((resolved_at IS NULL) = (resolved_by IS NULL) AND (resolved_at IS NULL) = (resolution_note IS NULL))
+);
+CREATE UNIQUE INDEX wallet_operator_alerts_open ON wallet_operator_alerts (kind, reference)
+  WHERE resolved_at IS NULL;
+
 ALTER TABLE wallet_refund_requests ENABLE ROW LEVEL SECURITY;
 ALTER TABLE wallet_refund_requests FORCE ROW LEVEL SECURITY;
 ALTER TABLE wallet_operator_actions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE wallet_operator_actions FORCE ROW LEVEL SECURITY;
+ALTER TABLE wallet_operator_alerts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE wallet_operator_alerts FORCE ROW LEVEL SECURITY;
+CREATE POLICY wallet_operator_alert_raise ON wallet_operator_alerts FOR INSERT TO octolab_runtime
+  WITH CHECK (workspace_id = current_setting('octolab.workspace_id', true)
+    AND resolved_at IS NULL);
 CREATE POLICY wallet_refund_request_read ON wallet_refund_requests FOR SELECT TO octolab_runtime
   USING (workspace_id = current_setting('octolab.workspace_id', true));
 
-REVOKE ALL ON wallet_refund_requests,wallet_operator_actions FROM PUBLIC,octolab_runtime;
+REVOKE ALL ON wallet_refund_requests,wallet_operator_actions,wallet_operator_alerts FROM PUBLIC,octolab_runtime;
 GRANT SELECT ON wallet_refund_requests TO octolab_runtime;
+GRANT INSERT ON wallet_operator_alerts TO octolab_runtime;
 DO $$ BEGIN
   IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname='anon') THEN
-    REVOKE ALL ON wallet_refund_requests,wallet_operator_actions FROM anon;
+    REVOKE ALL ON wallet_refund_requests,wallet_operator_actions,wallet_operator_alerts FROM anon;
   END IF;
   IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname='authenticated') THEN
-    REVOKE ALL ON wallet_refund_requests,wallet_operator_actions FROM authenticated;
+    REVOKE ALL ON wallet_refund_requests,wallet_operator_actions,wallet_operator_alerts FROM authenticated;
   END IF;
 END $$;

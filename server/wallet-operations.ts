@@ -11,7 +11,12 @@ import {
   unusedRefundsEnabled,
   type RefundablePayment,
 } from "./refund-policy.js";
-import { stripeModeOf, type StripeFundingService } from "./stripe-funding.js";
+import {
+  refundFailed,
+  stripeModeOf,
+  type StripeFundingService,
+  type StripeRefund,
+} from "./stripe-funding.js";
 
 /**
  * Operator money actions on an account wallet: releasing a dispute freeze and
@@ -56,6 +61,19 @@ export const refundInput = z
   })
   .strict();
 
+export const alertInput = z
+  .object({
+    note: z
+      .string()
+      .trim()
+      .min(10, "Add a note of at least 10 characters.")
+      .max(4000),
+  })
+  .strict();
+export type OperatorAlert = Awaited<
+  ReturnType<WalletOperations["alerts"]>
+>[number];
+
 export type RefundRequestStatus =
   "reserved" | "submitted" | "completed" | "failed";
 export interface RefundRequest {
@@ -88,7 +106,23 @@ export interface DisputeRelease {
   replayed: boolean;
 }
 
-const CLOSED_IN_OUR_FAVOR = new Set(["won", "warning_closed"]);
+/**
+ * Stripe's dispute statuses. A dispute is open while Stripe may still decide
+ * it. Every other status is final: these three end with the payment standing
+ * (a `prevented` dispute was settled by a refund, which the refunded total
+ * already reflects), `lost` ends with the money taken back, and a final
+ * status this code does not know is treated like `lost`, so nothing is
+ * restored on an outcome that was not understood.
+ */
+const DISPUTE_OPEN = new Set([
+  "needs_response",
+  "under_review",
+  "warning_needs_response",
+  "warning_under_review",
+]);
+const DISPUTE_PAYMENT_STANDS = new Set(["won", "warning_closed", "prevented"]);
+const uniqueViolation = (error: unknown) =>
+  (error as { code?: string }).code === "23505";
 const hash = (value: unknown) =>
   createHash("sha256").update(JSON.stringify(value)).digest("hex");
 const requestRow = (r: Record<string, unknown>): RefundRequest => ({
@@ -119,13 +153,94 @@ export class WalletOperations {
   constructor(
     private stripe: StripeFundingService,
     private now = () => Date.now(),
-  ) {}
+  ) {
+    stripe.refundsObserved = (depositId, refunds) =>
+      this.closeFailedRequests(depositId, refunds);
+  }
+
+  /**
+   * Closes operator refund requests whose refund Stripe reports as failed or
+   * canceled. A closed request no longer reserves credits, so the payment's
+   * next verification returns them to the balance.
+   */
+  private async closeFailedRequests(
+    depositId: string,
+    refunds: StripeRefund[],
+  ) {
+    const { db } = this.stripe.funding.store;
+    if (!(db instanceof PostgresDatabase)) return;
+    const failed = refunds
+      .filter(refundFailed)
+      .map((r) => r.metadata?.octolab_refund_request_id)
+      .filter((id): id is string => /^[0-9a-f-]{36}$/i.test(id ?? ""));
+    if (!failed.length) return;
+    const workspaceId = await this.workspaceOf(depositId);
+    await this.owner(workspaceId, async (client) => {
+      const closed = await client.query(
+        `UPDATE octolab.wallet_refund_requests SET status='failed', updated_at=now()
+         WHERE workspace_id=$1 AND deposit_id=$2 AND id=ANY($3::uuid[])
+           AND status IN ('reserved','submitted') RETURNING id,mode`,
+        [workspaceId, depositId, failed],
+      );
+      for (const row of closed.rows)
+        await this.record(client, {
+          workspaceId,
+          depositId,
+          mode: row.mode,
+          kind: "refund_resolution",
+          actor: "system: Stripe reported the refund as failed",
+          requestKey: randomUUID(),
+          inputHash: hash({ requestId: row.id, status: "failed" }),
+          data: { requestId: row.id, status: "failed" },
+        });
+    });
+  }
+
+  /** Open operator alerts across accounts, newest first. */
+  async alerts() {
+    return (
+      await this.database().pool.query(
+        `SELECT a.id,a.mode,a.kind,a.reference,a.detail,a.created_at,s.name AS account
+         FROM octolab.wallet_operator_alerts a
+         LEFT JOIN octolab.workspaces s ON s.id=a.workspace_id
+         WHERE a.resolved_at IS NULL ORDER BY a.created_at DESC LIMIT 100`,
+      )
+    ).rows.map((r) => ({
+      id: String(r.id),
+      mode: r.mode as StripeMode,
+      kind: String(r.kind),
+      reference: String(r.reference),
+      detail: r.detail as Record<string, unknown>,
+      account: r.account === null ? null : String(r.account),
+      createdAt: new Date(r.created_at).toISOString(),
+    }));
+  }
+  /** Marks an alert handled, with who handled it and why. It changes no balance. */
+  async resolveAlert(id: string, raw: unknown, actor: string) {
+    const { note } = alertInput.parse(raw);
+    const changed = await this.database().pool.query(
+      "UPDATE octolab.wallet_operator_alerts SET resolved_at=now(), resolved_by=$2, resolution_note=$3 WHERE id=$1 AND resolved_at IS NULL",
+      [id, actor, note],
+    );
+    if (!changed.rowCount)
+      throw new FundingError(404, "No open alert with this ID.");
+    return { items: await this.alerts() };
+  }
+  /** Full configuration state of both rails. Operators only; customers get safe copy. */
+  railStatus() {
+    return {
+      test: this.stripe.status("test"),
+      live: this.stripe.status("live"),
+      refundsEnabled: unusedRefundsEnabled(),
+    };
+  }
 
   private database() {
     const { db } = this.stripe.funding.store;
     if (!(db instanceof PostgresDatabase))
+      // Not 503: the admin page treats that as "admin access is disabled".
       throw new FundingError(
-        503,
+        409,
         "Wallet operations need the hosted account wallet.",
       );
     return db;
@@ -231,10 +346,10 @@ export class WalletOperations {
   ) {
     const row = (
       await client.query(
-        `SELECT COALESCE(sum(wallet_micros) FILTER (WHERE kind<>'dispute_release'),0) AS net,
+        `SELECT COALESCE(sum(wallet_micros),0) AS net,
                 COALESCE(max(revision),0)+1 AS next_revision,
-                bool_or(kind='dispute_hold') AS held,
-                bool_or(kind='dispute_release') AS released
+                count(*) FILTER (WHERE kind='dispute_hold') AS holds,
+                count(*) FILTER (WHERE kind='dispute_release') AS releases
          FROM octolab.wallet_journal WHERE workspace_id=$1 AND deposit_id=$2`,
         [workspaceId, depositId],
       )
@@ -242,8 +357,9 @@ export class WalletOperations {
     return {
       netMicros: Number(row.net),
       nextRevision: Number(row.next_revision),
-      held: row.held === true,
-      released: row.released === true,
+      /** Held while the payment has more dispute holds than releases. */
+      held: Number(row.holds) > Number(row.releases),
+      everReleased: Number(row.releases) > 0,
     };
   }
   private async record(
@@ -291,11 +407,12 @@ export class WalletOperations {
     const input = releaseInput.parse(raw);
     const inputHash = hash({ depositId, input, actor });
     const workspaceId = await this.workspaceOf(depositId);
-    const previous = await this.database().pool.query(
-      "SELECT input_hash,data FROM octolab.wallet_operator_actions WHERE request_key=$1",
-      [input.requestKey],
-    );
-    if (previous.rows[0]) {
+    const replay = async (): Promise<DisputeRelease | undefined> => {
+      const previous = await this.database().pool.query(
+        "SELECT input_hash,data FROM octolab.wallet_operator_actions WHERE request_key=$1",
+        [input.requestKey],
+      );
+      if (!previous.rows[0]) return undefined;
       if (previous.rows[0].input_hash !== inputHash)
         throw new FundingError(
           409,
@@ -309,7 +426,9 @@ export class WalletOperations {
         restoredMicros: Number(previous.rows[0].data.restoredMicros),
         replayed: true,
       };
-    }
+    };
+    const saved = await replay();
+    if (saved) return saved;
     // Read the payment and its disputes from Stripe before deciding anything.
     const verified = await this.inAccount(workspaceId, () =>
       this.stripe.reconcile(depositId),
@@ -322,86 +441,121 @@ export class WalletOperations {
         409,
         "Stripe reports no dispute for this payment. Nothing was released.",
       );
-    const open = disputes.filter(
-      (d) => !CLOSED_IN_OUR_FAVOR.has(d.status) && d.status !== "lost",
-    );
-    if (open.length)
+    if (disputes.some((d) => DISPUTE_OPEN.has(d.status)))
       throw new FundingError(
         409,
         "Stripe has not closed the dispute on this payment. Nothing was released.",
       );
-    const lostCents = disputes
-      .filter((d) => d.status === "lost")
-      .reduce((sum, d) => sum + d.amount, 0);
-    const outcome = lostCents ? "lost" : "won";
-    return await this.owner(workspaceId, async (client) => {
-      const { payment, mode } = await this.walletDeposit(
-        client,
-        workspaceId,
-        depositId,
-      );
-      if (evidence(payment) !== evidence(verified))
-        throw new FundingError(
-          409,
-          "The payment changed while it was being reviewed. Check it again.",
-        );
-      const journal = await this.journalState(client, workspaceId, depositId);
-      if (!journal.held)
-        throw new FundingError(409, "This payment has no dispute hold.");
-      if (journal.released)
-        throw new FundingError(
-          409,
-          "The dispute hold on this payment was already released.",
-        );
-      const refundedCents = Math.max(
-        payment.refundedCents,
-        payment.refundedCents + (payment.pendingRefundCents ?? 0),
-      );
-      const restoredMicros =
-        Math.max(0, payment.amountCents - refundedCents - lostCents) * 10000;
-      await client.query(
-        `INSERT INTO octolab.wallet_journal
-         (workspace_id,source_id,revision,kind,reference,wallet_micros,mode)
-         VALUES ($1,$2,$3,'dispute_release',$4,$5,$6)`,
-        [
+    // Final statuses only from here. Whatever did not end with the payment
+    // standing is not restored, including a final status we do not recognise.
+    const notStanding = disputes.filter(
+      (d) => !DISPUTE_PAYMENT_STANDS.has(d.status),
+    );
+    const lostCents = notStanding.reduce((sum, d) => sum + d.amount, 0);
+    const unrecognised = notStanding
+      .map((d) => d.status)
+      .filter((status) => status !== "lost");
+    const outcome: "won" | "lost" = notStanding.length ? "lost" : "won";
+    const release = () =>
+      this.owner(workspaceId, async (client) => {
+        const { payment, mode } = await this.walletDeposit(
+          client,
           workspaceId,
           depositId,
-          journal.nextRevision,
-          `operator-release:${input.requestKey}`,
-          restoredMicros,
-          mode,
-        ],
-      );
-      payment.disputeResolution = {
-        outcome,
-        restoredMicros,
-        releasedAt: new Date(this.now()).toISOString(),
-      };
-      payment.message = restoredMicros
-        ? "The dispute on this payment was closed and its remaining credits were restored."
-        : "The dispute on this payment was closed. Its credits were not restored.";
-      await this.saveDeposit(client, workspaceId, payment, "dispute_released");
-      await this.record(client, {
-        workspaceId,
-        depositId,
-        mode,
-        kind: "dispute_release",
-        actor,
-        requestKey: input.requestKey,
-        inputHash,
-        data: {
+        );
+        if (evidence(payment) !== evidence(verified))
+          throw new FundingError(
+            409,
+            "The payment changed while it was being reviewed. Check it again.",
+          );
+        const journal = await this.journalState(client, workspaceId, depositId);
+        if (!journal.held)
+          throw new FundingError(
+            409,
+            journal.everReleased
+              ? "The dispute hold on this payment was already released."
+              : "This payment has no dispute hold.",
+          );
+        const refundedCents =
+          payment.refundedCents + (payment.pendingRefundCents ?? 0);
+        const restoredMicros =
+          Math.max(0, payment.amountCents - refundedCents - lostCents) * 10000;
+        // While held, the payment's postings net to zero, so the release posts
+        // exactly what is restored.
+        if (journal.netMicros !== 0)
+          throw new FundingError(
+            409,
+            "This payment's wallet entries do not match its dispute hold. Nothing was released.",
+          );
+        await client.query(
+          `INSERT INTO octolab.wallet_journal
+         (workspace_id,source_id,revision,kind,reference,wallet_micros,mode)
+         VALUES ($1,$2,$3,'dispute_release',$4,$5,$6)`,
+          [
+            workspaceId,
+            depositId,
+            journal.nextRevision,
+            `operator-release:${input.requestKey}`,
+            restoredMicros,
+            mode,
+          ],
+        );
+        payment.disputeResolution = {
           outcome,
           restoredMicros,
-          note: input.note,
-          disputes: disputes.map((d) => ({
-            id: d.id,
-            status: d.status,
-            amountCents: d.amount,
-          })),
-        },
+          releasedAt: new Date(this.now()).toISOString(),
+          lostCents,
+          disputeIds: disputes.map((d) => d.id),
+        };
+        payment.netCreditUnits = restoredMicros;
+        payment.status =
+          payment.refundedCents === payment.amountCents
+            ? "refunded"
+            : payment.refundedCents
+              ? "partially_refunded"
+              : "credited";
+        payment.message = restoredMicros
+          ? "The dispute on this payment was closed and its remaining credits were restored."
+          : "The dispute on this payment was closed. Its credits were not restored.";
+        await this.saveDeposit(
+          client,
+          workspaceId,
+          payment,
+          "dispute_released",
+        );
+        await this.record(client, {
+          workspaceId,
+          depositId,
+          mode,
+          kind: "dispute_release",
+          actor,
+          requestKey: input.requestKey,
+          inputHash,
+          data: {
+            outcome,
+            restoredMicros,
+            lostCents,
+            unrecognisedStatuses: unrecognised,
+            note: input.note,
+            disputes: disputes.map((d) => ({
+              id: d.id,
+              status: d.status,
+              amountCents: d.amount,
+            })),
+          },
+        });
+        return { payment, outcome, restoredMicros, replayed: false };
       });
-      return { payment, outcome, restoredMicros, replayed: false };
-    });
+    try {
+      return await release();
+    } catch (error) {
+      // A concurrent copy of this request may have committed first, which
+      // makes this copy fail on changed evidence or a unique key. Answer it
+      // as the replay it is.
+      const committed = await replay();
+      if (committed) return committed;
+      throw error;
+    }
   }
 
   /** What the refund policy allows for one payment, from saved state only. */
@@ -414,12 +568,18 @@ export class WalletOperations {
     const balance = (
       await client.query(
         `SELECT COALESCE(b.posted_micros,0) AS posted, COALESCE(b.held_micros,0) AS held,
+                COALESCE(b.charged_micros,0) AS charged,
+                COALESCE((SELECT sum(j.wallet_micros) FROM octolab.wallet_journal j
+                          WHERE j.workspace_id=$1 AND j.mode=$2 AND j.deposit_id IS NOT NULL),0) AS card_net,
+                COALESCE((SELECT sum(j.wallet_micros) FROM octolab.wallet_journal j
+                          WHERE j.workspace_id=$1 AND j.mode=$2 AND j.kind='adjustment'),0) AS adjustments,
                 EXISTS (
                   SELECT 1 FROM octolab.wallet_journal d
-                  WHERE d.workspace_id=$1 AND d.mode=$2 AND d.kind='dispute_hold' AND NOT EXISTS (
-                    SELECT 1 FROM octolab.wallet_journal r
-                    WHERE r.workspace_id=d.workspace_id AND r.deposit_id=d.deposit_id
-                      AND r.kind='dispute_release')) AS frozen
+                  WHERE d.workspace_id=$1 AND d.mode=$2
+                    AND d.kind IN ('dispute_hold','dispute_release')
+                  GROUP BY d.deposit_id
+                  HAVING count(*) FILTER (WHERE d.kind='dispute_hold')
+                       > count(*) FILTER (WHERE d.kind='dispute_release')) AS frozen
          FROM (SELECT 1) one
          LEFT JOIN octolab.wallet_balances b ON b.workspace_id=$1 AND b.mode=$2`,
         [workspaceId, mode],
@@ -459,9 +619,14 @@ export class WalletOperations {
       availableMicros,
       frozen,
       refundableCents:
-        refundableByPayment({ availableMicros, frozen, payments }).get(
-          depositId,
-        ) ?? 0,
+        refundableByPayment({
+          availableMicros,
+          cardNetMicros: Number(balance.card_net),
+          chargedMicros: Number(balance.charged),
+          adjustmentMicros: Number(balance.adjustments),
+          frozen,
+          payments,
+        }).get(depositId) ?? 0,
     };
   }
   private async requests(
@@ -532,18 +697,21 @@ export class WalletOperations {
     const inputHash = hash({ depositId, input, actor });
     const workspaceId = await this.workspaceOf(depositId);
     const pool = this.database().pool;
-    const previous = await pool.query(
-      "SELECT input_hash FROM octolab.wallet_refund_requests WHERE request_key=$1",
-      [input.requestKey],
-    );
-    if (previous.rows[0]) {
+    const replay = async () => {
+      const previous = await pool.query(
+        "SELECT input_hash FROM octolab.wallet_refund_requests WHERE request_key=$1",
+        [input.requestKey],
+      );
+      if (!previous.rows[0]) return undefined;
       if (previous.rows[0].input_hash !== inputHash)
         throw new FundingError(
           409,
           "This request key was already used with different details.",
         );
       return this.refundQuote(depositId);
-    }
+    };
+    const saved = await replay();
+    if (saved) return saved;
     if (!unusedRefundsEnabled())
       throw new FundingError(
         409,
@@ -554,111 +722,126 @@ export class WalletOperations {
     );
     await this.settleReported(workspaceId, depositId);
     const requestId = randomUUID();
-    await this.owner(workspaceId, async (client) => {
-      const { payment, mode } = await this.walletDeposit(
-        client,
-        workspaceId,
-        depositId,
-      );
-      if (evidence(payment) !== evidence(verified))
-        throw new FundingError(
-          409,
-          "The payment changed while it was being reviewed. Check it again.",
+    const reserve = () =>
+      this.owner(workspaceId, async (client) => {
+        const { payment, mode } = await this.walletDeposit(
+          client,
+          workspaceId,
+          depositId,
         );
-      if (
-        !payment.paymentIntentId ||
-        payment.disputed ||
-        (payment.status !== "credited" &&
-          payment.status !== "partially_refunded")
-      )
-        throw new FundingError(
-          409,
-          "Only a verified, undisputed payment can be refunded. No refund was started.",
+        if (evidence(payment) !== evidence(verified))
+          throw new FundingError(
+            409,
+            "The payment changed while it was being reviewed. Check it again.",
+          );
+        if (
+          !payment.paymentIntentId ||
+          payment.disputed ||
+          (payment.status !== "credited" &&
+            payment.status !== "partially_refunded")
+        )
+          throw new FundingError(
+            409,
+            "Only a verified, undisputed payment can be refunded. No refund was started.",
+          );
+        const active = await client.query(
+          "SELECT 1 FROM octolab.wallet_refund_requests WHERE workspace_id=$1 AND deposit_id=$2 AND status IN ('reserved','submitted')",
+          [workspaceId, depositId],
         );
-      const active = await client.query(
-        "SELECT 1 FROM octolab.wallet_refund_requests WHERE workspace_id=$1 AND deposit_id=$2 AND status IN ('reserved','submitted')",
-        [workspaceId, depositId],
-      );
-      if (active.rowCount)
-        throw new FundingError(
-          409,
-          "A refund for this payment is still in progress. Resolve it before starting another.",
+        if (active.rowCount)
+          throw new FundingError(
+            409,
+            "A refund for this payment is still in progress. Resolve it before starting another.",
+          );
+        const { refundableCents } = await this.refundState(
+          client,
+          workspaceId,
+          depositId,
+          mode,
         );
-      const { refundableCents } = await this.refundState(
-        client,
-        workspaceId,
-        depositId,
-        mode,
-      );
-      if (input.amount > refundableCents)
-        throw new FundingError(
-          409,
-          `At most $${(refundableCents / 100).toFixed(2)} of this payment is unused and refundable. No refund was started.`,
-        );
-      const expectedRefundedCents = payment.refundedCents + input.amount;
-      const targetMicros =
-        (payment.amountCents - expectedRefundedCents) * 10000;
-      const journal = await this.journalState(client, workspaceId, depositId);
-      const deltaMicros = targetMicros - journal.netMicros;
-      if (deltaMicros >= 0 || deltaMicros !== -input.amount * 10000)
-        throw new FundingError(
-          409,
-          "This payment's wallet entries do not match its verified amount. No refund was started.",
-        );
-      await client.query(
-        `INSERT INTO octolab.wallet_refund_requests
+        if (input.amount > refundableCents)
+          throw new FundingError(
+            409,
+            `At most $${(refundableCents / 100).toFixed(2)} of this payment is unused and refundable. No refund was started.`,
+          );
+        const expectedRefundedCents = payment.refundedCents + input.amount;
+        const targetMicros =
+          (payment.amountCents - expectedRefundedCents) * 10000;
+        const journal = await this.journalState(client, workspaceId, depositId);
+        const deltaMicros = targetMicros - journal.netMicros;
+        if (deltaMicros >= 0 || deltaMicros !== -input.amount * 10000)
+          throw new FundingError(
+            409,
+            "This payment's wallet entries do not match its verified amount. No refund was started.",
+          );
+        await client.query(
+          `INSERT INTO octolab.wallet_refund_requests
          (id,workspace_id,deposit_id,mode,amount_cents,expected_refunded_cents,status,
           policy_version,actor,note,request_key,input_hash)
          VALUES ($1,$2,$3,$4,$5,$6,'reserved',$7,$8,$9,$10,$11)`,
-        [
-          requestId,
-          workspaceId,
-          depositId,
-          mode,
-          input.amount,
-          expectedRefundedCents,
-          REFUND_POLICY_VERSION,
-          actor,
-          input.note,
-          input.requestKey,
-          inputHash,
-        ],
-      );
-      await client.query(
-        `INSERT INTO octolab.wallet_journal
+          [
+            requestId,
+            workspaceId,
+            depositId,
+            mode,
+            input.amount,
+            expectedRefundedCents,
+            REFUND_POLICY_VERSION,
+            actor,
+            input.note,
+            input.requestKey,
+            inputHash,
+          ],
+        );
+        await client.query(
+          `INSERT INTO octolab.wallet_journal
          (workspace_id,source_id,revision,kind,reference,target_micros,wallet_micros,mode)
          VALUES ($1,$2,$3,'refund',$4,$5,$6,$7)`,
-        [
+          [
+            workspaceId,
+            depositId,
+            journal.nextRevision,
+            `refund-request:${requestId}`,
+            targetMicros,
+            deltaMicros,
+            mode,
+          ],
+        );
+        payment.netCreditUnits = targetMicros;
+        payment.pendingRefundCents = input.amount;
+        payment.message =
+          "A refund to your card is in progress. Your credits have been adjusted.";
+        await this.saveDeposit(client, workspaceId, payment, "refund_reserved");
+        await this.record(client, {
           workspaceId,
           depositId,
-          journal.nextRevision,
-          `refund-request:${requestId}`,
-          targetMicros,
-          deltaMicros,
           mode,
-        ],
-      );
-      payment.netCreditUnits = targetMicros;
-      payment.pendingRefundCents = input.amount;
-      payment.message =
-        "A refund to your card is in progress. Your credits have been adjusted.";
-      await this.saveDeposit(client, workspaceId, payment, "refund_reserved");
-      await this.record(client, {
-        workspaceId,
-        depositId,
-        mode,
-        kind: "refund_request",
-        actor,
-        requestKey: input.requestKey,
-        inputHash,
-        data: {
-          requestId,
-          amountCents: input.amount,
-          policyVersion: REFUND_POLICY_VERSION,
-          note: input.note,
-        },
+          kind: "refund_request",
+          actor,
+          requestKey: input.requestKey,
+          inputHash,
+          data: {
+            requestId,
+            amountCents: input.amount,
+            policyVersion: REFUND_POLICY_VERSION,
+            note: input.note,
+          },
+        });
       });
-    });
+    try {
+      await reserve();
+    } catch (error) {
+      // A concurrent copy of this request may have committed first, which
+      // makes this copy fail on changed evidence or a unique key. Answer it
+      // as the replay it is. Otherwise another refund for the payment won.
+      const committed = await replay();
+      if (committed) return committed;
+      if (!uniqueViolation(error)) throw error;
+      throw new FundingError(
+        409,
+        "A refund for this payment is still in progress. Resolve it before starting another.",
+      );
+    }
     await this.submit(workspaceId, verified, requestId, input.amount);
     return this.refundQuote(depositId);
   }

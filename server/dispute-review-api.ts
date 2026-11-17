@@ -178,6 +178,32 @@ export function disputeReviewRoutes(
       );
     }),
   );
+  router.get(
+    "/alerts",
+    handle(async (_req, res) => {
+      res.json({ items: await operations.alerts() });
+    }),
+  );
+  router.post(
+    "/alerts/:id/resolve",
+    handle(async (req, res) => {
+      res.json(
+        await operations.resolveAlert(
+          z.uuid().parse(req.params.id),
+          req.body,
+          res.locals.adminActor,
+        ),
+      );
+    }),
+  );
+  // Rail configuration detail is for operators. Customers only ever see
+  // "not available" without the reason.
+  router.get(
+    "/status",
+    handle(async (_req, res) => {
+      res.json(operations.railStatus());
+    }),
+  );
   router.use((_req, res) => {
     res.status(404).json({ error: "Admin funding route not found." });
   });

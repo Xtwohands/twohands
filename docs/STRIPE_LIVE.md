@@ -49,7 +49,13 @@ The live rail runs the same code path as the sandbox rail, so it has the same gu
 | `charge.refunded`                                                                                    | Appends a negative `refund` posting for a partial or full refund                             |
 | `charge.dispute.created`                                                                             | Appends a `dispute_hold` that removes the payment's remaining credits and freezes paid calls |
 | `charge.dispute.closed`                                                                              | Re-verifies the payment. The freeze stays until an operator releases it                      |
-| `refund.failed`                                                                                      | Re-verifies the payment and logs an operator alert                                           |
+| `refund.failed`                                                                                      | Reads the payment's refunds from Stripe and restores the failed refund's credits             |
+
+**Refund totals.** A payment's refunded total follows Stripe's charge. It never drops because of an older read. It drops only when Stripe's list of refunds for the payment contains a failed or canceled refund and the refunds still standing add up to the charge's refunded total. The credits of the failed refund are then posted back once, whether the refund was issued in the Stripe dashboard or by an operator refund request, and the failed refund IDs are saved on the payment. If Stripe's total is lower and the list does not explain it, the saved total is kept and a `refund_total_unverified` [alert](#payment-alerts) is left for an operator.
+
+**Disputes run in cycles.** One `dispute_hold` removes whatever a payment still holds, and one `dispute_release` ends that cycle. A Stripe charge reports `disputed` for good, so after a release the server no longer treats the payment as held: it converges on the payment's amount less Stripe's refunded total and less anything lost to a dispute. A refund Stripe reports after a release therefore still comes out of the restored credits. On each verification of a released payment the server lists its disputes at Stripe; a dispute that the release did not settle starts a new cycle, which posts a new hold and freezes the account again until an operator releases it again. An account is frozen while any payment in that mode has more holds than releases.
+
+**Events that match nothing.** A signed live event that belongs to no saved deposit is acknowledged, logged, and recorded as an `unmatched_live_event` alert with its event ID and type. The same event in sandbox is ignored as before.
 
 ## Operator tooling
 
@@ -60,11 +66,14 @@ Both actions are on the admin **Payment disputes** page (`#disputes`) and under 
 `POST /api/admin/funding/disputes/:id/release` with `{requestKey, note}`. This replaces the hand-written `dispute_release` row.
 
 1. The server re-verifies the payment and lists its disputes at Stripe.
-2. If any dispute is still open, or Stripe reports none, nothing is released (`409`).
-3. Stripe's outcome decides the credits, not the operator. If every dispute was won (or closed as a warning), the payment's remaining amount is restored. If a dispute was lost, the lost amount is not restored.
-4. One `dispute_release` posting lifts the freeze. A repeat with the same request key returns the saved result; a second release is refused.
+2. If Stripe reports no dispute, or any dispute is still open (`needs_response`, `under_review`, `warning_needs_response`, `warning_under_review`), nothing is released (`409`).
+3. Stripe's outcome decides the credits, not the operator. Every other status is final:
+   - `won`, `warning_closed` and `prevented` leave the payment standing. Its amount less Stripe's refunded total is restored. A prevented dispute is settled by a refund, which the refunded total already contains.
+   - `lost` is not restored.
+   - A final status this code does not recognise is treated like `lost`: the hold is released, nothing is restored for that dispute, and the status is saved in the audit record. An operator who finds the payment did stand corrects it with an `adjustment`.
+4. One `dispute_release` posting ends the cycle and lifts the freeze. A repeat with the same request key, including a concurrent duplicate, returns the saved result; a second release of the same cycle is refused.
 
-The test-credit ledger of a sandbox payment keeps its hold; only the wallet is released.
+After a release the payment shows its refund status again (credited, partially refunded or refunded) and keeps reconciling as described under [Reconciliation](#reconciliation). The test-credit ledger of a sandbox payment keeps its hold; only the wallet is released. A released payment cannot be refunded with the refund action below.
 
 ### Refund unused credits
 
@@ -75,15 +84,38 @@ The test-credit ledger of a sandbox payment keeps its hold; only the wallet is r
 3. Stripe is asked for the refund with an idempotency key derived from the request.
 4. If Stripe refuses, the request is marked failed and reconciliation returns the credits. If Stripe's answer is lost, the amount stays reserved; **Check with Stripe** lists the payment's refunds and either confirms the refund, retries with the same idempotency key (within 23 hours), or releases the reservation.
 5. While a request is reserved or submitted, payment checks and replayed events keep the amount out of the balance, so they cannot hand it back before Stripe reports the refund. When Stripe does report it, nothing is debited twice.
+6. If Stripe accepts the refund and it fails later, `refund.failed` (or any later check while the request is in flight) closes the request and returns the credits without operator action.
 
-One refund can be in flight per payment. Disputed payments and frozen accounts refund nothing.
+One refund can be in flight per payment. Disputed payments and frozen accounts refund nothing. A duplicate request with the same key, including a concurrent one, returns the saved request.
 
 **The refund policy is not decided.** Everything a decision would change is in `server/refund-policy.ts`:
 
 - `unusedRefundsEnabled()` reads `TWO_HANDS_UNUSED_REFUNDS`, default off. With it off, quotes work and refunds are refused.
-- `refundableByPayment()` is a placeholder: the refundable amount is the account's available credits in whole cents, attributed to the newest payments first (usage spends the oldest payment first). No fee is deducted and there is no time limit.
+- `refundableByPayment()` is a placeholder. Only money that came from a card can go back to a card. The refundable amount is the smaller of the account's available credits and its card-funded credit not yet spent: net card payments minus every usage charge. Usage is counted against card money first, so credit added by an operator `adjustment` is never paid out, and a negative adjustment reduces what can be refunded. The amount is in whole cents and is attributed to the newest payments first. No fee is deducted and there is no time limit.
 - `REFUND_TERMS` is the placeholder text shown to customers. It promises nothing.
 - `REFUND_POLICY_VERSION` is saved on every request.
+
+### Payment alerts
+
+`wallet_operator_alerts` is the durable record of a payment condition the server could not settle by itself. The admin Payment disputes page lists open alerts; `GET /api/admin/funding/alerts` returns them and `POST /api/admin/funding/alerts/:id/resolve` with `{note}` records who handled one. Resolving changes no balance. There is one open alert per kind and reference.
+
+| Kind                      | Raised when                                                                                 | What to do                                                                                        |
+| ------------------------- | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `unmatched_live_event`    | A signed live event matched no saved deposit                                                | Find the payment in Stripe by the event ID. If it is Two Hands money, credit or refund it by hand |
+| `refund_total_unverified` | Stripe's refunded total is lower than the saved one and its refund list does not explain it | Compare the payment's refunds in Stripe. Correct the balance with an `adjustment` if needed       |
+
+`GET /api/admin/funding/status` returns the configuration state of both rails, including why a rail is unavailable. Customers never see that reason: a live account is told only that top-ups are not available right now.
+
+### Manual adjustments
+
+An `adjustment` is still an operator SQL posting; there is no admin action for it. Every journal posting must name its mode, and the column has no default, so a posting that forgets the mode is refused instead of landing in the sandbox balance of a live account. Use the account's funding mode:
+
+```sql
+INSERT INTO octolab.wallet_journal (workspace_id, source_id, kind, reference, wallet_micros, mode)
+VALUES ('<workspace id>', gen_random_uuid()::text, 'adjustment', '<reason and ticket>', <micros>, 'live');
+```
+
+Credit added this way is spendable on tool calls and is never refundable to a card.
 
 ## Credits page
 
@@ -100,14 +132,15 @@ The test-credit balance, on-chain test deposits, their ledger and network detail
 
 ## Schema
 
-Migration `20261118120000_stripe_live_wallet.sql`. It adds columns, constraints, two tables and replaces the wallet projection functions. It deletes nothing.
+Migration `20261118120000_stripe_live_wallet.sql`. It adds columns, constraints and three tables, replaces the wallet projection functions, and drops two unique constraints. It deletes no rows.
 
 - `stripe_deposits.mode`, with a session-prefix check and an immutability trigger.
 - `wallet_rates.funding_mode`.
-- `mode` on `wallet_deposits`, `wallet_holds`, `wallet_journal` and `wallet_balances`, with mode-carrying foreign keys. `wallet_balances` is now keyed by `(workspace_id, mode)`.
-- `wallet_refund_requests` (runtime read-only) and `wallet_operator_actions` (no runtime access).
+- `mode` on `wallet_deposits`, `wallet_holds`, `wallet_journal` and `wallet_balances`, with mode-carrying foreign keys. `wallet_balances` is now keyed by `(workspace_id, mode)`. `wallet_journal.mode` has no default.
+- The one-hold and one-release-per-payment unique constraints on `wallet_journal` are dropped so a payment can be disputed again after a release. The application posts a hold only when the payment is not already held.
+- `wallet_refund_requests` (runtime read-only), `wallet_operator_actions` (no runtime access) and `wallet_operator_alerts` (runtime insert for its own account only).
 
-`walletValid` in backup evidence compares the projection per mode.
+`walletValid` in backup evidence compares the projection per mode, and compares a payment released by the operator action against all of its postings. A hold released by hand before this release keeps its old check.
 
 ## Rollout
 
@@ -149,17 +182,17 @@ A live dispute cannot be simulated. Drill the release action in sandbox with Str
 ## Known gaps
 
 - **Tax.** No tax is calculated or collected at Checkout.
-- **A refund that fails after Stripe first reported it.** Refund totals never decrease in this system, so the credits stay removed. `refund.failed` logs an operator alert; the correction is a manual `adjustment` posting. There is still no admin screen for adjustments.
-- **A second dispute on the same payment** after a release is not posted (one hold and one release per payment).
-- **A refund issued in Stripe on a previously disputed, released payment** is not reflected in the balance.
-- **Enrollment** (`wallet_rates`, including `funding_mode`) is still an operator database step with no admin screen.
-- **Alerts** are server log lines. There is no paging or durable reconciliation queue beyond Stripe's own retries and the manual check.
+- **Adjustments and enrollment** (`wallet_rates`, including `funding_mode`) are still operator database steps with no admin screen.
+- **A released payment cannot be refunded with the refund action.** Refund it in the Stripe dashboard; the balance follows.
+- **Alerts are not pushed.** They are durable and listed on the admin page, but nothing pages an operator. There is no reconciliation queue beyond Stripe's own retries and the manual check.
 - **Statement export** and wallet eligibility in discovery quotes are not built.
-- **Browser tests** do not cover the live Credits copy or the admin refund panel.
+- **Browser tests use a simulated live account.** They drive the real Credits and admin pages with the JSON a hosted live account would receive; no browser test runs against PostgreSQL accounts.
 
 ## Validation
 
-`tests/stripe-live.test.ts` covers the default-off flag and its separate variables, fail-closed live configuration, the account funding mode choosing the rail with no fallback, the top-up cap and eligibility, a live payment crediting only the live wallet once, signature verification per endpoint with swapped secrets, cross-mode events and database constraints, async success and failure, expiry, partial and full refunds, dispute freeze per mode, dispute release by Stripe outcome with replay and audit, refund reservation before the Stripe call, a refused refund, an unknown outcome resolved from Stripe, an idempotent retry, refusal for disputed and frozen payments, runtime-role restrictions, and the HTTP routes. PostgreSQL cases need a disposable loopback database in `OCTOLAB_TEST_POSTGRES_URL` and use injected provider and Stripe fixtures only. Never run them, fixture credits or test grants against the hosted project.
+`tests/stripe-live.test.ts` covers the default-off flag and its separate variables, fail-closed live configuration, the account funding mode choosing the rail with no fallback, the top-up cap and eligibility, a live payment crediting only the live wallet once, signature verification per endpoint with swapped secrets, cross-mode events and database constraints, async success and failure, expiry, partial and full refunds, dispute freeze per mode, dispute release by Stripe outcome with replay and audit, every final and open dispute status, a refund after a release, a second dispute after a release, a failed dashboard refund, an unverifiable refund total, an operator refund that fails after acceptance, refund reservation before the Stripe call, a refused refund, an unknown outcome resolved from Stripe, an idempotent retry, concurrent duplicate requests, the card-funded refund cap, an adjustment without a mode, unmatched live events, customer-safe unavailable copy, runtime-role restrictions, and the HTTP routes. PostgreSQL cases need a disposable loopback database in `OCTOLAB_TEST_POSTGRES_URL` and use injected provider and Stripe fixtures only. Never run them, fixture credits or test grants against the hosted project.
+
+`tests/browser/stripe-live.spec.ts` covers the live Credits page, the paused state, and the operator alert, refund and release controls on desktop and mobile.
 
 ## Open owner decisions
 

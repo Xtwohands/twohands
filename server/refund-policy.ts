@@ -9,7 +9,7 @@
  */
 
 /** Recorded on every refund request so a later policy change stays traceable. */
-export const REFUND_POLICY_VERSION = "placeholder-unused-balance-v0";
+export const REFUND_POLICY_VERSION = "placeholder-card-funded-unused-v1";
 
 /**
  * Shown on Credits beside real-money top-ups. It is a placeholder: it states
@@ -37,21 +37,46 @@ export interface RefundablePayment {
 }
 
 /**
- * Placeholder policy: the refundable amount is the account's available
- * credit (posted balance less holds for calls in progress), in whole cents.
- * Usage is treated as spending the oldest payments first, so unused credit is
- * attributed to the newest payments first. No fee is deducted and there is no
- * time limit. A frozen balance refunds nothing.
+ * Placeholder policy.
+ *
+ * Only money that came from a card can go back to a card. The refundable
+ * amount is the smaller of:
+ *
+ * - the account's available credit (posted balance less holds for calls in
+ *   progress), and
+ * - its card-funded credit that is not yet spent: net card payments (top-ups
+ *   less refunds, dispute holds and releases) minus every usage charge. Usage
+ *   is counted against card money first, so credit an operator added by
+ *   `adjustment` is never paid out, and a negative adjustment reduces what
+ *   can be refunded.
+ *
+ * It is taken in whole cents. Usage is treated as spending the oldest
+ * payments first, so the refundable amount is attributed to the newest
+ * payments first. No fee is deducted and there is no time limit. A frozen
+ * balance refunds nothing.
  */
 export function refundableByPayment(input: {
   availableMicros: number;
+  /** Sum of the balance's payment postings. Omitted: no cap beyond available. */
+  cardNetMicros?: number;
+  chargedMicros?: number;
+  adjustmentMicros?: number;
   frozen: boolean;
   payments: RefundablePayment[];
 }): Map<string, number> {
   const result = new Map<string, number>();
+  const cardFunded =
+    input.cardNetMicros === undefined
+      ? input.availableMicros
+      : input.cardNetMicros -
+        (input.chargedMicros ?? 0) +
+        Math.min(0, input.adjustmentMicros ?? 0);
   let unused = input.frozen
     ? 0
-    : Math.max(0, Math.floor(input.availableMicros / 10_000));
+    : Math.max(
+        0,
+        Math.floor(Math.min(input.availableMicros, cardFunded) / 10_000),
+      );
   const newestFirst = [...input.payments].sort(
     (a, b) =>
       b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id),
