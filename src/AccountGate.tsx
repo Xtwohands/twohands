@@ -15,6 +15,35 @@ import { AccountMenu } from "./AccountMenu";
 import "./account.css";
 import { AuthView } from "./AuthView";
 import { readAuthCallback, type AuthMode } from "./auth-state";
+import { canOpen, clearPendingAccountType, homeRoute } from "./account-type";
+import { ChooseAccountType } from "./ChooseAccountType";
+
+/** The sign-in page. Logged-out visitors to any signed-in area are sent here. */
+const LOGIN_PATH = "/login";
+const onLoginPage = () => location.pathname === LOGIN_PATH;
+
+/**
+ * Send a freshly signed-in account to the right place:
+ *  - from /login, to the page it asked for (the #hash) if this account may open
+ *    it, otherwise to its own area;
+ *  - from #signin or the generic #dashboard, to its own area;
+ *  - from the other account type's area, to its own area.
+ * Returns the hash it chose so the caller can update its route state.
+ */
+function routeAfterSignIn(profile: AccountProfile): string {
+  const home = homeRoute(profile);
+  const hash = location.hash;
+  const generic = !hash || hash === "#signin" || hash === "#home";
+  if (onLoginPage()) {
+    const next = !generic && canOpen(profile, hash) ? hash : home;
+    // Leave /login without reloading the page.
+    history.replaceState(null, "", "/" + location.search + next);
+    return next;
+  }
+  if (hash === "#signin" || hash === "#dashboard" || !canOpen(profile, hash))
+    location.hash = home;
+  return location.hash;
+}
 type AccountContext = {
   sessionEpoch?: number;
   enabled: boolean;
@@ -54,7 +83,13 @@ export function AccountControls({ compact = false }: { compact?: boolean }) {
   return (
     <AccountMenu
       label={account.profile.user.email}
-      detail={account.profile.isAdmin ? "Administrator" : "Personal account"}
+      detail={
+        account.profile.isAdmin
+          ? "Administrator"
+          : account.profile.accountType === "business"
+            ? "Business account"
+            : "Personal account"
+      }
       onSignOut={account.signOut}
       compact={compact}
     />
@@ -182,14 +217,15 @@ export function AccountGate({ children }: { children: ReactNode }) {
         throw new Error(data.error || "Could not load account access.");
       const result = data as AccountProfile;
       canPreviewRef.current = !!(result.canPreview || result.isAdmin);
-      if (routedAccount.current !== result.user.id) {
+      // A type picked earlier on the sign-up screen is only needed until the
+      // account has one; never let it linger for the next sign-in.
+      if (result.accountType) clearPendingAccountType();
+      // Route once per signed-in account, after its type is known. Accounts
+      // without a type see the chooser first and are routed after choosing.
+      const typed = !!result.accountType || result.isAdmin;
+      if (typed && routedAccount.current !== result.user.id) {
         routedAccount.current = result.user.id;
-        if (location.hash === "#dashboard" || location.hash === "#signin") {
-          if (result.isAdmin) location.hash = "admin";
-          else if (!result.hasPersonalAccount && result.companies?.length)
-            location.hash = "company";
-          else if (location.hash === "#signin") location.hash = "dashboard";
-        }
+        setRoute(routeAfterSignIn(result));
       }
       setAccountSession(value.access_token, result.user.id);
       setProfile(result);
@@ -398,8 +434,26 @@ export function AccountGate({ children }: { children: ReactNode }) {
     };
   }, [config?.enabled]);
   const publicPage =
+    !onLoginPage() &&
     !location.pathname.startsWith("/research") &&
     (!route || route === "#home" || route.startsWith("#home/"));
+  // Logged-out visitors to a signed-in area go to /login. The #hash is kept, so
+  // they return to the page they asked for after signing in.
+  useEffect(() => {
+    if (
+      config?.enabled &&
+      ready &&
+      !session &&
+      !publicPage &&
+      !onLoginPage() &&
+      !location.pathname.startsWith("/research")
+    )
+      history.replaceState(
+        null,
+        "",
+        LOGIN_PATH + location.search + location.hash,
+      );
+  }, [config?.enabled, ready, session, publicPage]);
   const context: AccountContext = {
     sessionEpoch: sessionEpoch.current,
     enabled: !!config?.enabled,
@@ -468,6 +522,25 @@ export function AccountGate({ children }: { children: ReactNode }) {
     return <Context.Provider value={context}>{children}</Context.Provider>;
   const emptyPreview =
     previewRole === "user" && profile?.hasPersonalAccount === false;
+  // Signed in but no account type yet: ask once (admins are exempt).
+  if (
+    profile &&
+    !profile.accountType &&
+    !profile.isAdmin &&
+    !profile.canPreview &&
+    !emptyPreview &&
+    mode !== "recover" &&
+    mode !== "confirmed"
+  )
+    return (
+      <ChooseAccountType
+        email={profile.user.email}
+        onChosen={async () => {
+          if (currentSession.current) await loadProfile(currentSession.current);
+        }}
+        onSignOut={signOut}
+      />
+    );
   if (profile && !emptyPreview && mode !== "recover" && mode !== "confirmed")
     return (
       <Context.Provider value={context}>

@@ -93,3 +93,82 @@
     font-size: 22px;
   }
 }
+
+/* Business / User picker (sign-up screen and one-time chooser). */
+.account-type-options {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+.account-type-options legend {
+  margin-bottom: 8px;
+  font-size: 13px;
+  font-weight: 500;
+}
+.account-card .account-type-option,
+.account-type-option {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--card);
+  cursor: pointer;
+  text-align: left;
+}
+.account-type-option[data-selected] {
+  border-color: var(--border-strong);
+  background: var(--muted);
+}
+.account-type-option:has(input:focus-visible) {
+  outline: 2px solid var(--brand-accent);
+  outline-offset: 2px;
+}
+.account-type-option input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+.account-type-option svg {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  margin-top: 1px;
+  color: var(--muted-foreground);
+}
+.account-type-option span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.account-type-option strong {
+  font-size: 14px;
+  font-weight: 560;
+}
+.account-type-option small {
+  color: var(--muted-foreground);
+  font-size: 13px;
+  line-height: 1.45;
+}
+.account-type-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 20px;
+}
+.account-type-error {
+  margin-top: 16px;
+}
+/* Shown when a signed-in account opens the other type's area. */
+.account-card .account-area-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}

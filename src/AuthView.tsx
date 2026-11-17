@@ -13,6 +13,12 @@ import {
 import { Button } from "./components/ui/button";
 import { Input } from "./components/ui/input";
 import { authFailure, type AuthMode, type AuthStage } from "./auth-state";
+import {
+  defaultAccountType,
+  savePendingAccountType,
+  type AccountType,
+} from "./account-type";
+import { AccountTypeOptions } from "./AccountTypeOptions";
 import googleMark from "./assets/auth-google.png";
 import authMark from "./assets/auth-mark.svg";
 import "./auth.css";
@@ -88,6 +94,11 @@ export function AuthView({
     {},
   );
   const [message, setMessage] = useState("");
+  // Business or user, for new accounts. Saved as "pending" when sign-up starts and
+  // stored on the account after the first sign-in (see ChooseAccountType).
+  const [accountType, setAccountType] = useState<AccountType>(() =>
+    defaultAccountType(returnRoute),
+  );
   const [resent, setResent] = useState(false);
   const [cooldown, setCooldown] = useState(0);
   // Hidden only once the Auth service confirms Google is turned off.
@@ -179,7 +190,9 @@ export function AuthView({
     url.hash =
       /^#[a-z0-9/_-]+$/i.test(returnRoute) && returnRoute !== "#signin"
         ? returnRoute
-        : "#dashboard";
+        : accountType === "business"
+          ? "#company"
+          : "#dashboard";
     return url.href;
   }
   function failure(caught: unknown) {
@@ -238,6 +251,7 @@ export function AuthView({
         });
         if (result.error) throw result.error;
       } else if (mode === "signup") {
+        savePendingAccountType(accountType);
         const result = await client.auth.signUp({
           email: email.trim(),
           password,
@@ -288,6 +302,8 @@ export function AuthView({
       if (result.error || !result.data.url)
         throw result.error || new Error("Google sign-in is unavailable.");
       if (revision !== operation.current) return;
+      // Used only if this Google account is new; existing accounts keep their type.
+      savePendingAccountType(accountType);
       try {
         sessionStorage.setItem("two-hands-google-pending", "1");
       } catch {
@@ -349,7 +365,9 @@ export function AuthView({
       : mode === "signin"
         ? "Enter the email and password for your Two Hands account."
         : mode === "signup"
-          ? "Create an account to connect your agent to Two Hands."
+          ? accountType === "business"
+            ? "Create a business account to list your tool and see how agents use it."
+            : "Create an account to connect your agent to Two Hands."
           : mode === "reset"
             ? "Enter the email address you use for Two Hands."
             : mode === "confirmed"
@@ -495,6 +513,12 @@ export function AuthView({
               </div>
             )}
             <fieldset disabled={busy} className="auth-fields">
+              {mode === "signup" && !stage && (
+                <AccountTypeOptions
+                  value={accountType}
+                  onChange={setAccountType}
+                />
+              )}
               {emailField && (
                 <div className="auth-field">
                   <label htmlFor="auth-email">Email</label>
@@ -656,6 +680,11 @@ export function AuthView({
           <div className="auth-actions">
             {!stage && mode === "options" && (
               <>
+                <AccountTypeOptions
+                  legend="New to Two Hands? Choose an account type"
+                  value={accountType}
+                  onChange={setAccountType}
+                />
                 {!googleOff && (
                   <Action
                     onClick={() => void google()}
