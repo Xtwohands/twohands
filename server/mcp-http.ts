@@ -117,7 +117,17 @@ export function mcpAuthenticator(deps: {
           );
           return { id: `key:${key.id}`, credential };
         }
-        const identity = await accounts.identity(req, true);
+        let identity: Awaited<ReturnType<Accounts["identity"]>>;
+        try {
+          identity = await accounts.identity(req, true);
+        } catch (error) {
+          if (error instanceof AccountError && error.status === 401)
+            throw new McpAuthError(
+              401,
+              "Invalid API key or agent session. Reconnect your agent or use a scoped key (oct_key_…) from API keys in your dashboard.",
+            );
+          throw error;
+        }
         if (identity.oauthClientId) {
           if (!deps.oauth)
             throw new McpAuthError(401, "Agent sign-in is not enabled.");

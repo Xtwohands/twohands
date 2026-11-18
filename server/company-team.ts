@@ -102,6 +102,16 @@ export class CompanyTeam {
             "Ask this person to create and confirm their Two Hands account first.",
           );
         userId = target.rows[0].id;
+        // Analysts must have business accounts; user accounts can't open company pages.
+        const type = await client.query(
+          "SELECT account_type FROM octolab.account_types WHERE user_id=$1",
+          [userId],
+        );
+        if (type.rows[0]?.account_type !== "business")
+          throw new AccountError(
+            400,
+            "This person needs a business account. Ask them to sign up as a business, then add them again.",
+          );
         const count = await client.query(
           "SELECT count(*)::integer AS n FROM octolab.company_memberships WHERE company_id=$1",
           [id],

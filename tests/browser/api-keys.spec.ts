@@ -249,9 +249,12 @@ test("owner rejection clears the one-time secret and the key list", async ({
   await expect(
     page.getByLabel("New API key secret", { exact: true }),
   ).toHaveCount(0);
+  await expect(page.getByText(/Rejected owner (desktop|mobile)/)).toHaveCount(
+    0,
+  );
   await expect(
-    page.getByRole("region", { name: "API keys", exact: true }),
-  ).toHaveCount(0);
+    page.getByRole("button", { name: "Create API key", exact: true }),
+  ).toBeDisabled();
   await expect(
     page.getByText("Owner credential rejected.", { exact: true }),
   ).toBeVisible();

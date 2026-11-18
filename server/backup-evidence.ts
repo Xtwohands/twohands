@@ -13,6 +13,7 @@ export interface DatabaseSnapshot {
   keyLedgerValid: boolean;
   allowanceLedgerValid: boolean | null;
   shadowWalletValid?: boolean;
+  walletValid?: boolean;
 }
 export const sqlIdentifier = (value: string) =>
   `"${value.replaceAll('"', '""')}"`;
@@ -162,6 +163,73 @@ export async function databaseSnapshot(
         `)
       ).rowCount === 0
     : undefined;
+  // Posted closures carry exactly one debit, closed calls keep no open hold,
+  // enrolled deposits match their verified net, and the projection equals a
+  // rebuild from the journal and open holds.
+  // Before the live-mode migration every wallet row is a sandbox row.
+  const walletMode = (
+    await client.query(
+      "SELECT 1 FROM information_schema.columns WHERE table_schema='octolab' AND table_name='wallet_balances' AND column_name='mode'",
+    )
+  ).rowCount
+    ? "mode"
+    : "'test'::text";
+  const walletValid = tables.some(
+    (t) => t.schema === "octolab" && t.name === "wallet_journal",
+  )
+    ? (
+        await client.query(`
+          SELECT 1 FROM octolab.wallet_hold_closures c
+          LEFT JOIN octolab.wallet_journal j
+            ON j.workspace_id=c.workspace_id AND j.call_id=c.call_id
+          WHERE c.outcome='posted' AND j.source_id IS NULL
+          UNION ALL
+          SELECT 1 FROM octolab.wallet_holds h
+          LEFT JOIN octolab.wallet_hold_closures c
+            ON c.workspace_id=h.workspace_id AND c.call_id=h.call_id
+          LEFT JOIN octolab.observation_calls a
+            ON a.workspace_id=h.workspace_id AND a.id=h.call_id
+          WHERE c.call_id IS NULL
+            AND (a.id IS NULL OR a.body::jsonb->>'status' <> 'running')
+          UNION ALL
+          SELECT 1 FROM octolab.wallet_deposits e
+          JOIN octolab.stripe_deposits d
+            ON d.workspace_id=e.workspace_id AND d.id=e.deposit_id
+          LEFT JOIN octolab.wallet_journal j
+            ON j.workspace_id=e.workspace_id AND j.deposit_id=e.deposit_id
+          GROUP BY e.workspace_id,e.deposit_id,d.body
+          -- A payment released by the operator action carries its restored
+          -- credits in its net amount. A hold released by hand before that
+          -- action existed keeps a net of zero beside its release posting.
+          HAVING COALESCE(sum(j.wallet_micros) FILTER (
+                   WHERE j.kind<>'dispute_release'
+                      OR d.body::jsonb ?| array['disputeResolution','disputeCycle']),0)
+                 <>(d.body::jsonb->>'netCreditUnits')::bigint
+          UNION ALL
+          SELECT 1 FROM (
+            SELECT workspace_id, ${walletMode} AS mode, sum(posted) AS posted,
+                   sum(held) AS held, sum(charged) AS charged FROM (
+              SELECT workspace_id, ${walletMode} AS mode, wallet_micros AS posted, 0::bigint AS held,
+                     CASE WHEN kind='usage' THEN -wallet_micros ELSE 0 END AS charged
+              FROM octolab.wallet_journal
+              UNION ALL
+              SELECT h.workspace_id, ${walletMode}, 0, h.maximum_micros, 0 FROM octolab.wallet_holds h
+              WHERE NOT EXISTS (
+                SELECT 1 FROM octolab.wallet_hold_closures c
+                WHERE c.workspace_id=h.workspace_id AND c.call_id=h.call_id
+              )
+            ) amounts GROUP BY 1, 2
+          ) rebuilt
+          FULL JOIN (
+            SELECT *, ${walletMode} AS balance_mode FROM octolab.wallet_balances
+          ) b ON b.workspace_id=rebuilt.workspace_id AND b.balance_mode=rebuilt.mode
+          WHERE COALESCE(rebuilt.posted,0)<>COALESCE(b.posted_micros,0)
+             OR COALESCE(rebuilt.held,0)<>COALESCE(b.held_micros,0)
+             OR COALESCE(rebuilt.charged,0)<>COALESCE(b.charged_micros,0)
+          LIMIT 1
+        `)
+      ).rowCount === 0
+    : undefined;
   const ledger = (
     await client.query(
       "SELECT workspace_id,source,COUNT(*)::integer AS entries,SUM(delta_units)::text AS balance_units FROM octolab.funding_ledger GROUP BY workspace_id,source ORDER BY workspace_id,source",
@@ -205,6 +273,7 @@ export async function databaseSnapshot(
     policies,
     allowanceLedgerValid,
     ...(shadowWalletValid === undefined ? {} : { shadowWalletValid }),
+    ...(walletValid === undefined ? {} : { walletValid }),
     ledger,
     audit: { events, chains: heads.size, valid },
     keyLedgerValid: inconsistent.rowCount === 0,

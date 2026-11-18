@@ -1,6 +1,6 @@
 # Operator account allowances
 
-The PostgreSQL runtime requires an explicit platform-operator allowance before executing provider calls. New and previously existing accounts have no allowance by default. Customer-issued API keys and backend session budgets remain additional limits; neither grants access to platform spending. Payment balances and test credits do not grant an allowance.
+The PostgreSQL runtime requires an explicit platform-operator allowance before executing provider calls. New and previously existing accounts have no allowance by default. Customer-issued API keys and backend session budgets remain additional limits; neither grants access to platform spending. Payment balances and test credits do not grant an allowance. With [wallet enforcement](WALLET_ENFORCEMENT.md) enabled, an enrolled account needs both available credits and an allowance for a billable call.
 
 Migration `20261109032233_workspace_operator_allowances.sql` is applied to the hosted project and verified by the application checksum ledger. The canonical PostgreSQL runtime enforces the guard. No hosted allowances, reservations, or allowance audit events were created during activation: positive-estimate calls remain denied until a platform administrator deliberately grants access. Deposits remain disabled.
 

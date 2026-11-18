@@ -88,7 +88,15 @@ The shadow phase records simulated admission and charges for hosted, backend-aut
 
 The Stripe sandbox mirror is separately default-off. With `TWO_HANDS_SHADOW_STRIPE_SANDBOX=true`, a new checkout intent for an enrolled workspace can feed the simulated balance after existing Stripe test-mode payment verification. Historical test payments stay separate. Signed webhook retries converge on one deposit posting. Verified refunds and dispute holds append adjustments. A simulated shortfall or dispute prevents further shadow admissions while existing holds can settle. Existing provider authorization and the existing test-credit balance are independent of this exercise.
 
-Before a customer pilot, add live Checkout funding, durable payment-event recovery, customer balances and statements, and wallet enforcement on every enabled customer entry point. Verify dispute resolution, unused-balance refunds, and provider terms and rates before accepting real money.
+## Sandbox enforcement
+
+Phase 2 is implemented behind `TWO_HANDS_WALLET_ENFORCEMENT`, default off. It uses separate `octolab.wallet_*` tables: a hold per admitted call, an append-only journal fed by verified Stripe test-mode deposits, refunds and dispute holds, and a balance projection rebuildable from the journal. Enrolled accounts are denied before dispatch with `insufficient_credits` when available credits cannot cover the hold, for every paid tool, and a lapsed or mismatched rate fails closed with `billing_unavailable`. The shadow tables keep recording independently. The operator allowance, key caps and session caps remain separate required controls; a top-up does not grant an allowance. See [wallet enforcement](WALLET_ENFORCEMENT.md).
+
+## Live funding
+
+Phase 3 is implemented behind `STRIPE_LIVE_ENABLED`, default off. Live Stripe has its own key, webhook secret and endpoint, every deposit and wallet row records its Stripe mode, and each mode has its own balance, so sandbox and real money cannot mix. Live deposits fund only the wallet. Operators can release a dispute freeze after Stripe closes the dispute and refund unused credits to the original card; refunds stay off until a refund policy is approved. See [Stripe live mode](STRIPE_LIVE.md).
+
+Before a customer pilot, the owner still decides the refund policy and tax handling, confirms provider terms and rates, and activates the live Stripe account. Durable payment-event recovery beyond Stripe's retries, customer statements, and wallet enforcement on every enabled customer entry point remain to be verified.
 
 ## Acceptance and operating metrics
 

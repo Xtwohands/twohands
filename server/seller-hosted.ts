@@ -155,6 +155,8 @@ export function hostedSellerRoutes(
     try {
       if (!sameOriginWrite(req, res)) return;
       res.locals.account = await accounts.identity(req);
+      // Company seller pages are for business accounts.
+      await accounts.assertAccountType(res.locals.account, "business");
       next();
     } catch (error) {
       accountFailure(error, res);

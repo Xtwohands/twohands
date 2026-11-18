@@ -157,6 +157,23 @@ try {
       );
     return value;
   };
+  const typed = await fetch(
+    new URL("/api/auth/account-type", env.PUBLIC_APP_URL),
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${signed.data.session.access_token}`,
+        "Content-Type": "application/json",
+        Origin: env.PUBLIC_APP_URL,
+      },
+      body: JSON.stringify({ accountType: "user" }),
+      signal: AbortSignal.timeout(15000),
+    },
+  );
+  if (!typed.ok)
+    throw new Error("Could not choose the temporary user account type.");
+  // Account-type history is immutable, including after Auth account deletion.
+  report.retainedAccountTypeRecord = true;
   transport = new StreamableHTTPClientTransport(resource, {
     authProvider: provider,
   });

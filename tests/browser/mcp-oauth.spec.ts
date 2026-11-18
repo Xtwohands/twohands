@@ -84,6 +84,7 @@ async function fixture(page: Page, signedIn = true) {
     route.fulfill({
       json: {
         user: { id: userId, email: user.email },
+        accountType: "user",
         hasPersonalAccount: true,
         isAdmin: false,
         companies: [],

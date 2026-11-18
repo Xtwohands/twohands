@@ -5,6 +5,8 @@ Two Hands has two connection paths to the same hosted `/mcp` service:
 - **Use in my agent:** add the MCP URL, sign in with a Two Hands account in the browser, and explicitly allow the client. The client stores and refreshes OAuth tokens.
 - **Build into my product:** issue a scoped API key and supply it from the product's backend using `Authorization: Bearer <key>`. Existing API-key and stdio registrations remain compatible.
 
+Agent sign-in uses a user account. New accounts choose their type before authorizing an agent; business accounts use the company area and cannot create personal agent grants. Existing API keys retain their permissions.
+
 The Connect agent dialog presents these separately. Its OAuth commands are shown only when this runtime advertises enabled OAuth; a server that has not been configured does not claim sign-in works.
 
 ## Development setup
@@ -42,9 +44,11 @@ Open `/mcp` in Claude Code, select the server, and choose Authenticate. For othe
 
 `/.well-known/oauth-protected-resource/mcp` (also available at the root well-known path) publishes the canonical MCP resource, the configured Supabase Auth issuer, and identity scopes. Unauthenticated MCP requests advertise that metadata in their `WWW-Authenticate` challenge. URLs come from the configured canonical origin, never an untrusted Host header.
 
-Supabase handles client registration, PKCE, authorization codes, code replay protection, and refresh-token rotation. Two Hands:
+Supabase handles client registration, PKCE, authorization codes, code replay protection, and refresh-token rotation.
 
 Supported identity/refresh scopes include `openid`, `email`, `profile`, and `offline_access`. Codex requests `openid email offline_access`; the last scope lets the client maintain its connection with refresh credentials and does not add application permissions.
+
+Two Hands:
 
 1. Authenticates the browser using its existing verified account session. Agent tokens cannot manage OAuth grants, account settings, API keys, company permissions, payments, or administrator features.
 2. Reads the pending managed authorization to verify its expiry, user binding, S256 PKCE, supported identity scopes, exact resource, and HTTPS or loopback callback. Loading the consent page neither grants access nor issues a code.
@@ -78,7 +82,7 @@ Account-to-agent consent is a one-time connection decision. Ordinary research se
 
 `tests/browser/mcp-oauth.spec.ts` covers sign-in continuation, consent, Cancel, expiry, and disconnect with isolated synthetic Auth responses. `tool-workspace.spec.ts` covers separate agent/product onboarding and copied settings. Browser fixtures do not establish managed Auth email delivery or interoperability with a real installed client.
 
-For a managed infrastructure check, `npm run smoke:oauth:dev` creates a temporary user and public OAuth client in the dedicated development project, exercises the SDK authorization-code/PKCE flow, token refresh, tools/list, and revocation, then removes the temporary account and deactivates the client. It requires the operator's Supabase CLI credentials, never targets production, never calls a provider, and does not store or print passwords or tokens. The script removes only its own empty test account and refuses cleanup if it contains research or other members.
+For a managed infrastructure check, `npm run smoke:oauth:dev` creates a temporary user and public OAuth client in the dedicated development project, exercises the SDK authorization-code/PKCE flow, token refresh, tools/list, and revocation, then removes the temporary account and deactivates the client. It requires the operator's Supabase CLI credentials, never targets production, never calls a provider, and does not store or print passwords or tokens. The script removes only its own empty test account and refuses cleanup if it contains research or other members. The immutable account-type history row remains after deletion and is reported separately.
 
 ### Verified development checkpoint — 2026-11-17
 

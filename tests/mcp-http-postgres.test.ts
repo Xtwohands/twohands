@@ -15,6 +15,7 @@ import {
 } from "../server/accounts";
 import { createApp } from "../server/app";
 import { config } from "../server/config";
+import { setAccountType } from "./helpers";
 
 /** Remote MCP against real PostgreSQL account isolation. Runs in CI. */
 const url = process.env.OCTOLAB_TEST_POSTGRES_URL;
@@ -67,6 +68,7 @@ suite("remote MCP with PostgreSQL accounts", () => {
         "INSERT INTO auth.sessions(id,user_id) VALUES($1,$2)",
         [identity.sessionId, identity.userId],
       );
+      await setAccountType(db.pool, identity.userId, "user");
     }
     const accounts = new Accounts(
       store,
@@ -128,6 +130,8 @@ suite("remote MCP with PostgreSQL accounts", () => {
         }),
       });
       expect(r.status).toBe(401);
+      if (credential === "unknown-session")
+        expect(JSON.stringify(await r.json())).toContain("Invalid API key");
     }
   });
 

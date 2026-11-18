@@ -1,6 +1,11 @@
 import { createHash } from "node:crypto";
 import type { ObservedCall } from "./observation-types.js";
 import type { Store } from "./store.js";
+import {
+  depositPosting,
+  fixedCostTavilyCall,
+  holdOutcome,
+} from "./wallet-rules.js";
 
 const markupBps = 1000;
 const basisPoints = 10_000;
@@ -45,12 +50,7 @@ export class ShadowWallet {
       db.dialect !== "postgres" ||
       actor?.kind !== "api_key" ||
       actor.id !== call.apiKeyId ||
-      call.tool !== "tavily_search" ||
-      (call.arguments.searchDepth ?? "basic") !== "basic" ||
-      (call.arguments.maxResults ?? 10) !== 10 ||
-      !call.providerAccountReference ||
-      !providerCredential ||
-      call.adapter?.version !== "1.0.0"
+      !fixedCostTavilyCall(call, providerCredential)
     )
       return false;
 
@@ -63,7 +63,7 @@ export class ShadowWallet {
          AND verified_at<=now() AND expires_at>now()`,
       )
       .get(
-        call.providerAccountReference,
+        call.providerAccountReference!,
         shadowWalletCredentialDigest(providerCredential),
       );
     if (!rate) return false;
@@ -100,7 +100,7 @@ export class ShadowWallet {
       .run(
         call.id,
         call.apiKeyId ?? null,
-        call.adapter.version,
+        call.adapter!.version,
         rate.provider_account,
         rate.rate_version,
         rate.verified_at,
@@ -157,8 +157,12 @@ export class ShadowWallet {
       )
       .get(depositId, depositId);
     if (!enrollment?.enrolled) return;
-    const delta = targetMicros - Number(enrollment.current);
-    if (!delta && !disputed) return;
+    const posting = depositPosting(
+      Number(enrollment.current),
+      targetMicros,
+      disputed,
+    );
+    if (!posting) return;
     await db
       .prepare(
         `
@@ -172,9 +176,9 @@ export class ShadowWallet {
         depositId,
         enrollment.next_revision,
         paymentIntentId,
-        disputed ? "dispute_hold" : delta < 0 ? "refund" : "deposit",
+        posting.kind,
         targetMicros,
-        delta,
+        posting.deltaMicros,
       );
   }
 
@@ -193,29 +197,12 @@ export class ShadowWallet {
       .get(call.id);
     if (!hold?.admitted) return;
 
-    const reported = (call.result?.usage as { credits?: number } | undefined)
-      ?.credits;
-    const providerRequestId = call.result?.requestId;
-    const outcome =
-      call.status === "interrupted"
-        ? "interrupted"
-        : call.status !== "succeeded"
-          ? "failed"
-          : reported !== undefined && reported !== 1
-            ? "cost_conflict"
-            : "posted";
+    const { outcome, providerRequestId, reportedCredits } = holdOutcome(call);
     await db
       .prepare(
         "INSERT INTO shadow_wallet_closures(call_id,outcome,provider_request_id,reported_credits) VALUES (?,?,?,?)",
       )
-      .run(
-        call.id,
-        outcome,
-        typeof providerRequestId === "string" && providerRequestId.length
-          ? providerRequestId.slice(0, 200)
-          : null,
-        reported ?? null,
-      );
+      .run(call.id, outcome, providerRequestId, reportedCredits);
     if (outcome === "posted")
       await db
         .prepare(

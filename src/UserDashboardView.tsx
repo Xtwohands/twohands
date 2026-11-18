@@ -22,11 +22,13 @@ import {
   lazy,
   Suspense,
   useCallback,
+  useContext,
   useEffect,
   useId,
   useRef,
   useState,
 } from "react";
+import { CustomerFunding } from "./customer-funding";
 import {
   Activity,
   ArrowRight,
@@ -271,6 +273,8 @@ export function UserDashboardView({
   const account = useAccount();
   const openConnectAgent = useConnectAgent();
   const canManage = !account.enabled || !!account.profile;
+  const liveCredits =
+    useContext(CustomerFunding).summary?.wallet?.mode === "live";
   const [days, setDays] = useState("7");
   const [usage, setUsage] = useState<AccountUsage>();
   const [policy, setPolicy] = useState<RoutingPolicy>();
@@ -470,7 +474,11 @@ export function UserDashboardView({
         <div>
           <h1>{labels[section][0]}</h1>
           {!["tools", "overview", "activity"].includes(section) && (
-            <p>{labels[section][1]}</p>
+            <p>
+              {section === "credits" && liveCredits
+                ? "Your prepaid credits, card payments and usage charges."
+                : labels[section][1]}
+            </p>
           )}
         </div>
         <div className="ws-heading-actions">

@@ -8,14 +8,15 @@ import {
 import { useConnectAgent } from "./ConnectAgentDialog";
 
 import { AdminNavigation } from "./AdminNavigation";
+import { canOpen, homeRoute } from "./account-type";
+import { WrongAccountArea } from "./ChooseAccountType";
 import { OperatorAllowanceNotice } from "./OperatorAllowanceNotice";
 import { AccountControls, useAccount } from "./AccountGate";
 import { CustomerFunding, useCustomerFunding } from "./customer-funding";
-import { testUsdc } from "./funding-format";
+import { sandboxCredits, testUsdc } from "./funding-format";
 const DisputeReviewView = lazy(() =>
   import("./DisputeReviewView").then((m) => ({ default: m.DisputeReviewView })),
 );
-import { ConnectorsView } from "./ConnectorsView";
 import { ToolOptions, ConnectorOffers } from "./components/ToolOptions";
 import { ProviderLogo } from "./components/shared";
 import { OutcomeContent } from "./components/DeferredOutcomeContent";
@@ -49,6 +50,9 @@ const AccountSettings = lazy(() =>
 );
 const PortalShell = lazy(() =>
   import("./RolePortals").then((m) => ({ default: m.PortalShell })),
+);
+const ConnectorsView = lazy(() =>
+  import("./ConnectorsView").then((m) => ({ default: m.ConnectorsView })),
 );
 import "./provider.css";
 import "./customer-navigation.css";
@@ -416,6 +420,15 @@ export function ObservationApp() {
   const [busy, setBusy] = useState(false);
   const [newOpen, setNewOpen] = useState(false);
   const [connectOpen, setConnectOpen] = useState(false);
+  // Set when a local-mode request is refused for a missing server token.
+  const [accessRequired, setAccessRequired] = useState(false);
+  useEffect(() => {
+    if (account.enabled) return;
+    const onRequired = () => setAccessRequired(true);
+    window.addEventListener("octolab-access-required", onRequired);
+    return () =>
+      window.removeEventListener("octolab-access-required", onRequired);
+  }, [account.enabled]);
   const [menuOpen, setMenuOpen] = useState(false);
   const navigatingFromMenu = useRef(false);
   const scrollToRoute = useRef<string | undefined>(undefined);
@@ -695,6 +708,22 @@ export function ObservationApp() {
         : `${title} · Two Hands`;
   }, [currentTitle, route.page]);
   if (route.page === "home") return <LandingView />;
+  // Business accounts use #company and user accounts use #dashboard; admins can
+  // open both. The server enforces the same rule on every request.
+  if (
+    account.enabled &&
+    account.profile &&
+    (route.page === "dashboard" || route.page === "company") &&
+    !canOpen(account.profile, "#" + route.page)
+  )
+    return (
+      <WrongAccountArea
+        accountType={account.profile.accountType ?? "user"}
+        email={account.profile.user.email}
+        home={homeRoute(account.profile)}
+        onSignOut={account.signOut}
+      />
+    );
   if (account.enabled && route.page === "settings") return <AccountSettings />;
   if (account.enabled && route.page === "company")
     return (
@@ -742,6 +771,21 @@ export function ObservationApp() {
   if (
     account.enabled &&
     account.profile?.isAdmin &&
+    route.page === "tool-settings"
+  )
+    return (
+      <PortalShell
+        area="admin"
+        title="Tool settings"
+        links={[]}
+        adminPage="tool-settings"
+      >
+        <ToolSettingsView />
+      </PortalShell>
+    );
+  if (
+    account.enabled &&
+    account.profile?.isAdmin &&
     route.page === "connectors"
   )
     return (
@@ -757,23 +801,6 @@ export function ObservationApp() {
           canWrite={false}
           canReview
         />
-      </PortalShell>
-    );
-  if (
-    account.enabled &&
-    account.profile?.isAdmin &&
-    route.page === "tool-settings"
-  )
-    return (
-      <PortalShell
-        area="admin"
-        title="Tool settings"
-        links={[]}
-        adminPage="tool-settings"
-      >
-        <Suspense fallback={<p role="status">Loading tool settings…</p>}>
-          <ToolSettingsView />
-        </Suspense>
       </PortalShell>
     );
   const surface =
@@ -866,7 +893,12 @@ export function ObservationApp() {
                   Credits
                   {funding.summary && (
                     <span className="customer-navigation-balance">
-                      {testUsdc(funding.summary.balanceUnits)} test
+                      {funding.summary.wallet?.mode === "live" ? (
+                        // A live account's balance is its real-money wallet.
+                        sandboxCredits(funding.summary.wallet.availableMicros)
+                      ) : (
+                        <>{testUsdc(funding.summary.balanceUnits)} test</>
+                      )}
                       <span className="sr-only"> credits</span>
                     </span>
                   )}
@@ -884,7 +916,9 @@ export function ObservationApp() {
                       setMenuOpen(false);
                     }}
                   >
-                    Add test funds
+                    {funding.summary?.wallet?.mode === "live"
+                      ? "Add credits"
+                      : "Add test funds"}
                   </a>
                 </Button>
               </>
@@ -1016,8 +1050,7 @@ export function ObservationApp() {
         </header>
         <main id="main-content" tabIndex={-1} className="obs-main">
           <InlineError message={error} />
-          {(error ||
-            (!account.enabled && customerSidebar && route.id && !token)) && (
+          {(error || (accessRequired && !account.enabled)) && (
             <Button
               variant="outline"
               onClick={() =>
@@ -1720,6 +1753,7 @@ export function ObservationApp() {
               setConnectionRevision((v) => v + 1);
               const connected = await refresh();
               if (connected) {
+                setAccessRequired(false);
                 if (route.id && route.page === "sessions")
                   void reloadDetail(route.id);
                 setConnectOpen(false);

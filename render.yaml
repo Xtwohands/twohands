@@ -41,11 +41,33 @@ services:
       # Supabase's public root CA, added as a secret file named supabase-ca.crt.
       - key: NODE_EXTRA_CA_CERTS
         value: /etc/secrets/supabase-ca.crt
-      # Payments stay off until they are deliberately enabled.
+      # Stripe sandbox deposits are on (test keys only; live keys are refused).
+      # On-chain test deposits stay off until they are deliberately enabled.
       - key: STRIPE_TEST_ENABLED
-        value: "false"
+        value: "true"
       - key: DEPOSITS_TESTNET_ENABLED
         value: "false"
+      # Prepaid wallet enforcement (sandbox credits). Only accounts with a
+      # verified rate in octolab.wallet_rates are held and charged; see
+      # docs/WALLET_ENFORCEMENT.md.
+      - key: TWO_HANDS_WALLET_ENFORCEMENT
+        value: "true"
+      # Account label bound into each wallet rate. Not a secret. Changing it
+      # makes enrolled accounts fail closed until their rate is re-verified.
+      - key: TAVILY_ACCOUNT_REFERENCE
+        value: tavily-primary
+      # Real-money top-ups stay off until the live Stripe key and webhook
+      # secret are entered in the dashboard and the rollout in
+      # docs/STRIPE_LIVE.md is complete. Refunds of unused credits stay off
+      # until a refund policy is approved.
+      - key: STRIPE_LIVE_ENABLED
+        value: "false"
+      - key: TWO_HANDS_UNUSED_REFUNDS
+        value: "false"
+      - key: STRIPE_LIVE_SECRET_KEY
+        sync: false
+      - key: STRIPE_LIVE_WEBHOOK_SECRET
+        sync: false
       # Session pooler connection string on port 5432.
       - key: DATABASE_URL
         sync: false

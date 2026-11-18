@@ -78,3 +78,15 @@ it("falls back to the original asset when no compressed sibling exists", async (
     await unlink(file);
   }
 });
+it("serves the public legal pages at /privacy and /terms", async () => {
+  for (const [path, title] of [
+    ["/privacy", "Privacy Policy"],
+    ["/terms", "Terms of Service"],
+  ]) {
+    const r = await fetch(base + path);
+    expect(r.status).toBe(200);
+    expect(r.headers.get("content-type")).toContain("text/html");
+    expect(r.headers.get("cache-control")).toBe("no-cache");
+    expect(await r.text()).toContain(`<h1>${title}</h1>`);
+  }
+});

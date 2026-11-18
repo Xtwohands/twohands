@@ -2,7 +2,9 @@
 
 The operator sidebar has **Payment disputes** at `#disputes`. It provides a review queue for Stripe test payments whose saved, server-verified Charge has been observed as disputed. The queue automatically includes existing disputed payment receipts, including those created before this feature.
 
-This is an administrative review workflow. It records investigation status and notes while retaining credit holds. It does not submit evidence to Stripe, change a bank dispute outcome, issue refunds, or restore credits. **Reviewed · hold retained** means the local investigation was reviewed; it does not mean the Stripe dispute was resolved or won.
+The review workflow records investigation status and notes while retaining credit holds. It does not submit evidence to Stripe or change a bank dispute outcome. **Reviewed · hold retained** means the local investigation was reviewed; it does not mean the Stripe dispute was resolved or won.
+
+In hosted PostgreSQL mode the same page has two operator money actions for payments that fund an account wallet, sandbox or live: **Release dispute hold**, which works only after Stripe has closed the dispute and restores credits according to Stripe's outcome, and **Wallet payments and refunds**, which refunds unused credits to the original card. Both are described in [Stripe live mode](STRIPE_LIVE.md#operator-tooling). They are not available with the SQLite admin credential.
 
 ## Enable admin access
 
@@ -44,6 +46,14 @@ In PostgreSQL mode, all routes below require `Authorization: Bearer <account acc
 | GET    | `/api/admin/funding/disputes/:id`                  | Current saved payment, local review, evidence fingerprint, and latest 100 immutable review events.                      |
 | POST   | `/api/admin/funding/disputes/:id/review`           | Save `{requestKey, revision, evidenceFingerprint, status, note}`. Status is `needs_review`, `in_review`, or `reviewed`. |
 | POST   | `/api/admin/funding/disputes/:id/recheck`          | Verify the saved payment with Stripe, then return current review detail; body `{}`.                                     |
+| POST   | `/api/admin/funding/disputes/:id/release`          | Release the wallet freeze after Stripe closed the dispute. `{requestKey, note}`.                                        |
+| GET    | `/api/admin/funding/payments?q=`                   | Latest 50 wallet payments across accounts.                                                                              |
+| GET    | `/api/admin/funding/refunds/:id`                   | Refund quote and refund requests for one payment.                                                                       |
+| POST   | `/api/admin/funding/refunds/:id`                   | Refund unused credits to the card. `{requestKey, amount, note}`. Refused unless `TWO_HANDS_UNUSED_REFUNDS=true`.        |
+| POST   | `/api/admin/funding/refund-requests/:id/resolve`   | Settle a refund whose outcome is unknown by asking Stripe; body `{}`.                                                   |
+| GET    | `/api/admin/funding/alerts`                        | Open payment alerts across accounts.                                                                                    |
+| POST   | `/api/admin/funding/alerts/:id/resolve`            | Record who handled an alert. `{note}`. Changes no balance.                                                              |
+| GET    | `/api/admin/funding/status`                        | Configuration state of the sandbox and live rails, for operators only.                                                  |
 
 The queue is one case per disputed payment, not an inventory of individual Stripe dispute objects. Bank-dispute reason codes, response deadlines, document uploads, evidence submission, and credit restoration are not implemented in this checkpoint. Inspect Stripe directly for those operations. Notes and audit evidence are stored in funding-only tables and excluded from provider/model statistics and commercial observation exports.
 

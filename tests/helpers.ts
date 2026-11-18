@@ -49,3 +49,18 @@ export function availability(value: boolean) {
     boolean
   >;
 }
+
+/**
+ * Give a fixture account its business/user type, as the sign-in flow does with
+ * POST /api/auth/account-type. Platform admins in fixtures need no type.
+ */
+export async function setAccountType(
+  pool: import("pg").Pool,
+  userId: string,
+  accountType: "business" | "user",
+) {
+  await pool.query(
+    "INSERT INTO octolab.account_types(user_id,account_type,source) VALUES($1,$2,'chosen') ON CONFLICT(user_id) DO NOTHING",
+    [userId, accountType],
+  );
+}

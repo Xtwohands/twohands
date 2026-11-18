@@ -3,12 +3,26 @@ import { z } from "zod";
 import { FundingError, FundingService } from "./funding.js";
 import { StripeFundingService } from "./stripe-funding.js";
 export function stripeWebhookRoute(app: Express, stripe: StripeFundingService) {
-  // This exact endpoint uses Stripe signatures instead of the account credential.
-  // It must precede all JSON parsing so signature verification receives original bytes.
-  app.post(
-    "/api/webhooks/stripe",
-    express.raw({ type: "application/json", limit: "512kb" }),
-    async (req, res) => {
+  // These exact endpoints use Stripe signatures instead of the account credential.
+  // They must precede all JSON parsing so signature verification receives original bytes.
+  // Sandbox and live events have separate endpoints and signing secrets: the
+  // path, not the payload, decides which rail verifies an event.
+  for (const [path, mode] of [
+    ["/api/webhooks/stripe", "test"],
+    ["/api/webhooks/stripe/live", "live"],
+  ] as const)
+    app.post(
+      path,
+      express.raw({ type: "application/json", limit: "512kb" }),
+      webhookHandler(stripe, mode),
+    );
+}
+function webhookHandler(
+  stripe: StripeFundingService,
+  mode: "test" | "live",
+): express.RequestHandler {
+  return async (req, res) => {
+    {
       if (!Buffer.isBuffer(req.body)) {
         res
           .status(415)
@@ -21,7 +35,7 @@ export function stripeWebhookRoute(app: Express, stripe: StripeFundingService) {
         return;
       }
       try {
-        res.json(await stripe.webhook(req.body, signature));
+        res.json(await stripe.webhook(req.body, signature, mode));
       } catch (error) {
         res.status(error instanceof FundingError ? error.status : 500).json({
           error:
@@ -30,8 +44,8 @@ export function stripeWebhookRoute(app: Express, stripe: StripeFundingService) {
               : "Stripe event processing failed. Retry delivery.",
         });
       }
-    },
-  );
+    }
+  };
 }
 export function fundingRoutes(
   app: Express,
@@ -72,7 +86,12 @@ export function fundingRoutes(
           );
           return {
             ...summary,
-            ...(light ? { stripe: stripe.status() } : await stripe.summary()),
+            ...(light
+              ? {
+                  stripe: await stripe.accountStatus(),
+                  wallet: await stripe.walletStatus(),
+                }
+              : await stripe.summary()),
             stripeDeposits,
             totalDeposits: summary.totalDeposits + stripeDeposits,
           };

@@ -24,7 +24,12 @@ import { CopyButton, Empty, InlineError, date } from "./observation-ui";
 import type { DepositIntent } from "../server/funding-types";
 import "./funding.css";
 
-import { testUsdc } from "./funding-format";
+import {
+  creditChange,
+  postingLabel,
+  sandboxCredits,
+  testUsdc,
+} from "./funding-format";
 export { testUsdc } from "./funding-format";
 const statuses: Record<DepositIntent["status"], string> = {
   awaiting_transfer: "Awaiting transfer",
@@ -58,21 +63,40 @@ export function FundingView() {
     setOpen(true);
   }
   const instructions = summary?.network;
+  // A live account pays with real money. It sees its wallet and card payments
+  // only; the test-credit balance, on-chain test deposits and their ledger are
+  // sandbox features and are not shown.
+  const live =
+    summary?.stripe?.mode === "live" || summary?.wallet?.mode === "live";
   return (
     <div className="ws-funding">
       <InlineError message={error} />
-      <div className="ws-funding-notice">
-        <Badge variant="outline">
-          {summary?.enabled || summary?.stripe?.enabled
-            ? "Sandbox only"
-            : "Payments disabled"}
-        </Badge>
-        <p>
-          {summary?.enabled || summary?.stripe?.enabled
-            ? "Stripe test payments and Base Sepolia USDC add test credits only. Test credits do not pay for live tool calls. No real-money deposits are accepted."
-            : "Payments are disabled. You can connect an agent without making a deposit. Test credits are separate from live tool usage. No real-money deposits are accepted."}
-        </p>
-      </div>
+      {live ? (
+        <div className="ws-funding-notice">
+          <Badge variant="outline">
+            {summary?.stripe?.enabled ? "Card payments" : "Top-ups paused"}
+          </Badge>
+          <p>
+            {summary?.stripe?.enabled
+              ? "Top-ups are real card payments processed by Stripe. Verified payments add prepaid credits that pay for this account’s tool calls."
+              : "Card top-ups are paused. Your credits and payment history are kept."}{" "}
+            {summary?.refundTerms}
+          </p>
+        </div>
+      ) : (
+        <div className="ws-funding-notice">
+          <Badge variant="outline">
+            {summary?.enabled || summary?.stripe?.enabled
+              ? "Sandbox only"
+              : "Payments disabled"}
+          </Badge>
+          <p>
+            {summary?.enabled || summary?.stripe?.enabled
+              ? "Stripe test payments and Base Sepolia USDC add test credits only. Test credits do not pay for live tool calls. No real-money deposits are accepted."
+              : "Payments are disabled. You can connect an agent without making a deposit. Test credits are separate from live tool usage. No real-money deposits are accepted."}
+          </p>
+        </div>
+      )}
       {loading ? (
         <div className="ws-loading" role="status">
           Loading deposit history…
@@ -84,75 +108,149 @@ export function FundingView() {
             ref={paymentMethods}
             className="ws-funding-grid"
             role="group"
-            aria-label="Test funding options"
+            aria-label={live ? "Credit top-up options" : "Test funding options"}
             tabIndex={-1}
           >
-            <section className="ws-panel ws-balance-card">
-              <span>Your test balance</span>
-              <strong>
-                {summary ? testUsdc(summary.balanceUnits) : "—"}
-                <small>test credits</small>
-              </strong>
-              <p>
-                {summary?.totalDeposits ?? 0} verified deposits · Separate from
-                estimated tool usage
-              </p>
-            </section>
-            <section className="ws-panel ws-funding-method">
-              <header>
-                <div>
-                  <h2>USDC on Base Sepolia</h2>
-                  <p>Verified on-chain deposits</p>
-                </div>
-                <Badge variant="outline">
-                  {summary?.enabled ? "Available" : "Unavailable"}
-                </Badge>
-              </header>
-              <div>
+            {!live && (
+              <section className="ws-panel ws-balance-card">
+                <span>Your test balance</span>
+                <strong>
+                  {summary ? testUsdc(summary.balanceUnits) : "—"}
+                  <small>test credits</small>
+                </strong>
                 <p>
-                  {summary?.enabled
-                    ? "Send an exact amount from your wallet, submit the transaction hash, and check its status. Test credits are added once the matching transfer reaches the network’s finalized block."
-                    : "Test deposits are not enabled for this service. You can continue setting up your agent without adding credits."}
+                  {summary?.totalDeposits ?? 0} verified deposits · Separate
+                  from estimated tool usage
                 </p>
-                {!summary?.enabled && (
-                  <div className="ws-funding-setup">
-                    <strong>On-chain deposits are unavailable</strong>
-                    <p>
-                      No wallet setup or transfer is needed. Deposits will be
-                      available when Two Hands enables this payment method.
-                    </p>
+              </section>
+            )}
+            {(live || summary?.wallet?.enforced || summary?.wallet?.active) &&
+              summary?.wallet && (
+                <section className="ws-panel ws-balance-card">
+                  <span>Available credits</span>
+                  <strong>
+                    {sandboxCredits(summary.wallet.availableMicros)}
+                    <small>{live ? "USD" : "sandbox"}</small>
+                  </strong>
+                  <p>
+                    Held for in-progress calls:{" "}
+                    {sandboxCredits(summary.wallet.heldMicros)} · Charged for
+                    tool calls: {sandboxCredits(summary.wallet.chargedMicros)}
+                    {summary.wallet.frozen
+                      ? " · Paid tools are paused while a payment is under review"
+                      : !summary.wallet.enforced
+                        ? " · Credit billing is paused; your balance is kept"
+                        : ""}
+                  </p>
+                </section>
+              )}
+            {!live && (
+              <section className="ws-panel ws-funding-method">
+                <header>
+                  <div>
+                    <h2>USDC on Base Sepolia</h2>
+                    <p>Verified on-chain deposits</p>
                   </div>
-                )}
-                <Button
-                  disabled={!summary?.enabled}
-                  onClick={() => {
-                    key.current = crypto.randomUUID();
-                    setSelectedId(undefined);
-                    setFormError("");
-                    setOpen(true);
-                  }}
-                >
-                  <Plus />
-                  Add test credits
-                </Button>
-                {summary?.enabled && (
-                  <>
-                    <br />
-                    <a
-                      href="https://faucet.circle.com/"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
-                      Get test USDC
-                      <ArrowUpRight size={14} />
-                    </a>
-                  </>
-                )}
-              </div>
-            </section>
+                  <Badge variant="outline">
+                    {summary?.enabled ? "Available" : "Unavailable"}
+                  </Badge>
+                </header>
+                <div>
+                  <p>
+                    {summary?.enabled
+                      ? "Send an exact amount from your wallet, submit the transaction hash, and check its status. Test credits are added once the matching transfer reaches the network’s finalized block."
+                      : "Test deposits are not enabled for this service. You can continue setting up your agent without adding credits."}
+                  </p>
+                  {!summary?.enabled && (
+                    <div className="ws-funding-setup">
+                      <strong>On-chain deposits are unavailable</strong>
+                      <p>
+                        No wallet setup or transfer is needed. Deposits will be
+                        available when Two Hands enables this payment method.
+                      </p>
+                    </div>
+                  )}
+                  <Button
+                    disabled={!summary?.enabled}
+                    onClick={() => {
+                      key.current = crypto.randomUUID();
+                      setSelectedId(undefined);
+                      setFormError("");
+                      setOpen(true);
+                    }}
+                  >
+                    <Plus />
+                    Add test credits
+                  </Button>
+                  {summary?.enabled && (
+                    <>
+                      <br />
+                      <a
+                        href="https://faucet.circle.com/"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        Get test USDC
+                        <ArrowUpRight size={14} />
+                      </a>
+                    </>
+                  )}
+                </div>
+              </section>
+            )}
             <StripeFundingPanel summary={summary} refresh={refresh} />
           </div>
-          {(summary?.enabled || !!summary?.intents.length) && (
+          {live && (
+            <section className="ws-panel">
+              <header>
+                <div>
+                  <h2>Credit activity</h2>
+                  <p>
+                    Top-ups, tool call charges, refunds and adjustments, newest
+                    first.
+                  </p>
+                </div>
+              </header>
+              {summary?.walletEntries?.length ? (
+                <div
+                  className="ws-table-scroll"
+                  tabIndex={0}
+                  role="region"
+                  aria-label="Credit activity"
+                >
+                  <table className="ws-table">
+                    <thead>
+                      <tr>
+                        <th>Change</th>
+                        <th>Reason</th>
+                        <th>Recorded</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {summary.walletEntries.map((entry, index) => (
+                        <tr key={`${entry.createdAt}-${index}`}>
+                          <td>
+                            <strong>{creditChange(entry.micros)}</strong>
+                          </td>
+                          <td>{postingLabel(entry.kind)}</td>
+                          <td>{date(entry.createdAt)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <Empty title="No credit activity yet">
+                  Your first verified top-up will appear here.
+                </Empty>
+              )}
+              <div className="ws-panel-note">
+                Each tool call is charged its verified provider cost plus 10%.
+                Each card payment has a Stripe receipt under Card payments.
+              </div>
+            </section>
+          )}
+          {!live && (summary?.enabled || !!summary?.intents.length) && (
             <section className="ws-panel">
               <header>
                 <div>
@@ -248,69 +346,71 @@ export function FundingView() {
               </div>
             </section>
           )}
-          {(summary?.enabled ||
-            summary?.stripe?.enabled ||
-            !!summary?.entries?.length) && (
-            <section className="ws-panel">
-              <header>
-                <div>
-                  <h2>Credit ledger</h2>
-                  <p>
-                    Verified deposits, refunds, and dispute holds across both
-                    methods.
-                  </p>
-                </div>
-              </header>
-              {summary?.entries?.length ? (
-                <div
-                  className="ws-table-scroll"
-                  tabIndex={0}
-                  role="region"
-                  aria-label="Credit ledger"
-                >
-                  <table className="ws-table">
-                    <thead>
-                      <tr>
-                        <th>Change</th>
-                        <th>Method</th>
-                        <th>Reason</th>
-                        <th>Recorded</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {summary.entries.map((entry) => (
-                        <tr key={entry.id}>
-                          <td>
-                            <strong>
-                              {entry.deltaUnits > 0 ? "+" : "−"}
-                              {testUsdc(Math.abs(entry.deltaUnits))}
-                            </strong>{" "}
-                            test credits
-                          </td>
-                          <td>
-                            {entry.source === "stripe"
-                              ? "Stripe"
-                              : "USDC on Base Sepolia"}
-                          </td>
-                          <td>{entry.kind.replaceAll("_", " ")}</td>
-                          <td>{date(entry.createdAt)}</td>
+          {!live &&
+            (summary?.enabled ||
+              summary?.stripe?.enabled ||
+              !!summary?.entries?.length) && (
+              <section className="ws-panel">
+                <header>
+                  <div>
+                    <h2>Credit ledger</h2>
+                    <p>
+                      Verified deposits, refunds, and dispute holds across both
+                      methods.
+                    </p>
+                  </div>
+                </header>
+                {summary?.entries?.length ? (
+                  <div
+                    className="ws-table-scroll"
+                    tabIndex={0}
+                    role="region"
+                    aria-label="Credit ledger"
+                  >
+                    <table className="ws-table">
+                      <thead>
+                        <tr>
+                          <th>Change</th>
+                          <th>Method</th>
+                          <th>Reason</th>
+                          <th>Recorded</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                      </thead>
+                      <tbody>
+                        {summary.entries.map((entry) => (
+                          <tr key={entry.id}>
+                            <td>
+                              <strong>
+                                {entry.deltaUnits > 0 ? "+" : "−"}
+                                {testUsdc(Math.abs(entry.deltaUnits))}
+                              </strong>{" "}
+                              test credits
+                            </td>
+                            <td>
+                              {entry.source === "stripe"
+                                ? "Stripe"
+                                : "USDC on Base Sepolia"}
+                            </td>
+                            <td>{entry.kind.replaceAll("_", " ")}</td>
+                            <td>{date(entry.createdAt)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <Empty title="No credit entries yet">
+                    A verified deposit will create its first credit receipt
+                    here.
+                  </Empty>
+                )}
+                <div className="ws-panel-note">
+                  One test USD or one test USDC equals one test credit. This
+                  ledger is separate from provider spending authorization.
                 </div>
-              ) : (
-                <Empty title="No credit entries yet">
-                  A verified deposit will create its first credit receipt here.
-                </Empty>
-              )}
-              <div className="ws-panel-note">
-                One test USD or one test USDC equals one test credit. This
-                ledger is separate from provider spending authorization.
-              </div>
-            </section>
-          )}
-          {(summary?.enabled || !!summary?.intents.length) && (
+              </section>
+            )}
+          {!live && (summary?.enabled || !!summary?.intents.length) && (
             <section className="ws-panel">
               <header>
                 <div>

@@ -47,6 +47,7 @@ describe("OAuth configuration guards", () => {
       app: ReturnType<typeof createApp>;
     const user = randomUUID(),
       other = randomUUID(),
+      business = randomUUID(),
       clientId = randomUUID();
     const resource = "https://oauth-fixture.example/mcp";
     const identities = new Map<string, VerifiedIdentity>();
@@ -165,6 +166,7 @@ describe("OAuth configuration guards", () => {
       for (const [token, id] of [
         ["browser", user],
         ["other-browser", other],
+        ["business-browser", business],
       ]) {
         const identity = {
           userId: id,
@@ -199,6 +201,12 @@ describe("OAuth configuration guards", () => {
           return identity;
         },
       );
+      await accounts.chooseAccountType(identities.get("other-browser")!, {
+        accountType: "user",
+      });
+      await accounts.chooseAccountType(identities.get("business-browser")!, {
+        accountType: "business",
+      });
       app = createApp(
         store,
         undefined,
@@ -500,6 +508,20 @@ describe("OAuth configuration guards", () => {
             .set(auth(await agentToken()))
         ).status,
       ).toBe(200);
+    });
+    it("refuses a business account's agent grant without creating personal storage", async () => {
+      const id = await pending();
+      const response = await request(app)
+        .post(`/api/agent-auth/requests/${id}`)
+        .set(auth("business-browser"))
+        .send({ allow: true });
+      expect(response.status).toBe(403);
+      expect(response.body.error).toContain("business account");
+      const result = await db.pool.query(
+        "SELECT 1 FROM octolab.workspace_memberships WHERE user_id=$1",
+        [business],
+      );
+      expect(result.rowCount).toBe(0);
     });
     it("does not change ordinary browser token claims", async () => {
       const input = {

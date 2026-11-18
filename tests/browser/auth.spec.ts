@@ -49,6 +49,12 @@ async function mockAuth(
       },
     ],
     hasPersonalAccount: !empty && role === "user",
+    // Admins are exempt from account types; tests can set this to null to see the chooser.
+    accountType: (role === "company"
+      ? "business"
+      : role === "user"
+        ? "user"
+        : null) as "business" | "user" | null,
     setupCalls: 0,
     revoked: false,
   };
@@ -180,6 +186,7 @@ async function mockAuth(
         ? { error: "This session ended." }
         : {
             user: { id: state.actorId, email: "account@fixture.invalid" },
+            accountType: state.accountType,
             hasPersonalAccount: !target && state.hasPersonalAccount,
             isAdmin: state.role === "admin" && !headers["x-octolab-preview"],
             canPreview: state.role === "admin",
@@ -346,7 +353,11 @@ async function mockAuth(
   });
   return state;
 }
-async function login(page: Page, destination = "/#dashboard/activity") {
+async function login(
+  page: Page,
+  destination = "/#dashboard/activity",
+  { waitForApp = true } = {},
+) {
   await page.goto(destination);
   await expect(
     page.getByRole("heading", { name: "Continue to twohands" }),
@@ -361,6 +372,14 @@ async function login(page: Page, destination = "/#dashboard/activity") {
     .getByLabel("Password", { exact: true })
     .fill("fixture-password-123");
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  // Signed-out visitors sign in at /login; wait until the app has moved on, so a
+  // following page.goto() doesn't reload the page mid-sign-in.
+  if (waitForApp) await page.waitForURL((url) => url.pathname !== "/login");
+}
+/** Activity hides the refresh control unless it has an error; Requests keeps it. */
+async function refreshAccount(page: Page) {
+  await page.getByRole("link", { name: "View requests", exact: true }).click();
+  await page.getByRole("button", { name: "Refresh account" }).click();
 }
 async function openNav(page: Page) {
   if (test.info().project.name !== "mobile") return;
@@ -472,7 +491,7 @@ test("the account menu provides settings and help without a customer picker", as
   await page.goto("/#dashboard/connections");
   await expect(
     page.getByText(
-      "Two Hands manages provider availability. Your API keys connect agents to this account.",
+      "Two Hands manages provider availability. Use browser sign-in for coding agents or API keys for product integrations.",
     ),
   ).toBeVisible();
 });
@@ -498,8 +517,8 @@ test("a delayed profile response cannot restore the previous account after sign-
     });
     finished = true;
   });
-  // Private receipt rows and manual refresh live in Request log.
-  await login(page, "/#dashboard/requests");
+  // The profile response is held back on purpose, so the page stays on /login.
+  await login(page, undefined, { waitForApp: false });
   await expect.poll(() => waiting).toBe(true);
   await page.evaluate(() =>
     window.dispatchEvent(new Event("octolab-session-invalid")),
@@ -518,12 +537,12 @@ test("a delayed profile response cannot restore the previous account after sign-
     .getByLabel("Password", { exact: true })
     .fill("fixture-password-123");
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
-  await expect(page.locator(".ws-activity-table")).toContainText(
+  await expect(page.locator(".ws-overview-requests")).toContainText(
     "Private B receipt",
   );
   release();
   await expect.poll(() => finished).toBe(true);
-  await page.getByRole("button", { name: "Refresh account" }).click();
+  await refreshAccount(page);
   await expect(page.locator(".ws-activity-table")).toContainText(
     "Private B receipt",
   );
@@ -877,7 +896,7 @@ test("admin switches selected companies, drops late reports, and retains return 
   await expect.poll(() => finished).toBe(true);
   await expect(page.locator("body")).not.toContainText(/987[,\s]?654/);
   await expect(
-    page.getByRole("heading", { name: "No usage available yet", exact: true }),
+    page.getByText("No usage available yet", { exact: true }).first(),
   ).toBeVisible();
   await page.goto(`/#company/${b.id}/overview`);
   await expect(
@@ -1392,4 +1411,105 @@ test("a previous settings response cannot overwrite the next signed-in admin's c
   await expect(
     page.getByText("Settings saved. New calls use this revision."),
   ).toHaveCount(0);
+});
+
+/** Record POST /api/auth/account-type and apply it to the mocked profile. */
+async function mockAccountTypeChoice(
+  page: Page,
+  state: Awaited<ReturnType<typeof mockAuth>>,
+) {
+  const sent: unknown[] = [];
+  await page.route("**/api/auth/account-type", async (route) => {
+    const body = route.request().postDataJSON();
+    sent.push(body);
+    state.accountType = body.accountType;
+    await route.fulfill({ json: { accountType: body.accountType } });
+  });
+  return sent;
+}
+
+test("logged-out visitors go to /login, with Business preselected for the company area", async ({
+  page,
+}) => {
+  await mockAuth(page);
+  await page.goto("/#company");
+  await expect(page).toHaveURL(/\/login#company$/);
+  const picker = page.getByRole("group", {
+    name: "New to Two Hands? Choose an account type",
+  });
+  await expect(picker.getByRole("radio", { name: /Business/ })).toBeChecked();
+  await page.goto("/#dashboard");
+  await expect(page).toHaveURL(/\/login#dashboard$/);
+  await expect(picker.getByRole("radio", { name: /User/ })).toBeChecked();
+  // The email sign-up form offers the same choice.
+  await page
+    .getByRole("button", { name: "Continue with email", exact: true })
+    .click();
+  await page.getByRole("button", { name: "Create an account" }).click();
+  await expect(
+    page
+      .getByRole("group", { name: "Account type" })
+      .getByRole("radio", { name: /Business/ }),
+  ).toBeVisible();
+});
+
+test("a new account chooses its type once and lands in its own area", async ({
+  page,
+}) => {
+  const state = await mockAuth(page);
+  state.accountType = null;
+  state.hasPersonalAccount = false;
+  const sent = await mockAccountTypeChoice(page, state);
+  await login(page, "/#dashboard", { waitForApp: false });
+  await expect(
+    page.getByRole("heading", { name: "How will you use Two Hands?" }),
+  ).toBeVisible();
+  // People click the card; the radio inside it is visually hidden.
+  await page.locator(".account-type-option", { hasText: "Business" }).click();
+  await page.getByRole("button", { name: "Continue as a business" }).click();
+  await expect(page).toHaveURL(/:\d+\/#company$/);
+  expect(sent).toEqual([{ accountType: "business" }]);
+});
+
+test("a type picked at sign-up is saved after sign-in without asking again", async ({
+  page,
+}) => {
+  const state = await mockAuth(page);
+  state.accountType = null;
+  const sent = await mockAccountTypeChoice(page, state);
+  await page.addInitScript(() =>
+    localStorage.setItem("two-hands-account-type-choice", "user"),
+  );
+  await login(page, "/#dashboard", { waitForApp: false });
+  await expect(page).toHaveURL(/:\d+\/#dashboard$/);
+  expect(sent).toEqual([{ accountType: "user" }]);
+  await expect(
+    page.getByRole("heading", { name: "How will you use Two Hands?" }),
+  ).toHaveCount(0);
+});
+
+test("user accounts cannot open the company area", async ({ page }) => {
+  await mockAuth(page);
+  await login(page);
+  await page.goto("/#company");
+  await expect(
+    page.getByRole("heading", {
+      name: "This area is for business accounts",
+    }),
+  ).toBeVisible();
+  await page.getByRole("link", { name: "Open your dashboard" }).click();
+  await expect(page).toHaveURL(/#dashboard$/);
+});
+
+test("business accounts cannot open the user dashboard", async ({ page }) => {
+  await mockAuth(page, false, "company");
+  await login(page, "/#company");
+  await expect(page).toHaveURL(/:\d+\/#company$/);
+  await page.goto("/#dashboard/credits");
+  await expect(
+    page.getByRole("heading", { name: "This area is for user accounts" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: "Open your company dashboard" }),
+  ).toHaveAttribute("href", "#company");
 });

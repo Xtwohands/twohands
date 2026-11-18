@@ -288,7 +288,7 @@ function Header() {
         <div className="th-header-actions">
           {canSignIn && (
             <Button asChild variant="ghost" size="sm">
-              <a href="#signin">Sign in</a>
+              <a href="/login">Sign in</a>
             </Button>
           )}
           <Button asChild variant="brand" size="sm">
@@ -1088,12 +1088,21 @@ function Footer() {
           <div>
             <h2>Account</h2>
             <a href={dashboard}>Dashboard</a>
-            {enabled && !profile && <a href="#signin">Sign in</a>}
+            {enabled && !profile && <a href="/login">Sign in</a>}
           </div>
           <div>
             <h2>Developers</h2>
             <a href="#home/developers">MCP setup</a>
             <a href="#home/resources">Resources</a>
+          </div>
+          <div>
+            <h2>For tool companies</h2>
+            <a href="/#company">List your tool</a>
+          </div>
+          <div>
+            <h2>Legal</h2>
+            <a href="/privacy">Privacy</a>
+            <a href="/terms">Terms</a>
           </div>
         </nav>
       </div>

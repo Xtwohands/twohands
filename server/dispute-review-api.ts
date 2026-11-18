@@ -4,10 +4,12 @@ import { z } from "zod";
 import { config } from "./config.js";
 import { FundingError } from "./funding.js";
 import { DisputeReviewService } from "./dispute-review.js";
+import { WalletOperations } from "./wallet-operations.js";
 export function disputeReviewRoutes(
   app: Express,
   service: DisputeReviewService,
   accountAccess?: express.RequestHandler,
+  operations = new WalletOperations(service.stripe),
 ) {
   const router = express.Router();
   if (accountAccess) router.use(accountAccess);
@@ -117,6 +119,89 @@ export function disputeReviewRoutes(
           return service.detail(id);
         }),
       );
+    }),
+  );
+  // Operator money actions. Each is verified against Stripe, runs under the
+  // account lock, and records the authenticated administrator.
+  router.post(
+    "/disputes/:id/release",
+    handle(async (req, res) => {
+      const id = z.uuid().parse(req.params.id);
+      const released = await operations.releaseDispute(
+        id,
+        req.body,
+        res.locals.adminActor,
+      );
+      res.json({
+        ...released,
+        detail: await service.forPayment(id, () => service.detail(id)),
+      });
+    }),
+  );
+  router.get(
+    "/payments",
+    handle(async (req, res) => {
+      const q = z
+        .object({ q: z.string().max(300).default("") })
+        .strict()
+        .parse(req.query);
+      res.json({ items: await operations.payments(q.q) });
+    }),
+  );
+  router.get(
+    "/refunds/:id",
+    handle(async (req, res) => {
+      res.json(await operations.refundQuote(z.uuid().parse(req.params.id)));
+    }),
+  );
+  router.post(
+    "/refunds/:id",
+    handle(async (req, res) => {
+      res.json(
+        await operations.requestRefund(
+          z.uuid().parse(req.params.id),
+          req.body,
+          res.locals.adminActor,
+        ),
+      );
+    }),
+  );
+  router.post(
+    "/refund-requests/:id/resolve",
+    handle(async (req, res) => {
+      z.object({}).strict().parse(req.body);
+      res.json(
+        await operations.resolveRefund(
+          z.uuid().parse(req.params.id),
+          res.locals.adminActor,
+        ),
+      );
+    }),
+  );
+  router.get(
+    "/alerts",
+    handle(async (_req, res) => {
+      res.json({ items: await operations.alerts() });
+    }),
+  );
+  router.post(
+    "/alerts/:id/resolve",
+    handle(async (req, res) => {
+      res.json(
+        await operations.resolveAlert(
+          z.uuid().parse(req.params.id),
+          req.body,
+          res.locals.adminActor,
+        ),
+      );
+    }),
+  );
+  // Rail configuration detail is for operators. Customers only ever see
+  // "not available" without the reason.
+  router.get(
+    "/status",
+    handle(async (_req, res) => {
+      res.json(operations.railStatus());
     }),
   );
   router.use((_req, res) => {

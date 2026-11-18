@@ -158,8 +158,18 @@ export function accountRoutes(
       accountFailure(error, res);
     }
   });
+  // Set this account's type (business or user) once, right after the first sign-in.
+  router.post("/account-type", async (req, res) => {
+    try {
+      res.json(await accounts.chooseAccountType(res.locals.account, req.body));
+    } catch (error) {
+      accountFailure(error, res);
+    }
+  });
   router.post("/companies", async (req, res) => {
     try {
+      // Only business accounts can register a tool company.
+      await accounts.assertAccountType(res.locals.account, "business");
       res
         .status(201)
         .json(await accounts.companies.register(res.locals.account, req.body));
@@ -212,6 +222,7 @@ export function accountAccess(
         );
         return;
       }
+      await accounts.assertAccountType(identity, "user");
       if (!accounts.isAdmin(identity.userId) && operatorRestricted(req, path))
         throw new AccountError(
           403,
@@ -286,6 +297,9 @@ export function companyAccountRoutes(app: Express, accounts?: Accounts) {
     try {
       if (!sameOriginWrite(req, res)) return;
       res.locals.account = await accounts.identity(req);
+      // Company pages are for business accounts. /admin/companies stays admin-only.
+      if (/^\/companies(?:\/|$)/i.test(req.path))
+        await accounts.assertAccountType(res.locals.account, "business");
       next();
     } catch (error) {
       accountFailure(error, res);

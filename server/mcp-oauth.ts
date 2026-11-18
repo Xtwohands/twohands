@@ -185,6 +185,7 @@ export class McpOAuth {
       if (row.state !== null) redirect.searchParams.set("state", row.state);
       return { redirectUrl: redirect.href };
     }
+    await this.accounts.assertAccountType(identity, "user");
     const workspace = await this.accounts.personalAccountScope(identity);
     const client = await this.accounts.database.pool.connect();
     try {
@@ -287,6 +288,7 @@ export class McpOAuth {
   }
   async workspace(identity: VerifiedIdentity) {
     const settings = this.requireEnabled();
+    await this.accounts.assertAccountType(identity, "user");
     if (
       !identity.oauthClientId ||
       !identity.oauthGrantId ||

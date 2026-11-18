@@ -14,6 +14,7 @@ import {
   DialogTitle,
 } from "./components/ui/dialog";
 import { CopyButton, Empty, InlineError, date } from "./observation-ui";
+import { WalletRefundsPanel } from "./WalletRefundsPanel";
 import "./user-dashboard.css";
 import type {
   DisputeReviewDetail,
@@ -29,6 +30,8 @@ const usd = (cents: number) =>
   new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(
     cents / 100,
   );
+const unit = (payment: { mode?: "test" | "live" }) =>
+  payment.mode === "live" ? "USD" : "test USD";
 export function DisputeReviewView() {
   const account = useAccount();
   const accountAccess = account.enabled && !!account.profile?.isAdmin;
@@ -49,6 +52,7 @@ export function DisputeReviewView() {
   const [conflict, setConflict] = useState(false);
   const epoch = useRef(0);
   const requestKey = useRef(crypto.randomUUID());
+  const releaseKey = useRef(crypto.randomUUID());
   const lock = useCallback((message = "") => {
     epoch.current++;
     setToken("");
@@ -183,17 +187,18 @@ export function DisputeReviewView() {
         <div>
           <h1>Payment disputes</h1>
           <p>
-            Review disputed test payments, saved evidence, and operator
-            decisions.
+            Review disputed payments, release holds once Stripe closes a
+            dispute, and refund unused credits.
           </p>
         </div>
-        <Badge variant="outline">Admin · test mode</Badge>
+        <Badge variant="outline">Admin</Badge>
       </div>
       <div className="ws-funding-notice">
         <ShieldTick size={18} />
         <p>
           Marking a case reviewed keeps the customer’s credits on hold. Stripe
-          determines the dispute outcome.
+          determines the dispute outcome; a hold can be released only after
+          Stripe has closed the dispute.
         </p>
       </div>
       <InlineError message={error} />
@@ -349,7 +354,9 @@ export function DisputeReviewView() {
                             {c.payment.chargeId}
                           </small>
                         </td>
-                        <td>{usd(c.payment.amountCents)} test USD</td>
+                        <td>
+                          {usd(c.payment.amountCents)} {unit(c.payment)}
+                        </td>
                         <td>
                           {labels[c.reviewStatus]}
                           {c.evidenceChanged && (
@@ -370,8 +377,7 @@ export function DisputeReviewView() {
               </div>
             ) : (
               <Empty title="No matching disputes" icon={ShieldTick}>
-                Disputed Stripe test payments appear here after server
-                verification.
+                Disputed Stripe payments appear here after server verification.
               </Empty>
             )}
             <div className="ws-dispute-pagination">
@@ -394,6 +400,7 @@ export function DisputeReviewView() {
               </Button>
             </div>
           </section>
+          <WalletRefundsPanel admin={admin} />
         </>
       )}
       <Dialog
@@ -407,7 +414,9 @@ export function DisputeReviewView() {
             <DialogTitle>Dispute review</DialogTitle>
             <DialogDescription>
               Saved Stripe payment evidence and separate admin review history.
-              All amounts are in test mode.
+              {detail?.item.payment.mode === "live"
+                ? " This is a real-money payment."
+                : " This payment is in test mode."}
             </DialogDescription>
           </DialogHeader>
           <InlineError message={detailError} />
@@ -416,7 +425,11 @@ export function DisputeReviewView() {
               <div className="ws-deposit-state">
                 <ShieldTick />
                 <div>
-                  <strong>Credit hold retained</strong>
+                  <strong>
+                    {detail.item.payment.disputeResolution
+                      ? "Dispute hold released"
+                      : "Credit hold retained"}
+                  </strong>
                   <p>{detail.item.payment.message}</p>
                 </div>
               </div>
@@ -435,7 +448,8 @@ export function DisputeReviewView() {
                 <div>
                   <span>Payment</span>
                   <strong>
-                    {usd(detail.item.payment.amountCents)} test USD
+                    {usd(detail.item.payment.amountCents)}{" "}
+                    {unit(detail.item.payment)}
                   </strong>
                 </div>
                 <div>
@@ -569,6 +583,46 @@ export function DisputeReviewView() {
                   {busy ? "Saving…" : "Save review · retain hold"}
                 </Button>
               </form>
+              {!detail.item.payment.disputeResolution && (
+                <div className="ws-deposit-form">
+                  <p className="field-hint">
+                    Releasing the hold lifts the freeze on this account’s paid
+                    tools. It works only after Stripe has closed the dispute.
+                    Credits are restored if Stripe reinstated the payment, and
+                    not if the dispute was lost. The note above is saved with
+                    the release.
+                  </p>
+                  <Button
+                    variant="outline"
+                    disabled={busy || note.trim().length < 10}
+                    onClick={async () => {
+                      const current = epoch.current;
+                      setBusy(true);
+                      setDetailError("");
+                      try {
+                        const result = await admin<{
+                          detail: DisputeReviewDetail;
+                        }>(`/disputes/${detail.item.payment.id}/release`, {
+                          requestKey: releaseKey.current,
+                          note,
+                        });
+                        if (current === epoch.current) {
+                          setDetail(result.detail);
+                          releaseKey.current = crypto.randomUUID();
+                          setRefresh((v) => v + 1);
+                        }
+                      } catch (e) {
+                        if (current === epoch.current)
+                          setDetailError((e as Error).message);
+                      } finally {
+                        if (current === epoch.current) setBusy(false);
+                      }
+                    }}
+                  >
+                    Release dispute hold
+                  </Button>
+                </div>
+              )}
               <h3>Review audit history</h3>
               {detail.history.length ? (
                 <ol className="ws-dispute-history">
