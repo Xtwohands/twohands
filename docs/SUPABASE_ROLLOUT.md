@@ -1,5 +1,15 @@
 # Supabase rollout checkpoint
 
+## Current environment boundary — 2026-11-15
+
+The public app at [twohands.tech](https://twohands.tech) returned `200` with `{ "ok": true }` from `/healthz` during the environment investigation. Its public Auth settings identify the same Supabase project as the existing local `.env` database connection. That database is production, not a development target. The exact Render deployment revision and complete hosted account/email journeys were not verified by that health check.
+
+Development now uses the explicit [development setup](DEVELOPMENT.md): the separate **Two Hands development** Supabase database/Auth project, `.env.development.local`, and `npm run db:migrate:dev`. The production runtime lock remains unchanged. After the user authorized pausing the `internwizard` project to release a free-project slot, the new development project was provisioned on 2026-11-15. All 14 application migrations, including connectors, are installed and checksum-verified there. Its session-pooler connection passed TLS verification. The PostgreSQL-backed app is running locally on frontend port 5175 and API port 3009, with its own Auth URL and exact local redirects. The new database had zero users, workspaces, and observation sessions at verification; anonymous account access returned 401. Actual signup, email delivery, and login still require verification. No production schema change or billing upgrade was performed. The connector migration absent from the inspected production ledger belongs to newer candidate code and is promoted only through a deliberate release.
+
+The notes below preserve earlier evidence. References to a canonical local runtime, port 3008, eight installed migrations, and “no public deployment” describe those dated checkpoints and are not current setup instructions.
+
+## Historical integration checkpoint
+
 Status on 2026-11-08:
 
 - Eight checked-in schema migrations are installed in the connected Supabase project, including workspace-scoped provider-suite revisions and operator allowances. The application migration ledger matches, and `db:migrate` verified all eight checksums through the actual application database connection.

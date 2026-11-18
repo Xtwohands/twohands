@@ -34,6 +34,7 @@ import {
 } from "./mcp-bridge.js";
 import { AccountError, type Accounts } from "./accounts.js";
 import { ApiKeyError, type ApiKeyService } from "./api-keys.js";
+import type { McpOAuth } from "./mcp-oauth.js";
 import type { Store } from "./store.js";
 
 export const MCP_PATH = "/mcp";
@@ -94,6 +95,7 @@ export function mcpAuthenticator(deps: {
   store: Store;
   apiKeys: ApiKeyService;
   accounts?: Accounts;
+  oauth?: McpOAuth;
 }): McpAuthenticator {
   const { store, apiKeys, accounts } = deps;
   const failure = (e: unknown): never => {
@@ -115,7 +117,16 @@ export function mcpAuthenticator(deps: {
           );
           return { id: `key:${key.id}`, credential };
         }
-        const identity = await accounts.identity(req);
+        const identity = await accounts.identity(req, true);
+        if (identity.oauthClientId) {
+          if (!deps.oauth)
+            throw new McpAuthError(401, "Agent sign-in is not enabled.");
+          await deps.oauth.workspace(identity);
+          return {
+            id: `oauth:${identity.userId}:${identity.oauthClientId}`,
+            credential,
+          };
+        }
         return { id: `account:${identity.userId}`, credential };
       }
       // Local SQLite mode: same host rule as `/api`.
@@ -218,6 +229,7 @@ export function mountMcpEndpoint(
   app: Express,
   authenticate: McpAuthenticator,
   options: McpHttpOptions = {},
+  resourceMetadata?: string,
 ) {
   const limits = { ...defaults, ...options };
   const sessions = new Map<string, Session>();
@@ -315,7 +327,7 @@ export function mountMcpEndpoint(
       const challenge: Record<string, string> =
         e.status === 401
           ? {
-              "WWW-Authenticate": `Bearer realm="two-hands-mcp"${req.header("authorization") ? ', error="invalid_token"' : ""}`,
+              "WWW-Authenticate": `Bearer realm="two-hands-mcp"${resourceMetadata ? `, resource_metadata="${resourceMetadata}"` : ""}${req.header("authorization") ? ', error="invalid_token"' : ""}`,
             }
           : {};
       return rpcError(res, e.status, e.message, challenge);

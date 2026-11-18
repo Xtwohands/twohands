@@ -375,7 +375,7 @@ test("connect agent opens instructions in place and restores focus", async ({
     await dialog.getByRole("button", { name: "Close", exact: true }).focus();
     await page.keyboard.press("Tab");
     await expect(
-      dialog.getByRole("button", { name: "Codex", exact: true }),
+      dialog.getByRole("tab", { name: "Use in my agent", exact: true }),
     ).toBeFocused();
     await page.keyboard.press("Escape");
     await expect(dialog).toHaveCount(0);
@@ -399,43 +399,70 @@ test("connection instructions change with the chosen client", async ({
       },
     });
   });
+  await page.route("**/api/auth/config", (route) =>
+    route.fulfill({
+      json: {
+        enabled: false,
+        oauth: { resource: "http://127.0.0.1:3101/mcp" },
+      },
+    }),
+  );
   await page.goto("/#dashboard/tools");
   await page
     .getByRole("button", { name: "Connect agent", exact: true })
     .click();
-  await expect(page.locator(".ws-setup-steps")).toContainText(
-    "npm run mcp:install -- codex",
-  );
-  await expect(page.locator(".ws-agent-environment")).toContainText(
-    `APILAYER_URL=${new URL("/api", page.url()).href}`,
-  );
-  await expect(page.locator(".ws-agent-environment")).toContainText(
-    "APILAYER_API_KEY=<your scoped key>",
-  );
-  await expect(
-    page.getByRole("dialog", { name: "Connect agent", exact: true }),
-  ).toHaveCSS("opacity", "1");
-  await captureJourney(page, "agent-connection-settings");
-  await page.getByRole("button", { name: "Claude", exact: true }).click();
-  await expect(page.locator(".ws-setup-steps")).toContainText(
-    "npm run mcp:install -- claude",
-  );
-  await page
-    .getByRole("button", { name: "Other MCP client", exact: true })
-    .click();
-  await expect(page.locator(".ws-setup-steps")).toContainText(
-    "npm run mcp:install -- project",
-  );
-  const install = page.locator(".ws-setup-steps li").nth(2);
-  await install.getByRole("button", { name: "Copy", exact: true }).click();
-  await expect(
-    install.getByRole("button", { name: "Copied", exact: true }),
-  ).toBeVisible();
+  const dialog = page.getByRole("dialog", {
+    name: "Connect agent",
+    exact: true,
+  });
+  const endpoint = new URL("/mcp", page.url()).href;
+  const setup = dialog.locator(".ws-remote-configuration");
+  const codexConfiguration = `codex mcp add apilayer --url "${endpoint}"\ncodex mcp login apilayer`;
+  await expect(setup.locator("code")).toHaveText(codexConfiguration);
+  await expect(dialog).not.toContainText("<your API key>");
+  await expect(dialog).not.toContainText("npm run");
+  await expect(dialog.locator(".ws-setup-steps li")).toHaveCount(3);
+  await setup.getByRole("button", { name: "Copy setup", exact: true }).click();
   expect(
     await page.evaluate(
       () => (window as unknown as { copiedCommand: string }).copiedCommand,
     ),
-  ).toBe("npm run mcp:install -- project");
+  ).toBe(codexConfiguration);
+  await captureJourney(page, "agent-connection-settings");
+  await dialog
+    .getByRole("button", { name: "Claude Code", exact: true })
+    .click();
+  const claudeCommand = `claude mcp add --transport http apilayer "${endpoint}"`;
+  await expect(setup.locator("code")).toHaveText(claudeCommand);
+  await dialog
+    .getByRole("button", { name: "Other MCP client", exact: true })
+    .click();
+  await expect(setup.locator("code")).toHaveText(endpoint);
+  await setup.getByRole("button", { name: "Copy setup", exact: true }).click();
+  expect(
+    await page.evaluate(
+      () => (window as unknown as { copiedCommand: string }).copiedCommand,
+    ),
+  ).toBe(endpoint);
+  await dialog
+    .getByRole("tab", { name: "Build into my product", exact: true })
+    .click();
+  await expect(dialog).toContainText("Create an API key");
+  await expect(setup.locator("code")).toContainText(
+    '"Authorization": "Bearer <your API key>"',
+  );
+  await setup
+    .getByRole("button", { name: "Copy configuration", exact: true })
+    .click();
+  const product = JSON.parse(
+    await page.evaluate(
+      () => (window as unknown as { copiedCommand: string }).copiedCommand,
+    ),
+  );
+  expect(product).toEqual({
+    url: endpoint,
+    headers: { Authorization: "Bearer <your API key>" },
+  });
   await expect(page).toHaveURL(/#dashboard\/tools$/);
 });
 
@@ -454,6 +481,9 @@ test("empty request log opens agent setup without leaving the log", async ({
   });
   await expect(dialog).toBeVisible();
   await expect(page).toHaveURL(/#dashboard\/requests$/);
+  await dialog
+    .getByRole("tab", { name: "Build into my product", exact: true })
+    .click();
   await dialog
     .getByRole("link", { name: "Manage API keys", exact: true })
     .click();

@@ -4,6 +4,7 @@ import { AccountGate } from "./AccountGate";
 import { ConnectAgentProvider } from "./ConnectAgentDialog";
 import { ObservationApp } from "./ObservationApp";
 import { AppErrorBoundary } from "./AppErrorBoundary";
+import { OAuthConsent } from "./OAuthConsent";
 import "@fontsource-variable/geist";
 import "@fontsource-variable/geist-mono";
 import "./theme.css";
@@ -46,7 +47,10 @@ createRoot(document.getElementById("root")!).render(
         <AccountGate>
           <ConnectAgentProvider>
             <Suspense fallback={<p>Loading Two Hands…</p>}>
-              {location.pathname.startsWith("/research") ? (
+              {location.pathname === "/oauth/consent" ||
+              new URL(location.href).searchParams.has("authorization_id") ? (
+                <OAuthConsent />
+              ) : location.pathname.startsWith("/research") ? (
                 <Legacy />
               ) : (
                 <ObservationApp />

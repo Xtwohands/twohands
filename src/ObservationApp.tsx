@@ -1579,7 +1579,7 @@ export function ObservationApp() {
                 <div className="settings-grid">
                   <Panel
                     title="Agent connection"
-                    action={<Badge variant="outline">Local MCP</Badge>}
+                    action={<Badge variant="outline">MCP</Badge>}
                   >
                     <div className="connection-detail">
                       <TerminalSquare />
@@ -1590,7 +1590,7 @@ export function ObservationApp() {
                         <p>
                           {connection.lastSeenAt
                             ? `Last request ${date(connection.lastSeenAt)}. This records a connection, not a continuous health check.`
-                            : "Connect the local MCP server to Claude desktop, Claude Code, or Codex."}
+                            : "Connect an MCP client to Two Hands."}
                         </p>
                       </div>
                     </div>
@@ -1606,35 +1606,16 @@ export function ObservationApp() {
                         ))}
                       </div>
                     )}
-                    <div className="setup-steps">
-                      <div>
-                        <span>1</span>
-                        <p>
-                          Install the local connection from the project folder.
-                        </p>
-                      </div>
-                      <div className="command-box">
-                        <code>npm run mcp:install</code>
-                        <CopyButton text="npm run mcp:install" />
-                      </div>
-                      <div>
-                        <span>2</span>
-                        <p>
-                          Restart Claude desktop, enable the project server in
-                          Claude Code, or start a new Codex session.
-                        </p>
-                      </div>
-                      <div>
-                        <span>3</span>
-                        <p>
-                          Ask your agent to use the connected tools. Sessions
-                          start automatically under the backend spending policy.
-                        </p>
-                      </div>
-                    </div>
+                    <Button
+                      variant="outline"
+                      onClick={() => openConnectAgent()}
+                    >
+                      Open connection setup
+                    </Button>
                     <p className="field-hint">
-                      Keep this local server running. Provider keys stay in the
-                      server’s environment.
+                      Connect a coding agent with browser sign-in, or configure
+                      your product backend with an API key. Provider credentials
+                      stay on the server.
                     </p>
                   </Panel>
                   <Panel title="Provider connections">

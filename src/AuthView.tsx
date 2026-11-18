@@ -162,6 +162,14 @@ export function AuthView({
     const url = new URL("/", location.origin);
     url.searchParams.set("auth_callback", "1");
     url.searchParams.set("auth_flow", flow);
+    const authorizationId = new URL(location.href).searchParams.get(
+      "authorization_id",
+    );
+    if (authorizationId && /^[A-Za-z0-9_-]{1,256}$/.test(authorizationId)) {
+      url.searchParams.set("authorization_id", authorizationId);
+      url.hash = "#oauth/consent";
+      return url.href;
+    }
     url.hash =
       /^#[a-z0-9/_-]+$/i.test(returnRoute) && returnRoute !== "#signin"
         ? returnRoute

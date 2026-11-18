@@ -8,6 +8,7 @@ import { z } from "zod";
 import { Accounts, AccountError, type VerifiedIdentity } from "./accounts.js";
 import { ApiKeyError, requiredApiKeyScope } from "./api-keys.js";
 import type { Store } from "./store.js";
+import type { McpOAuth } from "./mcp-oauth.js";
 export function sameOriginWrite(req: Request, res: Response): boolean {
   if (["GET", "HEAD", "OPTIONS"].includes(req.method)) return true;
   try {
@@ -96,9 +97,22 @@ export function accountPreviewAccess(accounts: Accounts) {
     }
   };
 }
-export function accountRoutes(app: Express, accounts?: Accounts) {
+export function accountRoutes(
+  app: Express,
+  accounts?: Accounts,
+  oauth?: McpOAuth,
+) {
   app.get("/api/auth/config", (_req, res) =>
-    res.json(accounts?.publicConfig() ?? { enabled: false }),
+    res.json(
+      accounts
+        ? {
+            ...accounts.publicConfig(),
+            ...(oauth?.settings
+              ? { oauth: { resource: oauth.settings.resource } }
+              : {}),
+          }
+        : { enabled: false },
+    ),
   );
   if (!accounts) return;
   const router = express.Router();
@@ -162,6 +176,7 @@ export function accountAccess(
   accounts: Accounts,
   store: Store,
   keys: import("./api-keys.js").ApiKeyService,
+  oauth?: McpOAuth,
 ) {
   return async (req: Request, res: Response, next: NextFunction) => {
     try {
@@ -184,7 +199,19 @@ export function accountAccess(
         });
         return;
       }
-      const identity = await accounts.identity(req);
+      const identity = await accounts.identity(req, true);
+      if (identity.oauthClientId) {
+        if (!oauth || !requiredApiKeyScope(req.method, `/api${path}`))
+          throw new AccountError(
+            403,
+            "This agent connection does not permit this operation.",
+          );
+        const workspace = await oauth.workspace(identity);
+        store.scope.run(workspace, () =>
+          store.actorScope.run({ kind: "account", id: identity.userId }, next),
+        );
+        return;
+      }
       if (!accounts.isAdmin(identity.userId) && operatorRestricted(req, path))
         throw new AccountError(
           403,

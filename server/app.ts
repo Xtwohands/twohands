@@ -23,6 +23,7 @@ import express from "express";
 import { ApiKeyError, requiredApiKeyScope } from "./api-keys.js";
 import { apiKeyRoutes } from "./api-key-api.js";
 import { mcpAuthenticator, mountMcpEndpoint } from "./mcp-http.js";
+import { McpOAuth, mcpOAuthRoutes } from "./mcp-oauth.js";
 import { ConnectorStore, PostgresConnectorDb } from "./connectors.js";
 import {
   hostedConnectorRoutes,
@@ -116,6 +117,8 @@ export function createApp(
   observatory.controlledSamples = async () =>
     await providerLab.controlledSamples();
   app.disable("x-powered-by");
+  const oauth = accounts ? new McpOAuth(accounts) : undefined;
+  app.locals.oauth = oauth;
   app.use((_req, res, next) => {
     res.set({
       "X-Content-Type-Options": "nosniff",
@@ -139,8 +142,16 @@ export function createApp(
   // browser fallback; tool operations re-enter `/api` with the caller's credential.
   app.locals.mcp = mountMcpEndpoint(
     app,
-    mcpAuthenticator({ store, apiKeys: observatory.db.apiKeys, accounts }),
+    mcpAuthenticator({
+      store,
+      apiKeys: observatory.db.apiKeys,
+      accounts,
+      oauth,
+    }),
+    {},
+    oauth?.settings?.metadata,
   );
+  mcpOAuthRoutes(app, oauth);
   app.get("/api/public/catalog", (_req, res) =>
     res.json(
       Object.entries(toolCapabilities).map(([tool, capability]) => {
@@ -159,7 +170,7 @@ export function createApp(
     ),
   );
   if (accounts) app.use("/api", accountPreviewAccess(accounts));
-  accountRoutes(app, accounts);
+  accountRoutes(app, accounts, oauth);
   const sellers = new SellerStore(
     store.db instanceof PostgresDatabase
       ? new PostgresSellerDb(store.db.pool)
@@ -201,7 +212,10 @@ export function createApp(
     accounts ? adminAccountAccess(accounts, store) : undefined,
   );
   if (accounts)
-    app.use("/api", accountAccess(accounts, store, observatory.db.apiKeys));
+    app.use(
+      "/api",
+      accountAccess(accounts, store, observatory.db.apiKeys, oauth),
+    );
   else
     app.use("/api", async (req, res, next) => {
       if (

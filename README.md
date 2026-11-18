@@ -14,37 +14,31 @@ The [product knowledge base](research/README.md) collects interesting products, 
 
 PostgreSQL accounts have separate **User dashboard**, **Tool company**, and **Administration** areas. Users connect agents and manage their usage; tool company owners register for review, manage analyst access, and see only approved aggregate insights; allowlisted administrators review companies and operate the service. See [role journeys and company access](docs/ROLE_JOURNEYS.md). The illustrative company demo and controlled [provider lab](docs/PROVIDER_LAB.md) remain operator tooling, separate from the company-owner portal.
 
+Connect coding agents through browser sign-in, or integrate a product backend with an API key. See [the two connection paths and OAuth setup](docs/MCP_OAUTH.md).
+
 ## Run locally
 
-Requires Node.js 24.5+ and npm.
+Requires Node.js 24.5+ and npm. Use a **separate development Supabase project** for PostgreSQL and Auth. The live website at [twohands.tech](https://twohands.tech) owns the production database; a second API server must not use it.
 
 ```bash
 npm ci
-cp .env.example .env
-# Add the provider keys you want to use. Keep them out of VITE_ variables.
-npm run build
-npm start
+cp .env.development.example .env.development.local
+# Fill in the dedicated development project's database and public Auth settings.
+npm run db:migrate:dev
+npm run dev
 ```
 
-Open [the user dashboard](http://127.0.0.1:3001/#dashboard), or [the operator console](http://127.0.0.1:3001/#sessions). Exa and Tavily provide search; Firecrawl extracts a known public HTTPS page. Missing providers stay unavailable. Intent recording, review, and history work without provider keys.
+Open **http://127.0.0.1:5175**. The development API defaults to port 3009; Vite's relative `/api` proxy follows the same configured `PORT` and preserves the browser origin. Port 5175 is fixed, so another preview causes startup to fail instead of opening a different port. `npm run demo:dashboard` remains a separate prototype on port 5174.
 
-For development, run `npm run dev` from this project's main checkout and open **http://127.0.0.1:5175**. The API uses `PORT` (default 3001); Vite's API proxy follows the same configured `PORT`. Port 5175 is fixed: startup fails if another preview owns it, rather than silently opening a different port. `npm run demo:dashboard` is a separate, optional prototype on port 5174.
+`npm run dev`, `npm run db:migrate:dev`, and `npm run preview:production` load only `.env.development.local`, validate that its database and Auth settings match the declared development project, and reject the known production project. They do not load `.env` or reuse inherited application credentials. Migrations are explicit and require the development API to be stopped. See [development setup](docs/DEVELOPMENT.md) for project creation, Auth redirects, and troubleshooting.
 
-The browser uses relative `/api` URLs in both development and production. Vite preserves the browser's host when forwarding development API requests, so the backend applies the same origin checks in both modes. Keep those checks enabled; changing the proxy to rewrite the host causes legitimate saves to fail with “Cross-origin writes are not allowed.”
+For a quick local SQLite preview, use `npm run dev:sqlite`. It uses isolated `data/development.sqlite` storage and has no Supabase account flows. Provider calls require separately configured development credentials and spending authority; missing keys leave providers unavailable.
 
-To run the production build locally, stop `npm run dev` and run:
+To check the built app locally, stop `npm run dev` and run `npm run preview:production`. This builds and serves the frontend and API from the development backend origin (`http://127.0.0.1:3009` by default), using the same isolated development project with `NODE_ENV=production`. It has no hot reload and does not deploy the app. Configure that origin separately in the development project's Auth redirects.
 
-```bash
-npm run preview:production
-```
+`npm start` and the operator database commands retain their deployment environment behavior; they are not development shortcuts. Production uses host-managed secrets and the [deliberate release procedure](docs/RELEASE_CHECKLIST.md#production-release-on-render). Keep the existing `.env` private and out of development startup. The [rollout checkpoint](docs/SUPABASE_ROLLOUT.md) preserves earlier import and local-runtime history; its port 3008 notes describe an earlier checkpoint.
 
-Open the backend URL printed at startup (`http://127.0.0.1:3001` by default, or your configured `PORT`). This rebuilds the app and serves the compiled frontend and API from the same server, using the production entry point with `NODE_ENV=production`. It uses your existing `.env` and database; it does not create a separate test environment. There is no hot reload. Use `npm run dev` while editing and this command to check the built app before deployment.
-
-Keep one browser address per environment. Configure Supabase's allowed authentication redirect URLs for that address, and set `PUBLIC_APP_URL` to the same browser origin when testing Stripe returns. Development normally uses `http://127.0.0.1:5175`; the local production preview uses the backend port. A separate staging environment should use the production build, HTTPS, and its own Supabase project/database and test payment settings to verify hosted authentication and redirects without mixing test records into production.
-
-SQLite remains the default local backend. PostgreSQL mode uses [Supabase Auth accounts](docs/AUTH.md), with signup, email confirmation, sign-in, password recovery, automatic private account setup, and sign-out. Personal data follows the verified account. Follow the [PostgreSQL migration guide](docs/POSTGRES_MIGRATION.md) for schema setup, account bootstrap, explicit legacy-owner assignment, verified import, and rollback. `DATABASE_URL` alone does not switch storage. The PostgreSQL runtime can start for signup before importing history; signup never claims existing records. `API_TOKEN` and `ADMIN_API_TOKEN` apply only to SQLite/local mode.
-
-The connected Supabase project has eight checked-in schema migrations installed, with checksums verified through the application database connection. Historical SQLite data has been imported and verified with an explicitly assigned confirmed owner; platform-admin access is configured separately. The canonical local account runtime uses port 3008. This is a local integration checkpoint, not a deployed public service; hosted account journeys, email delivery, and the final HTTPS origin still need verification. See the [hosted rollout checkpoint](docs/SUPABASE_ROLLOUT.md).
+PostgreSQL mode uses [Supabase Auth accounts](docs/AUTH.md). New development accounts and history are separate from production. Follow the [PostgreSQL migration guide](docs/POSTGRES_MIGRATION.md) only when an explicit historical-data cutover is needed; a new development project starts empty. `API_TOKEN` and `ADMIN_API_TOKEN` apply only to SQLite/local mode.
 
 ## User dashboard
 

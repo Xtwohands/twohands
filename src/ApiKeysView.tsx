@@ -575,10 +575,11 @@ export function ApiKeysView() {
                     close();
                     openConnectAgent(
                       dialogTrigger.current ?? createTrigger.current,
+                      "product",
                     );
                   }}
                 >
-                  Agent connection setup
+                  Product integration setup
                   <ArrowRight />
                 </Button>
               </div>

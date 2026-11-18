@@ -24,6 +24,7 @@
 .connect-agent-dialog .ws-client-picker {
   flex-wrap: wrap;
   padding: 0;
+  margin-bottom: 22px;
 }
 
 .connect-agent-dialog .ws-client-picker button {
@@ -58,8 +59,19 @@
   line-height: 1.65;
 }
 
-.connect-agent-dialog .ws-agent-environment code {
+.ws-setup-steps .ws-remote-configuration {
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.ws-setup-steps .ws-remote-configuration code {
+  flex: 1 1 240px;
+  min-width: 0;
   white-space: pre-wrap;
+}
+
+.ws-remote-configuration button {
+  flex: none;
 }
 
 @media (max-width: 600px) {

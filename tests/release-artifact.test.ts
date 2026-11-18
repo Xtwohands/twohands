@@ -26,6 +26,8 @@ beforeEach(async () => {
     "supabase/migrations/20260101000000_fixture.sql": "SELECT 1;",
     "package.json": '{"version":"0.0.0"}',
     "package-lock.json": "{}",
+    "scripts/migrate-production.mjs": "export {};",
+    "scripts/environment-projects.mjs": "export {};",
     ".env": "API_TOKEN=SECRET_DO_NOT_PACKAGE",
   }))
     await writeFile(join(directory, name), data);
@@ -51,6 +53,7 @@ it("verifies packaged code, client, migration assets and runtime package metadat
   expect(manifest.sourceRevision).toBe("a".repeat(40));
   expect(manifest.files).toHaveProperty("package-lock.json");
   expect(manifest.files).toHaveProperty("build/index.js");
+  expect(manifest.files).toHaveProperty("scripts/migrate-production.mjs");
   expect(text).not.toContain("SECRET_DO_NOT_PACKAGE");
   expect(text).not.toContain('".env"');
 });

@@ -2,7 +2,9 @@
 
 The production path is PostgreSQL on Supabase. SQLite remains the default until an explicit cutover; fixtures continue to use isolated SQLite databases. Adding `DATABASE_URL` alone does not migrate or switch the app. The earlier storage-only checkpoint retained owner/admin tokens. The current checkpoint adds [Supabase Auth and workspace authorization](AUTH.md): PostgreSQL requires account sessions or scoped workspace keys and ignores `API_TOKEN`/`ADMIN_API_TOKEN`. SQLite retains its local token mode.
 
-The connected project has eight checked-in schema migrations applied with matching checksums, including private company metadata, workspace-scoped provider-suite revisions, and operator allowances. The original SQLite history has been imported and verified against its read-only source, with an explicitly assigned confirmed owner. The source and verified backups remain available. Follow the [hosted rollout checkpoint](SUPABASE_ROLLOUT.md) for counts, local consolidation, and remaining hosted validation.
+The original SQLite history was imported and verified with an explicitly assigned confirmed owner; preserve its source and backups. Migration counts and local port 3008 references in the [rollout checkpoint](SUPABASE_ROLLOUT.md) are dated evidence, not a declaration of the current production schema or a development target.
+
+For a new development project, follow [development setup](DEVELOPMENT.md) and run `npm run db:migrate:dev`; do not perform a historical-data cutover or import production history. That command validates and loads only the separate development environment. The cutover commands below are operator procedures for an explicitly selected source and destination, not local startup instructions.
 
 ## What changes
 
@@ -28,6 +30,14 @@ Existing evidence JSON is preserved as text to retain hashes and historical sema
 8. Build and restart with `STORAGE_BACKEND=postgres`. Sign in as the assigned owner and select the imported workspace. Check `/healthz`, owner/member separation, historical audit integrity, and existing receipt balances before allowing new work. Configure `SUPABASE_ADMIN_USER_IDS` only for intended platform operators; owners do not automatically become platform administrators.
 
 The importer is all-or-nothing and never merges into an occupied tenant or reassigns a tenant with another member. Original JSON values remain byte-for-byte identical. PostgreSQL numeric driver representation is normalized only when comparing per-column digests.
+
+## Releasing new migrations
+
+Development and production migration histories are independent. Stop the development API and run `npm run db:migrate:dev` to test each candidate migration. Run the isolated checks and account flows before release; tests use disposable fixtures, not either application's records.
+
+Production migrations run only as part of the [Render release procedure](RELEASE_CHECKLIST.md#production-release-on-render), after the old production runtime is stopped and a recoverable backup is confirmed. `npm run db:migrate:production` requires explicitly injected production settings and confirmation, verifies the intended project, and retains the normal ownership lock. It never loads `.env` automatically. Keep `npm run db:migrate` for existing explicit operator workflows; it retains legacy `.env` behavior and must not be used as a development shortcut.
+
+Do not terminate a lock-holding database connection to migrate or start local code. The live server owns that lock even when its connection is idle. Do not edit installed migration files or bypass their checksum ledger.
 
 ## Rollback
 

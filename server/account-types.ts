@@ -7,4 +7,10 @@ export interface AccountProfile {
   companies: import("./company-types.js").ToolCompany[];
 }
 export type AuthPublicConfig =
-  { enabled: false } | { enabled: true; url: string; publishableKey: string };
+  | { enabled: false; oauth?: { resource: string } }
+  | {
+      enabled: true;
+      url: string;
+      publishableKey: string;
+      oauth?: { resource: string };
+    };

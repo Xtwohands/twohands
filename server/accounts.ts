@@ -22,6 +22,9 @@ export interface VerifiedIdentity {
   email: string;
   sessionId: string;
   expiresAt: number;
+  oauthClientId?: string;
+  oauthAudience?: string;
+  oauthGrantId?: string;
 }
 export type IdentityVerifier = (token: string) => Promise<VerifiedIdentity>;
 export interface AccountSettings {
@@ -89,6 +92,9 @@ export function supabaseVerifier(settings: AccountSettings): IdentityVerifier {
         sub: z.uuid(),
         session_id: z.uuid(),
         exp: z.number().int().positive(),
+        client_id: z.uuid().optional(),
+        two_hands_grant: z.uuid().optional(),
+        aud: z.union([z.string(), z.array(z.string())]).optional(),
       })
       .safeParse(claims);
     if (
@@ -102,6 +108,14 @@ export function supabaseVerifier(settings: AccountSettings): IdentityVerifier {
       email: data.user.email,
       sessionId: value.data.session_id,
       expiresAt: value.data.exp * 1000,
+      ...(value.data.client_id
+        ? {
+            oauthClientId: value.data.client_id,
+            oauthGrantId: value.data.two_hands_grant,
+            oauthAudience:
+              typeof value.data.aud === "string" ? value.data.aud : undefined,
+          }
+        : {}),
     };
   };
 }
@@ -190,7 +204,7 @@ export class Accounts {
       context.target.id === id
     );
   }
-  async identity(req: Request): Promise<VerifiedIdentity> {
+  async identity(req: Request, allowOAuth = false): Promise<VerifiedIdentity> {
     const token = req.header("authorization")?.match(/^Bearer ([^\s]+)$/)?.[1];
     if (!token || token.length > 8192 || token.startsWith("oct_key_"))
       throw new AccountError(401, "Sign in to access your account.");
@@ -228,12 +242,18 @@ export class Accounts {
     }
     if (identity.expiresAt <= Date.now())
       throw new AccountError(401, "Account session expired. Sign in again.");
+    if (identity.oauthClientId && !allowOAuth)
+      throw new AccountError(
+        403,
+        "Agent credentials cannot access account settings or administrator features.",
+      );
     // Session revocation, deletion and bans take effect even while a verified identity is cached.
     const active = await this.database.pool.query(
       `SELECT 1 FROM auth.sessions s JOIN auth.users u ON u.id=s.user_id
       WHERE s.id=$1 AND s.user_id=$2 AND (s.not_after IS NULL OR s.not_after>now())
+      AND COALESCE(to_jsonb(s)->>'oauth_client_id','')=$3
       AND u.deleted_at IS NULL AND (u.banned_until IS NULL OR u.banned_until<=now())`,
-      [identity.sessionId, identity.userId],
+      [identity.sessionId, identity.userId, identity.oauthClientId || ""],
     );
     if (!active.rowCount) {
       this.cache.delete(key);

@@ -6,17 +6,17 @@ The public landing page remains available before sign-in. The browser uses the S
 
 ## Configuration
 
-Set runtime settings in ignored .env or deployment secrets:
+Development settings belong in ignored `.env.development.local`; `npm run dev` validates and loads that file exclusively. Production settings belong in deployment secrets. Use separate Supabase projects for the two environments, with the database and Auth settings paired within each project. See [development setup](DEVELOPMENT.md) for the project-reference guard and callback origins. Existing `npm start`/operator `.env` compatibility remains a deployment concern.
 
-| Setting                  | Purpose                                                                                             |
-| ------------------------ | --------------------------------------------------------------------------------------------------- |
-| STORAGE_BACKEND=postgres | Explicitly selects PostgreSQL and Supabase account authentication.                                  |
-| DATABASE_URL             | Server-only direct/session-pooler connection; never a browser variable.                             |
-| LEGACY_WORKSPACE_ID      | SQLite identity printed by db:inspect. It does not grant anyone access.                             |
-| SUPABASE_URL             | Hosted project's HTTPS API origin.                                                                  |
-| SUPABASE_PUBLISHABLE_KEY | Public sb_publishable_… Auth key. Secret/service-role keys are rejected.                            |
-| LEGACY_OWNER_USER_ID     | Explicit intended Supabase user UUID for the SQLite import.                                         |
-| SUPABASE_ADMIN_USER_IDS  | Optional comma-separated platform operator UUID allowlist. Blank grants no platform administrators. |
+| Setting                  | Purpose                                                                                                                            |
+| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------- |
+| STORAGE_BACKEND=postgres | Explicitly selects PostgreSQL and Supabase account authentication.                                                                 |
+| DATABASE_URL             | Server-only direct/session-pooler connection; never a browser variable.                                                            |
+| LEGACY_WORKSPACE_ID      | Required fallback namespace: the inspected SQLite identity for an import, or a fresh UUID for empty development. Grants no access. |
+| SUPABASE_URL             | Hosted project's HTTPS API origin.                                                                                                 |
+| SUPABASE_PUBLISHABLE_KEY | Public sb_publishable_… Auth key. Secret/service-role keys are rejected.                                                           |
+| LEGACY_OWNER_USER_ID     | Explicit intended Supabase user UUID for the SQLite import.                                                                        |
+| SUPABASE_ADMIN_USER_IDS  | Optional comma-separated platform operator UUID allowlist. Blank grants no platform administrators.                                |
 
 VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY are supported public aliases. The frontend receives validated public settings from /api/auth/config; private credentials are never embedded into its build.
 

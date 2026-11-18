@@ -5,8 +5,9 @@
   "type": "module",
   "description": "Observe agent intent, explicit tool choices, evidence, and evaluated outcomes over MCP",
   "scripts": {
-    "dev": "concurrently -k -n api,web \"node --use-env-proxy --env-file-if-exists=.env --import tsx --watch server/index.ts\" \"vite --host 127.0.0.1\"",
-    "preview:production": "npm run build && NODE_ENV=production npm start",
+    "dev": "node scripts/development.mjs",
+    "dev:sqlite": "node scripts/development.mjs sqlite",
+    "preview:production": "node scripts/development.mjs preview",
     "demo:dashboard": "vite --config prototypes/dashboard/vite.config.ts",
     "build": "tsc --noEmit && vite build && node scripts/compress-assets.mjs && tsc -p tsconfig.server.json && node scripts/build-release-manifest.mjs",
     "start": "node --use-env-proxy --env-file-if-exists=.env build/index.js",
@@ -24,6 +25,8 @@
     "verify:evidence": "node scripts/verify-evidence.mjs",
     "db:inspect": "node --use-env-proxy --env-file-if-exists=.env build/database-cli.js inspect",
     "db:migrate": "node --use-env-proxy --env-file-if-exists=.env build/database-cli.js migrate",
+    "db:migrate:dev": "node scripts/development.mjs migrate",
+    "db:migrate:production": "node scripts/migrate-production.mjs",
     "db:import": "node --use-env-proxy --env-file-if-exists=.env build/database-cli.js import",
     "db:verify": "node --use-env-proxy --env-file-if-exists=.env build/database-cli.js verify",
     "verify:release": "node scripts/verify-release-artifact.mjs",
@@ -32,7 +35,9 @@
     "test:restore": "node --import tsx scripts/restore-drill.ts",
     "simulate:sellers": "node --import tsx scripts/simulate-seller-data.ts",
     "connector:test-server": "node --import tsx scripts/test-mcp-server.ts",
-    "connector:demo": "node --import tsx scripts/connector-demo.ts"
+    "connector:demo": "node --import tsx scripts/connector-demo.ts",
+    "oauth:setup:dev": "node --use-env-proxy scripts/configure-mcp-oauth.mjs",
+    "smoke:oauth:dev": "node --use-env-proxy scripts/verify-mcp-oauth.mjs"
   },
   "engines": {
     "node": ">=24.5.0"
@@ -61,6 +66,7 @@
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.14.0",
+    "@fontsource-variable/hubot-sans": "^5.3.0",
     "@playwright/test": "^1.64.1",
     "@types/express": "^5.0.6",
     "@types/node": "^26.6.6",

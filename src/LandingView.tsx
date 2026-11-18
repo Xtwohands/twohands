@@ -38,7 +38,6 @@ const dashboard = "/#dashboard";
 const catalog = "#home/landing-catalog";
 const brand = "/two-hands.svg";
 const brandMark = "/two-hands-mark.svg";
-const connectCommand = "npm run mcp:install";
 const sampleSession = "00000000-0000-4000-8000-000000000001";
 const providerOrder = [
   "exa",
@@ -61,7 +60,7 @@ const steps = [
   {
     label: "MCP connection",
     title: "Connect once.",
-    body: "The MCP bridge gives compatible hosts a single connection to the Two Hands catalog.",
+    body: "The hosted MCP server gives compatible agents and product backends one connection to the Two Hands catalog.",
   },
   {
     label: "Tool router",
@@ -825,7 +824,7 @@ const productGroups = [
       entries: [
         {
           title: "API keys",
-          description: "Create and manage scoped keys for your agents.",
+          description: "Create and manage keys for product integrations.",
           href: "/#dashboard/keys",
           icon: Code01,
         },
@@ -952,13 +951,16 @@ function SetupDisclosure({
 }
 
 function Developers() {
+  const { oauth } = useAccount();
+  const connectCommand =
+    oauth?.resource || new URL("/mcp", location.origin).href;
   const [copyStatus, setCopyStatus] = useState("");
   async function copyCommand() {
     try {
       await navigator.clipboard.writeText(connectCommand);
-      setCopyStatus("Command copied.");
+      setCopyStatus("Server URL copied.");
     } catch {
-      setCopyStatus("Select the command to copy it.");
+      setCopyStatus("Select the server URL to copy it.");
     }
   }
 
@@ -972,7 +974,7 @@ function Developers() {
               <Check size={16} />
               <div>
                 <strong>One MCP connection</strong>
-                <p>Register the bridge from a local checkout.</p>
+                <p>Connect your coding agent or your product’s backend.</p>
               </div>
             </li>
             <li>
@@ -1003,34 +1005,30 @@ function Developers() {
         </div>
         <div className="th-setup">
           <div className="th-setup-title">
-            <TerminalSquare size={17} /> Local setup
+            <TerminalSquare size={17} /> Hosted MCP setup
           </div>
-          <SetupDisclosure label="Build and start" open>
-            <pre>
-              <code>npm run build{"\n"}npm start</code>
-            </pre>
-          </SetupDisclosure>
-          <SetupDisclosure label="Register the MCP bridge" open>
+          <SetupDisclosure label="Add the MCP server" open>
             <div className="th-terminal-command">
               <code>{connectCommand}</code>
               <Button
                 type="button"
                 variant="ghost"
                 size="icon-sm"
-                aria-label="Copy MCP install command"
+                aria-label="Copy MCP server URL"
                 onClick={copyCommand}
               >
-                {copyStatus === "Command copied." ? <Check /> : <Copy01 />}
+                {copyStatus === "Server URL copied." ? <Check /> : <Copy01 />}
               </Button>
             </div>
             <p className="th-copy-status" role="status">
               {copyStatus}
             </p>
           </SetupDisclosure>
-          <SetupDisclosure label="Open a fresh session">
+          <SetupDisclosure label="Choose how to connect" open>
             <p className="th-setup-note">
-              Keep the server running and start a new chat in your MCP host so
-              it can load the Two Hands tool registration.
+              Sign in from your coding agent, or use a server-side API key for a
+              product integration. Open the dashboard’s Connect agent setup for
+              your client.
             </p>
           </SetupDisclosure>
         </div>
@@ -1058,12 +1056,12 @@ function Resources() {
           <a href="/#dashboard/keys">
             <strong>API keys</strong>
             <ArrowUpRight size={16} />
-            <span>Create and manage scoped keys for your agents.</span>
+            <span>Create and manage keys for product integrations.</span>
           </a>
           <a href="#home/developers">
             <strong>Setup</strong>
             <ArrowUpRight size={16} />
-            <span>Register the MCP bridge in a local checkout.</span>
+            <span>Set up agent sign-in or a backend API key.</span>
           </a>
         </div>
       </div>

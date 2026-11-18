@@ -16,6 +16,7 @@ import "./account.css";
 import { AuthView } from "./AuthView";
 import { readAuthCallback, type AuthMode } from "./auth-state";
 type AccountContext = {
+  oauth?: { resource: string };
   sessionEpoch?: number;
   enabled: boolean;
   profile?: AccountProfile;
@@ -398,9 +399,12 @@ export function AccountGate({ children }: { children: ReactNode }) {
     };
   }, [config?.enabled]);
   const publicPage =
+    !new URL(location.href).searchParams.has("authorization_id") &&
+    location.pathname !== "/oauth/consent" &&
     !location.pathname.startsWith("/research") &&
     (!route || route === "#home" || route.startsWith("#home/"));
   const context: AccountContext = {
+    oauth: config?.oauth,
     sessionEpoch: sessionEpoch.current,
     enabled: !!config?.enabled,
     profile,
@@ -463,7 +467,8 @@ export function AccountGate({ children }: { children: ReactNode }) {
         </section>
       </main>
     );
-  if (config && !config.enabled) return <>{children}</>;
+  if (config && !config.enabled)
+    return <Context.Provider value={context}>{children}</Context.Provider>;
   if (publicPage)
     return <Context.Provider value={context}>{children}</Context.Provider>;
   const emptyPreview =

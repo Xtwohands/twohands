@@ -11,7 +11,8 @@ services:
     dockerContext: .
     branch: main
     # Deploys are started by hand: schema migrations are a separate operator
-    # step (`db:migrate`) and must be applied before code that needs them.
+    # step (`db:migrate:production`) after stopping the old runtime and before
+    # starting code that needs them. See docs/RELEASE_CHECKLIST.md.
     autoDeployTrigger: "off"
     plan: starter
     # Same coast as the Supabase project (us-east-1).

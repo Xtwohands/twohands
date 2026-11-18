@@ -969,14 +969,17 @@ test("signed-in account owner can create the first key and proceed to agent setu
   expect(sentHeaders["x-octolab-workspace"]).toBeUndefined();
   await captureJourney(page, "first-api-key");
   await page
-    .getByRole("button", { name: "Agent connection setup", exact: true })
+    .getByRole("button", { name: "Product integration setup", exact: true })
     .click();
   await expect(
     page.getByLabel("New API key secret", { exact: true }),
   ).toHaveCount(0);
-  await expect(page.locator(".ws-agent-environment")).toContainText(
-    "APILAYER_URL=" + new URL("/api", authBrowserUrl).href,
+  await expect(page.locator(".ws-remote-configuration")).toContainText(
+    new URL("/mcp", authBrowserUrl).href,
   );
+  await expect(
+    page.getByRole("tab", { name: "Build into my product", exact: true }),
+  ).toHaveAttribute("data-state", "active");
   expect(page.url()).not.toContain(secret);
   await captureJourney(page, "owner-agent-setup");
   await page

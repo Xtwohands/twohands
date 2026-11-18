@@ -27,6 +27,8 @@ const actual = [
   "package.json",
   "package-lock.json",
   "scripts/verify-release-artifact.mjs",
+  "scripts/migrate-production.mjs",
+  "scripts/environment-projects.mjs",
 ].sort();
 if (
   JSON.stringify(actual) !== JSON.stringify(Object.keys(manifest.files).sort())
@@ -39,6 +41,8 @@ for (const path of actual) {
         "package.json",
         "package-lock.json",
         "scripts/verify-release-artifact.mjs",
+        "scripts/migrate-production.mjs",
+        "scripts/environment-projects.mjs",
       ].includes(path)) ||
     path.split("/").includes("..")
   )

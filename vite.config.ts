@@ -1,15 +1,17 @@
 import { defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
-import { loadEnv } from "vite";
 import tailwindcss from "@tailwindcss/vite";
 import { fileURLToPath, URL } from "node:url";
 import { execFileSync } from "node:child_process";
-export default defineConfig(({ mode }) => {
-  const env = loadEnv(mode, process.cwd(), "PORT");
-  const port = Number(process.env.PORT || env.PORT || 3001);
+export default defineConfig(() => {
+  const port = Number(process.env.PORT || 3001);
   if (!Number.isInteger(port) || port < 1 || port > 65535)
     throw new Error("Invalid PORT for the local API proxy.");
   return {
+    // Application settings arrive from the explicit launcher, never shared .env files.
+    envDir: false,
+    // The development app and browser fixtures may run from this checkout together.
+    cacheDir: `node_modules/.vite/api-${port}`,
     plugins: [
       react(),
       tailwindcss(),
@@ -34,6 +36,16 @@ export default defineConfig(({ mode }) => {
       port: 5175,
       strictPort: true,
       proxy: {
+        "/.well-known/oauth-protected-resource": {
+          target: `http://127.0.0.1:${port}`,
+          changeOrigin: false,
+        },
+        "/mcp": {
+          target: `http://127.0.0.1:${port}`,
+          changeOrigin: false,
+          timeout: 150_000,
+          proxyTimeout: 150_000,
+        },
         "/api": {
           target: `http://127.0.0.1:${port}`,
           // Keep the browser's host so API write checks match production.

@@ -1,8 +1,10 @@
 # External-agent connection
 
-Two Hands runs an MCP stdio server registered as `apilayer` that forwards a narrow tool catalog to the local HTTP service. The host owns conversation, planning, tool selection, evidence interpretation, and answer generation. The dashboard observes and evaluates those records.
+Two Hands hosts an MCP server at `/mcp`, with the compatible technical registration name `apilayer`. The host owns conversation, planning, tool selection, evidence interpretation, and answer generation. The dashboard observes and evaluates those records.
 
-## Setup
+Use **Connect agent → Use in my agent** for browser sign-in, or **Build into my product** for a server-side API key. The OAuth path requires configured Supabase OAuth and `MCP_OAUTH_ENABLED=true`; see [agent sign-in setup, permissions, and release](MCP_OAUTH.md). The local stdio bridge below remains an advanced compatibility option.
+
+## Local stdio bridge setup
 
 Build and start the application before registering the bridge:
 
@@ -128,7 +130,7 @@ Every tool operation is executed by the existing `/api` routes, re-entered over 
 
 Send the credential as `Authorization: Bearer <credential>`. Missing or rejected credentials return HTTP 401 with a `WWW-Authenticate: Bearer` challenge. Every request is authenticated, including `initialize` and `tools/list`, which never reach `/api`. A revoked or expired key stops working on its next request, even inside an open session.
 
-Account session tokens are accepted so that a future OAuth sign-in (needed for Claude.ai and ChatGPT connectors) needs no endpoint change. Session tokens expire within hours, so use a scoped key for any manual configuration. Keys keep their scope and spend limits; a session token acts with the signed-in account's own access, but only through the observation routes the MCP tools call (intent, discovery, provider calls, evidence and outcomes).
+OAuth agent tokens are accepted when [agent sign-in](MCP_OAUTH.md) is configured. They are bound to an explicit personal-account grant, OAuth client, live Auth session, and this MCP resource. Agents refresh them automatically. Browser session tokens remain a compatibility mechanism; use OAuth for personal agents and scoped keys for manual backend integrations. Agent OAuth tokens cannot access dashboard management or administrator routes.
 
 With SQLite and no `API_TOKEN`, a non-loopback `Host` header is refused, so a tunnel or proxy in front of a local server cannot inherit local owner access. Set `API_TOKEN` (24+ characters) before exposing a local server through a tunnel.
 
@@ -150,7 +152,7 @@ bearer_token_env_var = "APILAYER_API_KEY"
 tool_timeout_sec = 150
 ```
 
-Claude.ai and ChatGPT custom connectors authenticate with OAuth, which this endpoint does not provide yet. Until it does, use Claude Code, Codex, or another client that can send a bearer header.
+When OAuth is enabled, clients can discover the authorization server from `/mcp`, sign in through the Two Hands consent page, and manage the resulting tokens themselves. See [OAuth setup and compatibility](MCP_OAUTH.md). URL-only setup requires an OAuth-capable client; client-specific registration and end-to-end behavior must be verified on the target client. API keys remain available for backend integrations.
 
 ### Sessions and limits
 

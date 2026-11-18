@@ -27,12 +27,37 @@ These requirements work with an OCI/container host or a managed Linux server usi
 1. Record the exact source/image revision and its passing CI run. Keep the previous verified image available.
 2. Data's owner completes the account/data cutover and confirms the intended workspace, owner and admin access. A completed migration does not prove historical data was imported.
 3. Supply the private runtime configuration using [the environment template](../deploy/runtime.env.example). With Compose, copy it to the ignored `.env.runtime` file. Keep provider keys server-side; use the existing approved spending policy. Leave both deposit methods disabled.
-4. Have Data stop the API and maintenance work before a migration. Run `npm run db:migrate` from the built application image. It verifies migration history and refuses an active database owner. Migrations now run from compiled code and require no development tools. API startup also checks every migration name and checksum before serving requests; a pending migration stops startup with the required command instead of leaving customers with a partially upgraded dashboard.
+4. Have Data stop the API and maintenance work before a migration. For Render production, use `npm run db:migrate:production` with explicitly injected settings and confirmation as described below; `npm run db:migrate` remains the generic operator command. The migration command verifies history and refuses an active database owner. Migrations now run from compiled code and require no development tools. API startup also checks every migration name and checksum before serving requests; a pending migration stops startup with the required command instead of leaving customers with a partially upgraded dashboard.
 5. Start the image and require `/healthz` to pass. That endpoint verifies application/database availability, not provider health. Confirm that private routes reject missing credentials; then test the intended owner, member and company roles through the real sign-in flow.
 6. Issue a scoped agent key through the workspace. Configure the agent with either the remote endpoint `https://<origin>/mcp` and the key as a bearer token, or the stdio bridge with the final HTTPS `APILAYER_URL` and its `APILAYER_API_KEY`, then verify the connection and a free discovery request. Confirm the proxy forwards `/mcp` with its MCP headers and does not time out within 150 seconds. Any paid provider check needs a separately bounded backend/operator-authorized allowance.
 7. Confirm actual sign-in, logout, email confirmation, password recovery, role revocation and company boundaries on the chosen host. Verify the final domain, HTTPS proxy and Auth redirects. These checks cannot be completed before the host is chosen.
 
 `compose.yaml` binds the service to host loopback so an HTTPS proxy can sit in front of it. It uses a read-only application filesystem, a private temporary directory and a named data volume, and allows up to 130 seconds for shutdown. Do not start a second copy against the same database or use this example to bypass Data's runtime ownership.
+
+## Production release on Render
+
+The checked-in `render.yaml` targets `https://twohands.tech`, one API instance, and manual deployment (`autoDeployTrigger: off`). Its attached disk makes replacement stop the old instance before starting the new one. Keep these settings while runtime ownership is exclusive; do not enable overlapping instances to work around a failed lock acquisition.
+
+1. Select and record the exact commit/image revision. Compare it with GitHub `main` and the deployed Render revision; a local branch or a feature branch is not proof that production has that code. Require the selected revision's CI, `npm run check`, appropriate browser checks, and separate disposable PostgreSQL coverage. Test every pending migration and the needed account flows against the independent development project first.
+2. Arrange a maintenance window. Confirm the backup owner, a recoverable backup, a compatible previous release, and the recovery procedure below. If using this repository's offline application backup command, stop the API before taking that backup. Do not copy production records into development as a test setup.
+3. Stop the production API and maintenance processes through the hosting control plane. Confirm the instance has drained and no longer owns the runtime lock. Do not terminate PostgreSQL backends or weaken the lock to simulate a graceful stop.
+4. Use the **selected release's built migration command**, in a controlled operator process with production environment values injected from the secret store. Do not run this command using the development file or a shell that silently loads `.env`:
+
+   ```bash
+   # DATABASE_URL and other private production settings are injected by the host.
+   # These nonsecret values must match the intended production environment.
+   STORAGE_BACKEND=postgres \
+     PUBLIC_APP_URL=https://twohands.tech \
+     PRODUCTION_MIGRATION_CONFIRM=twohands.tech \
+     npm run db:migrate:production
+   ```
+
+   The wrapper requires the intended production database/Auth project and explicit confirmation, loads no environment file, and runs the application's migration ledger/checksum checks. A held runtime lock or migration failure stops the release. Do not put this command in an ordinary pre-deploy step that runs while the old API still owns the database. Development startup never applies production migrations.
+
+5. Start the exact selected release with the production environment. Require `https://twohands.tech/healthz` to return `200`, check private endpoints reject anonymous access, then verify intended signed-in account/company/admin paths. Preserve provider spending boundaries; a health check makes no provider calls and is not proof of vendor health, email delivery, or Auth redirects.
+6. Record the deployed revision, migration result, checks, and any observed interruption. If migration fails, investigate before starting incompatible code. Use the verified compatible-image or fresh-destination recovery procedure below; do not edit migration history or invent reverse SQL.
+
+The migration process and production API must not overlap. `npm run db:migrate:production` does not stop Render, deploy code, or start the API; the operator owns those explicit steps. This procedure is a release contract, not evidence that a release has occurred.
 
 ## Backup ownership and retention
 

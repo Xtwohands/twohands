@@ -22,6 +22,8 @@ COPY --chown=node:node --from=build /app/dist ./dist
 COPY --chown=node:node --from=build /app/supabase/migrations ./supabase/migrations
 COPY --chown=node:node --from=build /app/release-manifest.json ./release-manifest.json
 COPY --chown=node:node --from=build /app/scripts/verify-release-artifact.mjs ./scripts/verify-release-artifact.mjs
+COPY --chown=node:node --from=build /app/scripts/migrate-production.mjs ./scripts/migrate-production.mjs
+COPY --chown=node:node --from=build /app/scripts/environment-projects.mjs ./scripts/environment-projects.mjs
 RUN node scripts/verify-release-artifact.mjs
 RUN mkdir -p /app/data && chown node:node /app/data && chmod 700 /app/data
 USER node

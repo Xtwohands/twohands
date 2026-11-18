@@ -19,6 +19,8 @@ for (const path of [
   "package.json",
   "package-lock.json",
   "scripts/verify-release-artifact.mjs",
+  "scripts/migrate-production.mjs",
+  "scripts/environment-projects.mjs",
 ].sort())
   files[path] = {
     sha256: createHash("sha256")

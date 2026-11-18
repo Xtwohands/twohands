@@ -12,7 +12,9 @@ PostgreSQL resolves personal data from the verified account. Operators on the `S
 
 PostgreSQL additionally requires an explicit [operator workspace allowance](WORKSPACE_ALLOWANCES.md) before provider admission. The admin **Tool access** page changes or pauses that lifetime estimate cap with an audit reason; customer keys, new sessions, and test deposits cannot grant it. Missing grants deny execution. Pausing preserves incurred and reserved estimates; already admitted calls settle conservatively.
 
-The [hosted rollout checkpoint](SUPABASE_ROLLOUT.md) records applied schema migrations, checksum/RLS/runtime-role checks, verified historical-data import, and remaining hosted validation. It does not establish a deployed public application.
+The [hosted rollout checkpoint](SUPABASE_ROLLOUT.md) preserves applied-schema, import, and historical validation evidence. The live app is now hosted at [twohands.tech](https://twohands.tech); the checkpoint distinguishes its current public health check from unverified deployment revision and account/email journeys.
+
+Development uses only `.env.development.local` and a dedicated Supabase project through the [development launcher](DEVELOPMENT.md). Production secrets remain in the hosting environment. A local browser address or a different API port does not isolate a shared database.
 
 ## Local data
 
@@ -135,4 +137,6 @@ The Dockerfile builds both the browser and server, installs runtime dependencies
 
 Use the actual CI results for the selected image revision to establish which build/runtime/restart/restore checks passed. It still has to be configured and validated in the target deployment environment; a prepared artifact is not a deployed service. Buyer interviews, vendor terms review, and willingness-to-pay validation remain operational tasks.
 
-When the canonical local runtime serves the original checkout's browser assets, build and test further candidates in an isolated working copy. Promote the verified backend and browser assets together, then let the canonical-runtime owner restart it. Fixture servers use their isolated test ports and database settings; do not point them at the live PostgreSQL runtime.
+Production is the Render service described in `render.yaml`, with one instance and manual deployment. Its attached disk prevents overlapping replacements; keep that setting while the API requires exclusive runtime ownership. Use the [production release procedure](RELEASE_CHECKLIST.md#production-release-on-render) for an explicit stop, migration, and start of the selected revision.
+
+Build and test candidates against a separate development Supabase project. Fixture servers use isolated test ports and disposable database settings; do not point them at the live or development application database. The dedicated runtime-lock connection may show `idle` between requests. That is expected and is not evidence that the lock is stale. Never terminate a hosted database session merely to start a local server.
