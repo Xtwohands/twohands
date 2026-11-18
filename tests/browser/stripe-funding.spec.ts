@@ -72,7 +72,7 @@ test("Stripe fixture checkout, signed webhook credits, refunds, and shared ledge
     name: "Credit ledger",
     exact: true,
   });
-  await expect(ledger).toContainText("refund");
+  await expect(ledger).toContainText("Refund");
   const refunded = await (
     await request.get(`${base}/api/account/funding`)
   ).json();
