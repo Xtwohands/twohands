@@ -41,6 +41,13 @@
   }
 }
 
+/* Keep labels clean, including nested text and buttons rendered as links.
+   Report the approved blue's contrast honestly; never add a text halo. */
+:is(button, [role="button"], [data-slot="button"], .button),
+:is(button, [role="button"], [data-slot="button"], .button) * {
+  text-shadow: none;
+}
+
 [data-slot="button"][data-variant="default"],
 .legacy-root .button.primary {
   --button-fill: #1b1b1b;
@@ -51,11 +58,6 @@
   --button-fill: var(--brand-accent);
   --button-hover: var(--brand-accent);
   --button-border: var(--brand-border);
-  /* White on the approved blue is 2.8:1; this shadow keeps button text at
-     WCAG AA without changing the fill. */
-  text-shadow:
-    0 0 2px color-mix(in srgb, var(--brand-accent), black 65%),
-    0 0 3px color-mix(in srgb, var(--brand-accent), black 65%);
 }
 [data-slot="button"]:is([data-variant="default"], [data-variant="brand"]) {
   border-radius: 8px;

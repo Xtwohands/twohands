@@ -36,9 +36,15 @@ async function checkStates(
 ) {
   const assertColors = async () => {
     await expect(control).toHaveCSS("color", filled ? white : textColor);
-    if (filled) await expect(control).toHaveCSS("background-color", accent);
+    await expect(control).toHaveCSS("text-shadow", "none");
+    if (filled) {
+      await expect(control).toHaveCSS("background-color", accent);
+    }
     await assertNoDarkBlueButtons(page);
   };
+  await assertColors();
+  await control.focus();
+  await expect(control).toBeFocused();
   await assertColors();
   await control.hover();
   await assertColors();
@@ -75,7 +81,7 @@ for (const route of ["/#home", "/#dashboard/tools"]) {
   });
 }
 
-test("the link button variant uses the AA text shade of the accent in every pointer state", async ({
+test("the link button variant uses the approved accent without text shadows in every state", async ({
   page,
 }) => {
   await page.goto("/#dashboard/tools");
@@ -91,20 +97,56 @@ test("the link button variant uses the AA text shade of the accent in every poin
     probe.textContent = "Link-style button color check";
     document.querySelector("main")!.prepend(probe);
   });
-  // Link text uses --brand-accent-text: the approved blue is 2.8:1 on white.
-  const textShade = await page.evaluate(() => {
-    const sample = document.createElement("span");
-    sample.style.color = "var(--brand-accent-text)";
-    document.body.append(sample);
-    const color = getComputedStyle(sample).color;
-    sample.remove();
-    return color;
-  });
-  expect(textShade).not.toBe(accent);
-  await checkStates(
-    page,
-    page.locator("#brand-link-style-probe"),
-    false,
-    textShade,
-  );
+  await checkStates(page, page.locator("#brand-link-style-probe"), false);
+});
+
+test("the funding action has clean labels in desktop and mobile navigation", async ({
+  page,
+}, testInfo) => {
+  await page.goto("/#dashboard/tools");
+  if (testInfo.project.name === "mobile")
+    await page.getByRole("button", { name: "Open navigation" }).click();
+  const funding = page
+    .getByRole("navigation", { name: "User navigation" })
+    .getByRole("link", { name: "Add test funds", exact: true });
+  await checkStates(page, funding, true);
+});
+
+test("button labels and nested text remain shadow-free across product surfaces", async ({
+  page,
+}) => {
+  for (const route of [
+    "home",
+    "dashboard",
+    "dashboard/tools",
+    "dashboard/keys",
+    "dashboard/credits",
+    "settings",
+    "company/exa",
+    "models",
+    "lab",
+    "sessions",
+  ]) {
+    await page.goto(`/#${route}`);
+    await expect(page.locator("h1").first()).toBeVisible();
+    await expect(page.getByRole("button").first()).toBeVisible();
+    const shadows = await page
+      .locator(
+        ':is(button, [role="button"], [data-slot="button"], .button), :is(button, [role="button"], [data-slot="button"], .button) *',
+      )
+      .evaluateAll((elements) =>
+        elements.flatMap((element) => {
+          const style = getComputedStyle(element);
+          return style.textShadow === "none"
+            ? []
+            : [
+                {
+                  text: element.textContent,
+                  shadow: style.textShadow,
+                },
+              ];
+        }),
+      );
+    expect(shadows, route).toEqual([]);
+  }
 });
