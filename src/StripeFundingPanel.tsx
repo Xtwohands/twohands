@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import {
+  AlertCircle,
   ArrowRight,
   ArrowUpRight,
   CheckCircle,
@@ -17,6 +18,7 @@ import {
 } from "./components/ui/dialog";
 import { api } from "./api";
 import { CopyButton, Empty, InlineError, date } from "./observation-ui";
+import { netCredits } from "./funding-format";
 import type { FundingSummary, StripeDeposit } from "../server/funding-types";
 
 const labels: Record<StripeDeposit["status"], string> = {
@@ -30,6 +32,12 @@ const labels: Record<StripeDeposit["status"], string> = {
   expired: "Expired",
   failed: "Needs attention",
 };
+/** Statuses where the payment did not simply succeed. */
+const attention: ReadonlySet<StripeDeposit["status"]> = new Set([
+  "disputed",
+  "expired",
+  "failed",
+]);
 const usd = (cents: number) =>
   new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(
     cents / 100,
@@ -214,9 +222,7 @@ export function StripeFundingPanel({
                       <td>{labels[i.status]}</td>
                       <td>{date(i.createdAt)}</td>
                       <td>
-                        {(i.netCreditUnits / 1e6).toLocaleString("en-US", {
-                          maximumFractionDigits: 2,
-                        })}
+                        {netCredits(i.netCreditUnits, creditBilling || live)}
                       </td>
                       <td>
                         <Button
@@ -269,7 +275,9 @@ export function StripeFundingPanel({
             <DialogDescription>
               {isLive(selected)
                 ? "Card payment processed by Stripe. Credits pay for this account’s tool calls."
-                : "Stripe test mode. Test credits cannot pay for live tool calls."}
+                : creditBilling
+                  ? "Stripe test mode. Sandbox credits are not real money."
+                  : "Stripe test mode. Test credits cannot pay for live tool calls."}
             </DialogDescription>
           </DialogHeader>
           <InlineError message={error} />
@@ -282,7 +290,11 @@ export function StripeFundingPanel({
           {selected ? (
             <div className="ws-deposit-detail">
               <div className="ws-deposit-state">
-                <CheckCircle />
+                {attention.has(selected.status) ? (
+                  <AlertCircle aria-hidden="true" />
+                ) : (
+                  <CheckCircle aria-hidden="true" />
+                )}
                 <div>
                   <strong>{labels[selected.status]}</strong>
                   <p>{selected.message}</p>
@@ -297,9 +309,18 @@ export function StripeFundingPanel({
                 </div>
                 <div>
                   <span>
-                    {isLive(selected) ? "Net credits" : "Net test credits"}
+                    {isLive(selected)
+                      ? "Net credits"
+                      : creditBilling
+                        ? "Net sandbox credits"
+                        : "Net test credits"}
                   </span>
-                  <strong>{(selected.netCreditUnits / 1e6).toFixed(2)}</strong>
+                  <strong>
+                    {netCredits(
+                      selected.netCreditUnits,
+                      creditBilling || isLive(selected),
+                    )}
+                  </strong>
                 </div>
                 <div>
                   <span>Refund reported</span>

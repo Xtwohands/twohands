@@ -195,7 +195,11 @@ export function WalletUsagePanel({
       )}
       <div className="ws-panel-note">
         To see a call’s request and result, copy its call ID and search for it
-        in <a href="#dashboard/activity">Activity</a>.{" "}
+        in{" "}
+        <a className="ws-inline-link" href="#dashboard/activity">
+          Activity
+        </a>
+        .{" "}
         {live
           ? "Amounts are in USD."
           : "Amounts are sandbox credits, not real money."}

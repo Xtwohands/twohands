@@ -27,6 +27,7 @@ import "./funding.css";
 
 import {
   creditChange,
+  ledgerReason,
   postingLabel,
   sandboxCredits,
   spendableBalance,
@@ -293,8 +294,10 @@ export function FundingView() {
                 </Empty>
               )}
               <div className="ws-panel-note">
-                Each tool call is charged its verified provider cost plus 10%.
-                Each card payment has a Stripe receipt under Card payments.
+                Each tool call is charged its verified provider cost plus 10%.{" "}
+                {live
+                  ? "Each card payment has a Stripe receipt under Card payments."
+                  : "Each card top-up is listed under Card deposit history."}
               </div>
             </section>
           )}
@@ -463,7 +466,7 @@ export function FundingView() {
                                 ? "Stripe"
                                 : "USDC on Base Sepolia"}
                             </td>
-                            <td>{entry.kind.replaceAll("_", " ")}</td>
+                            <td>{ledgerReason(entry.kind)}</td>
                             <td>{date(entry.createdAt)}</td>
                           </tr>
                         ))}
