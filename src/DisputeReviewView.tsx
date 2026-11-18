@@ -15,6 +15,7 @@ import {
 } from "./components/ui/dialog";
 import { CopyButton, Empty, InlineError, date } from "./observation-ui";
 import { WalletRefundsPanel } from "./WalletRefundsPanel";
+import { WalletAdjustmentsPanel } from "./WalletAdjustmentsPanel";
 import "./user-dashboard.css";
 import type {
   DisputeReviewDetail,
@@ -401,6 +402,7 @@ export function DisputeReviewView() {
             </div>
           </section>
           <WalletRefundsPanel admin={admin} />
+          <WalletAdjustmentsPanel admin={admin} />
         </>
       )}
       <Dialog

@@ -337,6 +337,9 @@
 .ws-table-scroll {
   position: relative;
   overflow-x: auto;
+  /* Contain absolutely positioned children (such as visually hidden column
+     labels) so they scroll with the table instead of widening the page. */
+  position: relative;
 }
 .ws-table {
   width: 100%;
@@ -1792,4 +1795,109 @@
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   line-height: 1.8;
+}
+
+/* Tool call charges and statement export on Credits. */
+.ws-charge-reason {
+  display: block;
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--muted-foreground);
+  line-height: 1.5;
+  max-width: 260px;
+  white-space: normal;
+}
+.ws-charge-call {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.ws-charge-pages {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 12px 20px;
+  font-size: 12px;
+  color: var(--muted-foreground);
+}
+.ws-statement {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 14px;
+  padding: 18px 20px;
+  border-top: 1px solid var(--border);
+}
+.ws-statement > div {
+  flex: 1 1 260px;
+  min-width: 0;
+}
+.ws-statement h3 {
+  margin: 0 0 4px;
+  font-size: 13px;
+  font-weight: 500;
+}
+.ws-statement p {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--muted-foreground);
+}
+.ws-statement label {
+  display: grid;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--muted-foreground);
+}
+.ws-statement > p[role="alert"] {
+  flex-basis: 100%;
+  color: var(--destructive);
+}
+.ws-balance-card > p + p {
+  margin-top: -14px;
+}
+.ws-legacy-credits > header {
+  align-items: center;
+}
+
+/* Operator balance adjustments. */
+.ws-adjustment-form {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  padding: 18px 20px;
+}
+.ws-adjustment-form label {
+  display: grid;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--muted-foreground);
+  align-content: start;
+}
+.ws-adjustment-form .ws-adjustment-note,
+.ws-adjustment-form > p {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+.ws-adjustment-form > button {
+  justify-self: start;
+}
+.ws-adjustment-reason {
+  white-space: normal;
+  max-width: 360px;
+}
+@media (max-width: 900px) {
+  .ws-adjustment-form {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@media (max-width: 760px) {
+  .ws-legacy-credits > header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .ws-legacy-credits > header p {
+    max-width: none;
+  }
 }

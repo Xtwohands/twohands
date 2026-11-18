@@ -3,13 +3,14 @@ import Stripe from "stripe";
 import { z } from "zod";
 import { PostgresDatabase } from "./database.js";
 import { ShadowWallet } from "./shadow-wallet.js";
-import { Wallet } from "./wallet.js";
+import { Wallet, walletEnforcementEnabled } from "./wallet.js";
 import { FundingError, type FundingService } from "./funding.js";
 import { REFUND_TERMS } from "./refund-policy.js";
 import type {
   StripeDeposit,
   StripeFundingStatus,
   StripeMode,
+  TopUpBlock,
 } from "./funding-types.js";
 export type StripeSettings = {
   enabled: boolean;
@@ -367,7 +368,65 @@ export class StripeFundingService {
     // can be server configuration, which is for operators (`status("live")`).
     if (mode === "live" && !(status.enabled && (await this.liveEligible())))
       return { ...status, enabled: false, unavailableReason: LIVE_UNAVAILABLE };
+    // A top-up the account could not spend is not offered.
+    const blocked = status.enabled ? await this.topUpBlock() : null;
+    if (blocked)
+      return {
+        ...status,
+        enabled: false,
+        unavailableReason: blocked.message,
+        blocked: blocked.code,
+      };
     return status;
+  }
+  /**
+   * Why a new top-up would buy credits this account cannot spend, or null.
+   *
+   * While wallet enforcement is on, credits pay for paid tools only when an
+   * operator has enrolled the account and granted it tool access. Before
+   * that, a top-up is refused instead of taking a payment for credits that
+   * unlock nothing. With enforcement off, and on local storage, sandbox
+   * top-ups are a test of the payment flow and stay open to everyone.
+   *
+   * The messages name no rate, limit or amount: those are Two Hands' settings.
+   */
+  async topUpBlock(): Promise<{ code: TopUpBlock; message: string } | null> {
+    const { store } = this.funding;
+    if (!walletEnforcementEnabled() || !(store.db instanceof PostgresDatabase))
+      return null;
+    const wallet = await this.wallet.status();
+    if (!wallet.enrolled)
+      return {
+        code: "not_enrolled",
+        message:
+          "Top-ups open once Two Hands has turned on paid tools for this account. Until then credits could not be spent, so there is nothing to pay.",
+      };
+    if (!wallet.billingAvailable)
+      return {
+        code: "billing_unavailable",
+        message:
+          "Top-ups are paused while Two Hands re-checks this account's pricing. Your credits are kept and nothing is needed from you.",
+      };
+    const allowance = await store.allowance.status();
+    if (allowance.enforced && allowance.state !== "available")
+      return allowance.state === "unconfigured"
+        ? {
+            code: "tool_access_pending",
+            message:
+              "Top-ups open once Two Hands has turned on paid tools for this account. Until then credits could not be spent, so there is nothing to pay.",
+          }
+        : allowance.state === "paused"
+          ? {
+              code: "tool_access_paused",
+              message:
+                "Two Hands has paused paid tools for this account, so new credits could not be spent right now. Your existing credits are kept.",
+            }
+          : {
+              code: "tool_access_used",
+              message:
+                "This account has used the paid tool usage Two Hands has approved for it. Top-ups reopen when Two Hands raises it. Your existing credits are kept.",
+            };
+    return null;
   }
   private liveEligible() {
     return this.wallet.liveTopUpEligible();
@@ -480,6 +539,13 @@ export class StripeFundingService {
             );
         } else if (!status.enabled)
           throw new FundingError(409, status.unavailableReason!);
+        // Checked on the server too: the page hiding the button is not a control.
+        const blocked = await this.topUpBlock();
+        if (blocked)
+          throw new FundingError(
+            409,
+            `${blocked.message} No payment was started.`,
+          );
         const at = new Date(this.now()).toISOString();
         value = {
           id: randomUUID(),
@@ -1067,6 +1133,12 @@ export class StripeFundingService {
   }
   walletStatus() {
     return this.wallet.status();
+  }
+  walletActivity(options: Parameters<Wallet["activity"]>[0]) {
+    return this.wallet.activity(options);
+  }
+  walletStatement(from: string, to: string) {
+    return this.wallet.statement(from, to);
   }
   async summary() {
     return {

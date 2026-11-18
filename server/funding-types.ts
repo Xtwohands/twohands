@@ -68,9 +68,21 @@ export interface FundingEntry {
 }
 /** "test" is the Stripe sandbox. "live" is real money. */
 export type StripeMode = "test" | "live";
+/**
+ * Why a top-up is not offered to an account that could not spend it. The
+ * customer sees a plain explanation; the code is for the page and for tests.
+ */
+export type TopUpBlock =
+  | "not_enrolled"
+  | "billing_unavailable"
+  | "tool_access_pending"
+  | "tool_access_paused"
+  | "tool_access_used";
 export interface StripeFundingStatus {
   enabled: boolean;
   unavailableReason: string | null;
+  /** Set when top-ups are withheld because the credits could not be spent. */
+  blocked?: TopUpBlock;
   mode: StripeMode;
   minimumCents: number;
   maximumCents: number;

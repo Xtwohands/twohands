@@ -16,7 +16,7 @@ An account is funded in one Stripe mode, chosen by an operator in `wallet_rates.
 ## Call lifecycle
 
 1. **Reserve.** In the workspace transaction that writes the call receipt, the server freezes the rate, locks the account's balance row, and inserts a hold of the provider cost × 110% rounded up to the next USD micro. Available credits are posted balance minus open holds. All keys and sessions of an account serialize on the workspace lock, so concurrent calls cannot reserve beyond one balance.
-2. **Deny.** If available credits are below the hold, or a payment dispute is unresolved, the transaction rolls back before any provider I/O. HTTP callers receive `402` with `{error, code:"insufficient_credits", wallet:{reason, requiredMicros, availableMicros, heldMicros}}`, where `reason` is `insufficient_balance` or `dispute_hold`. MCP hosts see the message with the `[insufficient_credits]` code. The `billing_unavailable` refusal for a lapsed rate has the same shape. Agents can continue with free tools; consumers are never asked to manage funding.
+2. **Deny.** If available credits are below the hold, or a payment dispute is unresolved, the transaction rolls back before any provider I/O. HTTP callers receive `402` with `{error, code:"insufficient_credits", wallet:{reason, requiredMicros, availableMicros, heldMicros}}`, where `reason` is `insufficient_balance` or `dispute_hold`. The body also carries `ownerAction:{action,message}`: what the account owner can do. MCP hosts see the message, which includes that guidance, with the `[insufficient_credits]` code. Each refusal is logged for the owner in `wallet_refusals` after the rollback (see [customer payment surface](WALLET_CUSTOMER_SURFACE.md#refusals)). The `billing_unavailable` refusal for a lapsed rate has the same shape. Agents can continue with free tools; consumers are never asked to manage funding.
 3. **Settle.** The saved result, hold closure and debit commit in one transaction. A succeeded call posts one debit of the frozen cost plus 10% (markup rounded to the nearest micro, ties up) and releases the remainder. A valid zero-result response is billable. A verified cost of zero posts a zero charge.
 4. **Release.** A failed call, an interrupted call settled by startup recovery, or a response whose reported credit quantity contradicts the frozen rate (`cost_conflict`) closes the hold and charges zero. A hold admitted before the flag or rate was turned off still settles.
 5. **Replay.** The same request key returns the saved call without another hold, dispatch or debit. A changed payload under the same key is rejected. The journal's primary key allows one usage posting per call.
@@ -61,7 +61,7 @@ Credits (`#dashboard/credits`) shows **Available credits**, **Held for in-progre
 
 ## Not in this phase
 
-Customer statement export, quotes that include wallet eligibility in discovery, a bounded recovery window for unresolved holds beyond startup recovery, and an operator interface for adjustments and enrollment. Live-mode Stripe, dispute release and unused-balance refunds were added in [phase 3](STRIPE_LIVE.md).
+A bounded recovery window for unresolved holds beyond startup recovery, and an operator interface for enrollment. Live-mode Stripe, dispute release and unused-balance refunds were added in [phase 3](STRIPE_LIVE.md). Per-call charges, statement export, wallet eligibility in discovery, clearer refusals, the top-up gate and the adjustment action were added in [phase 4](WALLET_CUSTOMER_SURFACE.md).
 
 ## Validation
 

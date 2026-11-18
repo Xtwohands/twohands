@@ -25,6 +25,8 @@ type Rails = {
 const alertLabels: Record<string, string> = {
   unmatched_live_event: "Live Stripe event matched no account",
   refund_total_unverified: "Refund total could not be verified",
+  rate_unverified:
+    "Billing rate lapsed or no longer matches; billable calls are refused",
 };
 type Row = { payment: StripeDeposit; mode: "test" | "live"; account: string };
 const usd = (cents: number) =>
@@ -173,8 +175,8 @@ export function WalletRefundsPanel({ admin }: { admin: Admin }) {
           </ol>
         ) : (
           <Empty title="No open payment alerts">
-            Unmatched live events and refund totals that could not be verified
-            appear here.
+            Unmatched live events, refund totals that could not be verified and
+            lapsed billing rates appear here.
           </Empty>
         )}
       </section>

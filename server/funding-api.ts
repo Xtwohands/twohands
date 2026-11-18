@@ -2,6 +2,39 @@ import express, { type Express, type Request, type Response } from "express";
 import { z } from "zod";
 import { FundingError, FundingService } from "./funding.js";
 import { StripeFundingService } from "./stripe-funding.js";
+import { STATEMENT_MAX_LINES } from "./wallet.js";
+import { statementCsv } from "./wallet-statement.js";
+
+const day = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Use dates as YYYY-MM-DD.");
+/** A statement range in whole UTC days; `to` is the last day included. */
+const statementRange = z
+  .object({
+    from: day,
+    to: day,
+    format: z.enum(["csv", "json"]).default("csv"),
+  })
+  .strict()
+  .transform((input, context) => {
+    const from = new Date(`${input.from}T00:00:00.000Z`);
+    const last = new Date(`${input.to}T00:00:00.000Z`);
+    if (Number.isNaN(from.getTime()) || Number.isNaN(last.getTime())) {
+      context.addIssue({ code: "custom", message: "Use dates as YYYY-MM-DD." });
+      return z.NEVER;
+    }
+    const days = (last.getTime() - from.getTime()) / 86_400_000 + 1;
+    if (days < 1 || days > 366) {
+      context.addIssue({
+        code: "custom",
+        message: "Choose a range of 1 to 366 days, with the start date first.",
+      });
+      return z.NEVER;
+    }
+    return {
+      ...input,
+      fromAt: from.toISOString(),
+      toAt: new Date(last.getTime() + 86_400_000).toISOString(),
+    };
+  });
 export function stripeWebhookRoute(app: Express, stripe: StripeFundingService) {
   // These exact endpoints use Stripe signatures instead of the account credential.
   // They must precede all JSON parsing so signature verification receives original bytes.
@@ -98,6 +131,56 @@ export function fundingRoutes(
         }),
       ),
     ),
+  );
+  // Per-call wallet activity: charged, released, in progress and refused calls.
+  app.get(
+    "/api/account/funding/activity",
+    route(async (req, res) => {
+      const input = z
+        .object({
+          days: z.enum(["7", "30", "90", "365"]).default("30"),
+          page: z.coerce.number().int().min(1).max(100000).default(1),
+        })
+        .strict()
+        .parse(req.query);
+      res.json(
+        await service.store.db.read(() =>
+          stripe.walletActivity({
+            since: new Date(
+              Date.now() - Number(input.days) * 86_400_000,
+            ).toISOString(),
+            page: input.page,
+          }),
+        ),
+      );
+    }),
+  );
+  // Dated statement with opening and closing balances. Read-only.
+  app.get(
+    "/api/account/funding/statement",
+    route(async (req, res) => {
+      const input = statementRange.parse(req.query);
+      const statement = await service.store.db.read(() =>
+        stripe.walletStatement(input.fromAt, input.toAt),
+      );
+      if (!statement)
+        throw new FundingError(
+          413,
+          `Statements hold up to ${STATEMENT_MAX_LINES.toLocaleString("en-US")} lines. Choose a shorter date range.`,
+        );
+      if (input.format === "json") {
+        res.json(statement);
+        return;
+      }
+      res
+        .type("text/csv; charset=utf-8")
+        .set(
+          "Content-Disposition",
+          `attachment; filename="two-hands-${statement.mode === "live" ? "credits" : "sandbox-credits"}-${input.from}-to-${input.to}.csv"`,
+        )
+        .set("Cache-Control", "no-store")
+        .send(statementCsv(statement));
+    }),
   );
   app.post(
     "/api/account/funding/deposits",

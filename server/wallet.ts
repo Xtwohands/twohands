@@ -12,6 +12,114 @@ export interface WalletEntry {
   reference: string | null;
   createdAt: string;
 }
+/** What the customer sees for one paid call the wallet held, charged, released or refused. */
+export interface WalletActivityItem {
+  type: "call" | "refused";
+  /** Call receipt ID. Absent for a refusal: a refused call is never created. */
+  callId: string | null;
+  /** Session of the call, when its research record still exists. */
+  sessionId: string | null;
+  tool: string;
+  at: string;
+  /**
+   * `charged`: one debit of cost plus markup. `released`: the call failed or
+   * could not be billed, so the hold was returned and nothing was charged.
+   * `in_progress`: held, not finished. `refused`: stopped before dispatch.
+   */
+  outcome: "charged" | "released" | "in_progress" | "refused";
+  /** Why a hold was released or a call refused. */
+  reason:
+    | "failed"
+    | "interrupted"
+    | "cost_conflict"
+    | "insufficient_balance"
+    | "dispute_hold"
+    | "rate_unverified"
+    | null;
+  providerCostMicros: number | null;
+  markupMicros: number | null;
+  chargedMicros: number;
+  /** The hold placed, or the amount a refused call needed. */
+  heldMicros: number;
+  /** Refusals in the same minute for the same tool and reason. 1 for a call. */
+  count: number;
+}
+export interface WalletActivityPage {
+  mode: WalletMode;
+  items: WalletActivityItem[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+/** The charge on one call, for the Activity page. */
+export interface WalletCharge {
+  outcome: WalletActivityItem["outcome"];
+  reason: WalletActivityItem["reason"];
+  providerCostMicros: number;
+  markupMicros: number;
+  chargedMicros: number;
+  heldMicros: number;
+  mode: WalletMode;
+}
+export interface WalletStatementLine {
+  at: string;
+  kind: string;
+  /** Call ID for a tool call, payment reference for a card posting, posting ID for an adjustment. */
+  reference: string;
+  tool: string | null;
+  providerCostMicros: number | null;
+  markupMicros: number | null;
+  micros: number;
+  balanceMicros: number;
+}
+export interface WalletStatement {
+  mode: WalletMode;
+  from: string;
+  to: string;
+  openingMicros: number;
+  closingMicros: number;
+  lines: WalletStatementLine[];
+}
+/**
+ * Whether this account's paid calls would pass the wallet right now, and the
+ * price of the one billable configuration. A snapshot: admission rechecks
+ * under the account lock.
+ */
+export interface WalletQuote {
+  /** False when the wallet does not gate this account; the rest is then null. */
+  enforced: boolean;
+  mode: WalletMode;
+  paidCallsAllowed: boolean;
+  reason: WalletDenial["reason"] | null;
+  /** Credits one billable call reserves. Any paid call needs this much available. */
+  requiredMicros: number | null;
+  availableMicros: number | null;
+  billable: {
+    tool: "tavily_search";
+    searchDepth: "basic";
+    maxResults: 10;
+    providerCostMicros: number;
+    markupBps: number;
+    customerPriceMicros: number;
+    rateVersion: string;
+    /** The price is not guaranteed after this time. */
+    expiresAt: string;
+  } | null;
+}
+const unenforcedQuote: WalletQuote = {
+  enforced: false,
+  mode: "test",
+  paidCallsAllowed: true,
+  reason: null,
+  requiredMicros: null,
+  availableMicros: null,
+  billable: null,
+};
+/** Fewer billable calls left than this shows a low-balance notice. */
+export const LOW_BALANCE_CALLS = 25;
+/** A statement holds at most this many lines; a longer range is refused. */
+export const STATEMENT_MAX_LINES = 10000;
+
 export interface WalletStatus {
   /** The balance that pays for this account's calls: real money when "live". */
   mode: WalletMode;
@@ -25,6 +133,16 @@ export interface WalletStatus {
   chargedMicros: number;
   /** An unresolved payment dispute stops new paid admissions. */
   frozen: boolean;
+  /** An operator has enrolled this account for credit billing. */
+  enrolled?: boolean;
+  /** False while the enrolled account's rate cannot be billed; billable calls are refused. */
+  billingAvailable?: boolean;
+  /** Credits one billable call reserves, when the account is enrolled. */
+  callHoldMicros?: number | null;
+  /** Billable calls the available credits cover, when that can be computed. */
+  callsRemaining?: number | null;
+  /** True when an enforced balance covers fewer than LOW_BALANCE_CALLS calls. */
+  lowBalance?: boolean;
 }
 export interface WalletDenial {
   /**
@@ -37,21 +155,63 @@ export interface WalletDenial {
   availableMicros: number;
   heldMicros: number;
 }
+/** USD with sub-cent precision, for refusal text. */
+function usd(micros: number) {
+  return `$${(micros / 1_000_000).toLocaleString("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 4,
+  })}`;
+}
+/**
+ * What the account owner can do about a refusal. The agent's consumer is
+ * never asked to manage funding; this is for the person who owns the account.
+ */
+export interface OwnerAction {
+  action:
+    "add_credits" | "wait_for_payment_review" | "none" | "contact_support";
+  message: string;
+}
+const ownerActions: Record<WalletDenial["reason"], OwnerAction> = {
+  insufficient_balance: {
+    action: "add_credits",
+    message: "The account owner can add credits on the Two Hands Credits page.",
+  },
+  dispute_hold: {
+    action: "wait_for_payment_review",
+    message:
+      "Paid tools resume when the review of the card payment is closed. The account owner can see the payment on the Two Hands Credits page.",
+  },
+  rate_unverified: {
+    action: "none",
+    message:
+      "Nothing is needed from the account owner. Two Hands has been notified and credits are unaffected.",
+  },
+};
 /** Refusal before dispatch. Nothing was reserved, charged or sent to a provider. */
 export class WalletError extends Error {
   readonly code: "insufficient_credits" | "billing_unavailable";
   readonly status: number;
-  constructor(public wallet: WalletDenial) {
+  readonly ownerAction: OwnerAction;
+  constructor(
+    public wallet: WalletDenial,
+    /** Balance the call was checked against. Not part of the response. */
+    readonly mode: WalletMode = "test",
+    /** Rate that needs an operator, for the alert. Never sent to the caller. */
+    readonly rateVersion?: string,
+  ) {
+    const action = ownerActions[wallet.reason];
     super(
-      wallet.reason === "rate_unverified"
-        ? "This paid tool is temporarily unavailable for this account. Continue with other tools or the evidence already gathered."
+      (wallet.reason === "rate_unverified"
+        ? "This paid tool is temporarily unavailable for this account because it cannot be billed right now. Nothing was charged."
         : wallet.reason === "dispute_hold"
-          ? "Paid tools are unavailable for this account while a payment is under review. Continue with free tools or the evidence already gathered."
-          : "This account's available credits do not cover this paid tool call. Continue with free tools or the evidence already gathered.",
+          ? "Paid tools are paused for this account while a card payment is under review. Nothing was charged."
+          : `This account has ${usd(wallet.availableMicros)} of credits available and a paid tool call needs ${usd(wallet.requiredMicros)}. Nothing was charged.`) +
+        ` ${action.message} Continue with ${wallet.reason === "rate_unverified" ? "other" : "free"} tools or the evidence already gathered.`,
     );
     const unbillable = wallet.reason === "rate_unverified";
     this.code = unbillable ? "billing_unavailable" : "insufficient_credits";
     this.status = unbillable ? 409 : 402;
+    this.ownerAction = action;
   }
 }
 
@@ -92,6 +252,20 @@ const balanceRow = `SELECT w.mode, COALESCE(b.posted_micros,0) AS posted,
                 > count(*) FILTER (WHERE d.kind='dispute_release')) AS frozen
   FROM (SELECT ${scope} AS id, ?::text AS mode) w
   LEFT JOIN wallet_balances b ON b.workspace_id=w.id AND b.mode=w.mode`;
+/** Customer wording for a hold's state or a refusal. */
+function outcomeOf(
+  state: string,
+  refusalReason: string | null,
+): Pick<WalletActivityItem, "outcome" | "reason"> {
+  if (state === "refused")
+    return {
+      outcome: "refused",
+      reason: refusalReason as WalletActivityItem["reason"],
+    };
+  if (state === "posted") return { outcome: "charged", reason: null };
+  if (state === "pending") return { outcome: "in_progress", reason: null };
+  return { outcome: "released", reason: state as WalletActivityItem["reason"] };
+}
 const inactive: WalletStatus = {
   mode: "test",
   enforced: false,
@@ -110,6 +284,7 @@ const inactive: WalletStatus = {
 export class Wallet {
   private installed = false;
   private refunds = false;
+  private refusals = false;
   constructor(private readonly store: Store) {}
 
   /**
@@ -166,12 +341,16 @@ export class Wallet {
     const heldMicros = Number(balance.held);
     const availableMicros = Number(balance.posted) - heldMicros;
     const deny = (reason: WalletDenial["reason"]) =>
-      new WalletError({
-        reason,
-        requiredMicros: maximumMicros,
-        availableMicros: Math.max(0, availableMicros),
-        heldMicros,
-      });
+      new WalletError(
+        {
+          reason,
+          requiredMicros: maximumMicros,
+          availableMicros: Math.max(0, availableMicros),
+          heldMicros,
+        },
+        mode,
+        String(rate.rate_version),
+      );
     if (balance.frozen === true) throw deny("dispute_hold");
     if (availableMicros < maximumMicros) throw deny("insufficient_balance");
     if (!rated) return false;
@@ -374,6 +553,14 @@ export class Wallet {
     console.error(
       `Wallet operator alert ${kind} for ${reference}: ${JSON.stringify(detail)}`,
     );
+    await this.saveAlert(mode, kind, reference, detail);
+  }
+  private async saveAlert(
+    mode: WalletMode,
+    kind: string,
+    reference: string,
+    detail: Record<string, unknown>,
+  ) {
     if (!(await this.ready()) || !(await this.phase3())) return;
     await this.store.db
       .prepare(
@@ -429,27 +616,355 @@ export class Wallet {
     }));
   }
 
+  /** True once the customer-surface migration (refusal log) is installed. */
+  private async phase4() {
+    if (this.refusals) return true;
+    const row = await this.store.db
+      .prepare(
+        "SELECT to_regclass('octolab.wallet_refusals') IS NOT NULL AS installed",
+      )
+      .get();
+    return (this.refusals = row?.installed === true);
+  }
+
+  /**
+   * Records that a paid call was refused, after the refused call's own
+   * transaction rolled back. A refusal writes no receipt, so this is the only
+   * trace the account owner can see. It never moves money, and it never
+   * throws: a refusal that cannot be logged is still a refusal.
+   */
+  async refused(tool: string, error: WalletError) {
+    try {
+      if (!(await this.ready())) return;
+      await this.store.transaction(async () => {
+        if (await this.phase4())
+          await this.store.db
+            .prepare(
+              `INSERT INTO wallet_refusals(mode,tool,reason,required_micros,available_micros)
+               VALUES (?,?,?,?,?)
+               ON CONFLICT (workspace_id,mode,tool,reason,minute) DO UPDATE
+                 SET refusals=wallet_refusals.refusals+1, last_at=now(),
+                     required_micros=EXCLUDED.required_micros,
+                     available_micros=EXCLUDED.available_micros`,
+            )
+            .run(
+              error.mode,
+              tool.slice(0, 200),
+              error.wallet.reason,
+              error.wallet.requiredMicros,
+              error.wallet.availableMicros,
+            );
+        // A lapsed rate needs an operator. The customer is told Two Hands
+        // has been notified, so the notice must be durable.
+        if (error.wallet.reason === "rate_unverified" && error.rateVersion)
+          // `admit` already logged it; this makes it durable.
+          await this.saveAlert(
+            error.mode,
+            "rate_unverified",
+            `${error.rateVersion}@${this.store.workspaceId}`,
+            { rateVersion: error.rateVersion },
+          );
+      });
+    } catch (failure) {
+      console.error(
+        `Wallet refusal could not be recorded: ${failure instanceof Error ? failure.message : "unknown error"}`,
+      );
+    }
+  }
+
+  /**
+   * Per-call wallet activity of the balance that pays for this account's
+   * calls: every hold with its outcome, and refused calls. Newest first.
+   */
+  async activity(
+    options: { since?: string; page?: number; pageSize?: number } = {},
+  ): Promise<WalletActivityPage> {
+    const page = options.page ?? 1;
+    const pageSize = options.pageSize ?? 25;
+    const mode = await this.fundingMode();
+    if (!(await this.ready()))
+      return { mode, items: [], total: 0, page, pageSize };
+    const since = options.since ?? "1970-01-01T00:00:00.000Z";
+    const refusals = (await this.phase4())
+      ? `UNION ALL
+         SELECT 'refused', NULL, NULL, r.tool, r.last_at, r.reason, NULL, NULL, 0, r.required_micros, r.refusals
+         FROM wallet_refusals r WHERE r.workspace_id=${scope} AND r.mode=${fundingMode}`
+      : "";
+    const from = `FROM (
+         SELECT 'call' AS type, h.call_id, o.session_id, h.tool, h.created_at AS at,
+                COALESCE(c.outcome,'pending') AS outcome, h.provider_cost_micros AS cost,
+                h.markup_micros AS markup,
+                CASE WHEN c.outcome='posted' THEN h.total_micros ELSE 0 END AS charged,
+                h.maximum_micros AS held, 1 AS n
+         FROM wallet_holds h
+         LEFT JOIN wallet_hold_closures c ON c.workspace_id=h.workspace_id AND c.call_id=h.call_id
+         LEFT JOIN observation_calls o ON o.workspace_id=h.workspace_id AND o.id=h.call_id
+         WHERE h.workspace_id=${scope} AND h.mode=${fundingMode}
+         ${refusals}
+       ) a WHERE a.at >= ?::timestamptz`;
+    const { db } = this.store;
+    const total = Number(
+      (await db.prepare(`SELECT count(*) AS n ${from}`).get(since))!.n,
+    );
+    const rows = await db
+      .prepare(`SELECT a.* ${from} ORDER BY a.at DESC LIMIT ? OFFSET ?`)
+      .all(since, pageSize, (page - 1) * pageSize);
+    return {
+      mode,
+      total,
+      page,
+      pageSize,
+      items: rows.map((row) => {
+        const refused = row.type === "refused";
+        const state = String(row.outcome);
+        return {
+          type: refused ? "refused" : "call",
+          callId: row.call_id === null ? null : String(row.call_id),
+          sessionId: row.session_id === null ? null : String(row.session_id),
+          tool: String(row.tool),
+          at: new Date(row.at as string).toISOString(),
+          ...outcomeOf(refused ? "refused" : state, refused ? state : null),
+          providerCostMicros: row.cost === null ? null : Number(row.cost),
+          markupMicros: row.markup === null ? null : Number(row.markup),
+          chargedMicros: Number(row.charged),
+          heldMicros: Number(row.held),
+          count: Number(row.n),
+        };
+      }),
+    };
+  }
+
+  /** Wallet charges for a page of calls, keyed by call ID. One read per 500 calls. */
+  async charges(callIds: string[]): Promise<Map<string, WalletCharge>> {
+    const found = new Map<string, WalletCharge>();
+    if (!callIds.length || !(await this.ready())) return found;
+    for (let start = 0; start < callIds.length; start += 500) {
+      const ids = callIds.slice(start, start + 500);
+      const rows = await this.store.db
+        .prepare(
+          `SELECT h.call_id, h.mode, h.provider_cost_micros, h.markup_micros, h.total_micros,
+                  h.maximum_micros, COALESCE(c.outcome,'pending') AS outcome
+           FROM wallet_holds h
+           LEFT JOIN wallet_hold_closures c ON c.workspace_id=h.workspace_id AND c.call_id=h.call_id
+           WHERE h.workspace_id=${scope} AND h.call_id IN (${ids.map(() => "?").join(",")})`,
+        )
+        .all(...ids);
+      for (const row of rows)
+        found.set(String(row.call_id), {
+          ...outcomeOf(String(row.outcome), null),
+          providerCostMicros: Number(row.provider_cost_micros),
+          markupMicros: Number(row.markup_micros),
+          chargedMicros:
+            row.outcome === "posted" ? Number(row.total_micros) : 0,
+          heldMicros: Number(row.maximum_micros),
+          mode: row.mode === "live" ? "live" : "test",
+        });
+    }
+    return found;
+  }
+
+  /**
+   * Dated statement of the balance that pays for this account's calls: the
+   * opening balance, every posting in [from, to) oldest first with the running
+   * balance, and the closing balance. Raw micros; no prompts, results or keys.
+   * Returns null when the range holds more than STATEMENT_MAX_LINES postings.
+   */
+  async statement(from: string, to: string): Promise<WalletStatement | null> {
+    const mode = await this.fundingMode();
+    if (!(await this.ready()))
+      return { mode, from, to, openingMicros: 0, closingMicros: 0, lines: [] };
+    const { db } = this.store;
+    const openingMicros = Number(
+      (await db
+        .prepare(
+          `SELECT COALESCE(sum(wallet_micros),0) AS micros FROM wallet_journal
+           WHERE workspace_id=${scope} AND mode=${fundingMode} AND created_at < ?::timestamptz`,
+        )
+        .get(from))!.micros,
+    );
+    const rows = await db
+      .prepare(
+        `SELECT j.kind, j.source_id, j.reference, j.wallet_micros, j.created_at,
+                h.tool, h.provider_cost_micros, h.markup_micros
+         FROM wallet_journal j
+         LEFT JOIN wallet_holds h ON h.workspace_id=j.workspace_id AND h.call_id=j.call_id
+         WHERE j.workspace_id=${scope} AND j.mode=${fundingMode}
+           AND j.created_at >= ?::timestamptz AND j.created_at < ?::timestamptz
+         ORDER BY j.created_at, j.source_id, j.revision LIMIT ?`,
+      )
+      .all(from, to, STATEMENT_MAX_LINES + 1);
+    if (rows.length > STATEMENT_MAX_LINES) return null;
+    let balanceMicros = openingMicros;
+    const lines = rows.map((row) => {
+      const micros = Number(row.wallet_micros);
+      balanceMicros += micros;
+      const kind = String(row.kind);
+      return {
+        at: new Date(row.created_at as string).toISOString(),
+        kind,
+        // An operator's free-text adjustment note stays internal; the posting ID is enough to trace it.
+        reference:
+          kind === "usage" || kind === "adjustment" || row.reference === null
+            ? String(row.source_id)
+            : String(row.reference),
+        tool: row.tool === null ? null : String(row.tool),
+        providerCostMicros:
+          row.provider_cost_micros === null
+            ? null
+            : Number(row.provider_cost_micros),
+        markupMicros:
+          row.markup_micros === null ? null : Number(row.markup_micros),
+        micros,
+        balanceMicros,
+      };
+    });
+    return {
+      mode,
+      from,
+      to,
+      openingMicros,
+      closingMicros: balanceMicros,
+      lines,
+    };
+  }
+
+  /**
+   * Whether a paid call would pass the wallet now, and the price of the
+   * billable configuration, for discovery and route quotes. Mirrors `admit`
+   * without the account lock, so it is advice, not admission.
+   */
+  async quote(): Promise<WalletQuote> {
+    if (!walletEnforcementEnabled() || !(await this.ready()))
+      return unenforcedQuote;
+    const { db } = this.store;
+    const rate = await db.prepare(enrollment).get();
+    if (!rate) return unenforcedQuote;
+    const mode: WalletMode = rate.funding_mode === "live" ? "live" : "test";
+    const base = Number(rate.provider_cost_micros);
+    const { markupBps, totalMicros, maximumMicros } = shadowWalletPrice(base);
+    const balance = (await db.prepare(balanceRow).get(mode))!;
+    const availableMicros = Number(balance.posted) - Number(balance.held);
+    const reason: WalletQuote["reason"] =
+      balance.frozen === true
+        ? "dispute_hold"
+        : availableMicros < maximumMicros
+          ? "insufficient_balance"
+          : rate.current !== true
+            ? "rate_unverified"
+            : null;
+    return {
+      enforced: true,
+      mode,
+      // A lapsed rate stops only the billable configuration, not every paid call.
+      paidCallsAllowed: reason === null || reason === "rate_unverified",
+      reason,
+      requiredMicros: maximumMicros,
+      availableMicros: Math.max(0, availableMicros),
+      billable:
+        rate.current === true
+          ? {
+              tool: "tavily_search",
+              searchDepth: "basic",
+              maxResults: 10,
+              providerCostMicros: base,
+              markupBps,
+              customerPriceMicros: totalMicros,
+              rateVersion: String(rate.rate_version),
+              expiresAt: new Date(rate.expires_at as string).toISOString(),
+            }
+          : null,
+    };
+  }
+
   /** Two single-row reads; safe to poll. */
   async status(): Promise<WalletStatus> {
     if (!(await this.ready())) return inactive;
     const row = await this.store.db
       .prepare(
-        `SELECT s.*, EXISTS (${enrollment}) AS enrolled
-         FROM (${balanceRow.replace("?::text", fundingMode)}) s`,
+        `SELECT s.*, r.provider_cost_micros AS rate_cost, r.current AS rate_current
+         FROM (${balanceRow.replace("?::text", fundingMode)}) s
+         LEFT JOIN (${enrollment}) r ON true`,
       )
       .get();
     if (!row) return inactive;
     const postedMicros = Number(row.posted),
       heldMicros = Number(row.held);
+    const enrolled = row.rate_cost !== null && row.rate_cost !== undefined;
+    const enforced = walletEnforcementEnabled() && enrolled;
+    const availableMicros = Math.max(0, postedMicros - heldMicros);
+    const callHoldMicros = enrolled
+      ? shadowWalletPrice(Number(row.rate_cost)).maximumMicros
+      : null;
+    const callsRemaining = callHoldMicros
+      ? Math.floor(availableMicros / callHoldMicros)
+      : null;
     return {
       mode: row.mode === "live" ? "live" : "test",
-      enforced: walletEnforcementEnabled() && row.enrolled === true,
+      enforced,
       active: row.active === true,
       postedMicros,
       heldMicros,
-      availableMicros: Math.max(0, postedMicros - heldMicros),
+      availableMicros,
       chargedMicros: Number(row.charged),
       frozen: row.frozen === true,
+      enrolled,
+      billingAvailable: !enrolled || row.rate_current === true,
+      callHoldMicros,
+      callsRemaining,
+      lowBalance:
+        enforced &&
+        callsRemaining !== null &&
+        callsRemaining < LOW_BALANCE_CALLS,
     };
   }
+}
+
+/**
+ * Marks paid candidates the wallet would refuse, so discovery and routing do
+ * not offer a call that admission is certain to deny. Free tools are never
+ * touched. Like the operator allowance, this is a snapshot; admission decides.
+ */
+export function applyWalletQuote<
+  T extends {
+    requestEstimates: {
+      operationIndex: number;
+      estimatedMicros: number;
+      withinBudget: boolean;
+    }[];
+    discoveryMatches: {
+      operationIndex: number;
+      status: string;
+      reason: string;
+    }[];
+  },
+>(tools: T[], quote: WalletQuote): T[] {
+  const refused = (micros: number) =>
+    quote.enforced && !quote.paidCallsAllowed && micros > 0;
+  for (const tool of tools) {
+    for (const estimate of tool.requestEstimates) {
+      const allowed = !refused(estimate.estimatedMicros);
+      Object.assign(estimate, { walletAllowed: allowed });
+      if (!allowed) estimate.withinBudget = false;
+    }
+    for (const match of tool.discoveryMatches) {
+      const estimate = tool.requestEstimates.find(
+        (e) => e.operationIndex === match.operationIndex,
+      );
+      if (
+        estimate &&
+        refused(estimate.estimatedMicros) &&
+        (match.status === "eligible" || match.status === "over_budget")
+      ) {
+        match.status = "disabled";
+        match.reason = walletRefusalReason(quote);
+      }
+    }
+  }
+  return tools;
+}
+/** One sentence an agent can relay, with what the account owner can do. */
+export function walletRefusalReason(quote: WalletQuote) {
+  return quote.reason === "dispute_hold"
+    ? "Paid tools are paused for this account while a card payment is under review."
+    : "This account's credits do not cover a paid call. The account owner can add credits in Two Hands.";
 }

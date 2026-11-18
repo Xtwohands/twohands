@@ -71,6 +71,15 @@ async function serverStatusFailure(response: Response) {
         .replace(/[\u0000-\u001f\u007f]+/g, " ")
         .trim()
         .slice(0, 500);
+    // What the account owner can do, when the server says so and the message
+    // does not already include it. MCP hosts only see this text.
+    const owner = body?.ownerAction?.message;
+    if (detail && typeof owner === "string" && !detail.includes(owner))
+      detail =
+        `${detail} ${owner.replace(/[\u0000-\u001f\u007f]+/g, " ").trim()}`.slice(
+          0,
+          700,
+        );
     if (
       detail &&
       typeof body.code === "string" &&
@@ -87,13 +96,16 @@ function statusFailure(status: number) {
   const message =
     status === 401
       ? "The bridge credential was rejected. Check the configured key; no owner-token fallback was attempted."
-      : status === 403
-        ? "The bridge key does not permit this operation."
-        : status === 409
-          ? "The operation conflicts with saved state or backend policy. Inspect the existing session and receipt before retrying."
-          : status === 429
-            ? "The backend request or spending limit was reached. No automatic retry was made."
-            : "The configured server rejected the bridge operation.";
+      : status === 402
+        ? // Fixed text: a remote server's own wording is never repeated here.
+          "This account's prepaid credits do not cover this paid tool call, or paid tools are paused while a payment is reviewed. Nothing was charged. Only the account owner can add credits in Two Hands. Continue with free tools or the evidence already gathered."
+        : status === 403
+          ? "The bridge key does not permit this operation."
+          : status === 409
+            ? "The operation conflicts with saved state or backend policy. Inspect the existing session and receipt before retrying."
+            : status === 429
+              ? "The backend request or spending limit was reached. No automatic retry was made."
+              : "The configured server rejected the bridge operation.";
   return new Error(`${message} HTTP ${status}.`);
 }
 

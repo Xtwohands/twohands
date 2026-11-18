@@ -37,9 +37,12 @@ const usd = (cents: number) =>
 export function StripeFundingPanel({
   summary,
   refresh,
+  creditBilling = false,
 }: {
   summary?: FundingSummary;
   refresh: () => Promise<void>;
+  /** The account pays for tool calls from prepaid credits (sandbox or live). */
+  creditBilling?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [selected, setSelected] = useState<StripeDeposit>();
@@ -52,6 +55,10 @@ export function StripeFundingPanel({
   // Real-money wording for a live account. A saved receipt keeps the wording
   // of its own mode, so an old sandbox payment is never shown as real money.
   const live = summary?.stripe?.mode === "live";
+  // Top-ups are withheld while the account could not spend the credits.
+  const blocked = summary?.stripe?.blocked
+    ? summary.stripe.unavailableReason
+    : null;
   const isLive = (deposit?: StripeDeposit) =>
     deposit ? deposit.mode === "live" : live;
   const unit = (deposit?: StripeDeposit) =>
@@ -121,20 +128,29 @@ export function StripeFundingPanel({
         <div>
           <p>
             {!summary?.stripe?.enabled
-              ? live
-                ? "Card top-ups are paused for this account. Your credits are kept."
-                : "Card payments are not available yet. There is nothing to configure in your account."
+              ? blocked
+                ? "Top-ups are not open for this account yet."
+                : live
+                  ? "Card top-ups are paused for this account. Your credits are kept."
+                  : "Card payments are not available yet. There is nothing to configure in your account."
               : live
                 ? "Pay by card on Stripe’s secure checkout. Each verified dollar adds one dollar of credits. Refunds and disputed payments adjust your credits."
-                : "Complete a test payment on Stripe’s secure checkout. Each verified test dollar adds one test credit. Refunds and disputed payments adjust the credit balance."}
+                : creditBilling
+                  ? "Complete a test payment on Stripe’s secure checkout. Each verified test dollar adds one dollar of sandbox credits. Refunds and disputed payments adjust your credits."
+                  : "Complete a test payment on Stripe’s secure checkout. Each verified test dollar adds one test credit. Refunds and disputed payments adjust the credit balance."}
           </p>
           {!summary?.stripe?.enabled && (
-            <div className="ws-funding-setup">
-              <strong>Card deposits are unavailable</strong>
+            <div className="ws-funding-setup" data-top-up-blocked={!!blocked}>
+              <strong>
+                {blocked
+                  ? "Why you can’t add credits yet"
+                  : "Card deposits are unavailable"}
+              </strong>
               <p>
-                {live
-                  ? "Card top-ups are not available for this account right now. Your credits are kept."
-                  : "You can continue setting up your agent without a payment method. No card details are needed."}
+                {blocked ??
+                  (live
+                    ? "Card top-ups are not available for this account right now. Your credits are kept."
+                    : "You can continue setting up your agent without a payment method. No card details are needed.")}
               </p>
             </div>
           )}
@@ -148,7 +164,11 @@ export function StripeFundingPanel({
               setOpen(true);
             }}
           >
-            {live ? "Add credits" : "Deposit with Stripe"}
+            {live
+              ? "Add credits"
+              : creditBilling
+                ? "Add sandbox credits"
+                : "Deposit with Stripe"}
             <ArrowRight />
           </Button>
         </div>

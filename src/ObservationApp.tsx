@@ -13,7 +13,8 @@ import { WrongAccountArea } from "./ChooseAccountType";
 import { OperatorAllowanceNotice } from "./OperatorAllowanceNotice";
 import { AccountControls, useAccount } from "./AccountGate";
 import { CustomerFunding, useCustomerFunding } from "./customer-funding";
-import { sandboxCredits, testUsdc } from "./funding-format";
+import { spendableBalance } from "./funding-format";
+import { WalletNotice } from "./WalletNotice";
 const DisputeReviewView = lazy(() =>
   import("./DisputeReviewView").then((m) => ({ default: m.DisputeReviewView })),
 );
@@ -893,12 +894,12 @@ export function ObservationApp() {
                   Credits
                   {funding.summary && (
                     <span className="customer-navigation-balance">
-                      {funding.summary.wallet?.mode === "live" ? (
-                        // A live account's balance is its real-money wallet.
-                        sandboxCredits(funding.summary.wallet.availableMicros)
-                      ) : (
-                        <>{testUsdc(funding.summary.balanceUnits)} test</>
-                      )}
+                      {/* One balance: prepaid credits for an account on
+                          credit billing, otherwise its test credits. */}
+                      {spendableBalance(funding.summary).label}
+                      {spendableBalance(funding.summary).wallet &&
+                        !spendableBalance(funding.summary).live &&
+                        " sandbox"}
                       <span className="sr-only"> credits</span>
                     </span>
                   )}
@@ -916,7 +917,7 @@ export function ObservationApp() {
                       setMenuOpen(false);
                     }}
                   >
-                    {funding.summary?.wallet?.mode === "live"
+                    {funding.summary && spendableBalance(funding.summary).wallet
                       ? "Add credits"
                       : "Add test funds"}
                   </a>
@@ -1108,6 +1109,12 @@ export function ObservationApp() {
           {route.page === "dashboard" &&
             account.enabled &&
             (inActivity || inToolCatalog) && <OperatorAllowanceNotice />}
+          {route.page === "dashboard" && (
+            <WalletNotice
+              wallet={funding.summary?.wallet}
+              onCredits={route.id === "credits"}
+            />
+          )}
           {route.page === "dashboard" && (
             <CustomerFunding.Provider
               value={{

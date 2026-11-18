@@ -35,7 +35,7 @@ Authenticated accounts and scoped keys with `usage:read` can read `GET /api/acco
 
 Hosted states are `unconfigured`, `paused`, `exhausted`, and `available`. Explicit local SQLite compatibility returns `enforced:false`, `state:"local"`, and `remainingMicros:null`; it is not a hosted spending authorization.
 
-Discovery, preview, and catalog responses include `operatorAllowance`. Candidate request quotes include `operatorAllowed`; `withinBudget` and eligibility account for operator, key, and session limits. These are snapshots; admission rechecks authority atomically. An admission denial returns 403 with `{error,code:"operator_allowance_exceeded",operatorAllowance}`. Consumers are not asked to approve sessions or pick platform budgets.
+Discovery, preview, and catalog responses include `operatorAllowance`. Candidate request quotes include `operatorAllowed`; `withinBudget` and eligibility account for operator, key, and session limits. These are snapshots; admission rechecks authority atomically. An admission denial returns 403 with `{error,code:"operator_allowance_exceeded",operatorAllowance,ownerAction}`. `ownerAction.message` says what the account owner can do and names no limit or amount. Consumers are not asked to approve sessions or pick platform budgets.
 
 Only freshly verified platform administrators can use:
 

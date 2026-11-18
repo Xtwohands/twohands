@@ -30,6 +30,12 @@ import {
 } from "react";
 import { CustomerFunding } from "./customer-funding";
 import {
+  chargeOutcome,
+  chargeReason,
+  sandboxCredits,
+  spendableBalance,
+} from "./funding-format";
+import {
   Activity,
   ArrowRight,
   ArrowUpRight,
@@ -273,8 +279,10 @@ export function UserDashboardView({
   const account = useAccount();
   const openConnectAgent = useConnectAgent();
   const canManage = !account.enabled || !!account.profile;
+  const fundingSummary = useContext(CustomerFunding).summary;
+  // Any account that pays for tool calls from prepaid credits, sandbox or live.
   const liveCredits =
-    useContext(CustomerFunding).summary?.wallet?.mode === "live";
+    !!fundingSummary && spendableBalance(fundingSummary).wallet;
   const [days, setDays] = useState("7");
   const [usage, setUsage] = useState<AccountUsage>();
   const [policy, setPolicy] = useState<RoutingPolicy>();
@@ -1379,6 +1387,8 @@ function ActivityTable({
   onClearFilters?: () => void;
 }) {
   const openConnectAgent = useConnectAgent();
+  // Shown only when a listed call was paid from prepaid credits.
+  const charged = items.some((item) => item.charge);
   if (loading) return <Loading />;
   if (!items.length)
     return (
@@ -1427,6 +1437,7 @@ function ActivityTable({
             <th>Provider</th>
             <th>Status</th>
             <th>Est. cost</th>
+            {charged && <th>Charged</th>}
             <th>Latency</th>
             <th>Time</th>
             <th>
@@ -1460,6 +1471,15 @@ function ActivityTable({
                 <Status status={item.status} />
               </td>
               <td className="ws-mono">{money(item.estimateMicros)}</td>
+              {charged && (
+                <td className="ws-mono">
+                  {!item.charge
+                    ? "—"
+                    : item.charge.outcome === "in_progress"
+                      ? `${sandboxCredits(item.charge.heldMicros)} held`
+                      : sandboxCredits(item.charge.chargedMicros)}
+                </td>
+              )}
               <td className="ws-mono">{latency(item.latencyMs)}</td>
               <td>
                 <time dateTime={item.startedAt}>{date(item.startedAt)}</time>
@@ -2190,6 +2210,45 @@ function CallDetail({ item }: { item: ActivityItem }) {
           <strong>{date(item.startedAt)}</strong>
         </div>
       </div>
+      {item.charge && (
+        <>
+          <h3>Charge from prepaid credits</h3>
+          <div className="ws-detail-facts" data-call-charge>
+            <div>
+              <span>Outcome</span>
+              <strong>{chargeOutcome(item.charge.outcome)}</strong>
+              {item.charge.reason && (
+                <small>{chargeReason(item.charge.reason)}</small>
+              )}
+            </div>
+            <div>
+              <span>Provider cost</span>
+              <strong>{sandboxCredits(item.charge.providerCostMicros)}</strong>
+            </div>
+            <div>
+              <span>Two Hands markup (10%)</span>
+              <strong>{sandboxCredits(item.charge.markupMicros)}</strong>
+            </div>
+            <div>
+              <span>
+                {item.charge.outcome === "in_progress" ? "Held" : "Charged"}
+              </span>
+              <strong>
+                {sandboxCredits(
+                  item.charge.outcome === "in_progress"
+                    ? item.charge.heldMicros
+                    : item.charge.chargedMicros,
+                )}
+              </strong>
+              <small>
+                {item.charge.mode === "live"
+                  ? "USD"
+                  : "Sandbox credits, not real money"}
+              </small>
+            </div>
+          </div>
+        </>
+      )}
       <h3>Agent’s stated reason</h3>
       <p>{item.statedReason || "No reason recorded"}</p>
       <div className="ws-receipt-id">
@@ -2377,8 +2436,14 @@ function ExportActivity({
               "reportedCredits",
             ] as const;
             const csv = [
-              columns.join(","),
-              ...items.map((i) => columns.map((c) => cell(i[c])).join(",")),
+              [...columns, "chargeOutcome", "chargedMicros"].join(","),
+              ...items.map((i) =>
+                [
+                  ...columns.map((c) => cell(i[c])),
+                  cell(i.charge?.outcome),
+                  cell(i.charge?.chargedMicros),
+                ].join(","),
+              ),
             ].join("\r\n");
             download(`two-hands-activity-${days}d.csv`, csv, "text/csv");
           } catch (e) {

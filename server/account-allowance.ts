@@ -303,3 +303,19 @@ export function applyOperatorAllowance<
   }
   return tools;
 }
+
+/**
+ * What the account owner can do when the operator allowance stops a paid
+ * call. It names no limit or amount: those are Two Hands' own risk settings.
+ */
+export function allowanceOwnerAction(allowance?: OperatorAllowance) {
+  return {
+    action: "contact_support" as const,
+    message:
+      allowance?.state === "unconfigured"
+        ? "Paid tools have not been turned on for this account yet. The account owner can ask Two Hands to turn them on."
+        : allowance?.state === "paused"
+          ? "Two Hands has paused paid tools for this account. The account owner can contact Two Hands."
+          : "This account has used the paid tool usage Two Hands has approved for it. The account owner can ask Two Hands to raise it.",
+  };
+}

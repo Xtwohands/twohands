@@ -30,3 +30,58 @@ const postingLabels: Record<string, string> = {
 export function postingLabel(kind: string) {
   return postingLabels[kind] ?? kind.replaceAll("_", " ");
 }
+
+type BalanceSummary = {
+  balanceUnits: number;
+  stripe?: { mode: "test" | "live" };
+  wallet?: {
+    mode: "test" | "live";
+    enforced: boolean;
+    active: boolean;
+    enrolled?: boolean;
+    availableMicros: number;
+  };
+};
+/**
+ * The one balance an account can spend. An account on credit billing spends
+ * its wallet, in sandbox or live credits. Every other account only has test
+ * credits, which pay for nothing.
+ */
+export function spendableBalance(summary: BalanceSummary) {
+  const { wallet } = summary;
+  const live = wallet?.mode === "live" || summary.stripe?.mode === "live";
+  if (wallet && (live || wallet.enrolled || wallet.enforced || wallet.active))
+    return {
+      wallet: true as const,
+      live,
+      label: sandboxCredits(wallet.availableMicros),
+    };
+  return {
+    wallet: false as const,
+    live: false,
+    label: `${testUsdc(summary.balanceUnits)} test`,
+  };
+}
+
+const outcomeLabels: Record<string, string> = {
+  charged: "Charged",
+  released: "Not charged",
+  in_progress: "In progress",
+  refused: "Refused",
+};
+export function chargeOutcome(outcome: string) {
+  return outcomeLabels[outcome] ?? outcome.replaceAll("_", " ");
+}
+const outcomeReasons: Record<string, string> = {
+  failed: "The call failed, so its hold was returned.",
+  interrupted: "The call was interrupted, so its hold was returned.",
+  cost_conflict:
+    "The provider reported a different cost than the agreed price, so nothing was charged.",
+  insufficient_balance: "Credits did not cover the call. It was not run.",
+  dispute_hold: "Paid tools were paused for a payment review. It was not run.",
+  rate_unverified:
+    "The tool could not be billed at the time. It was not run and nothing is needed from you.",
+};
+export function chargeReason(reason: string | null) {
+  return reason ? (outcomeReasons[reason] ?? reason.replaceAll("_", " ")) : "";
+}

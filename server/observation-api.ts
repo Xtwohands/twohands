@@ -1,4 +1,4 @@
-import { AllowanceError } from "./account-allowance.js";
+import { AllowanceError, allowanceOwnerAction } from "./account-allowance.js";
 import { WalletError } from "./wallet.js";
 import { SettingsBusyError } from "./provider-settings-gate.js";
 import { ApiKeyError } from "./api-keys.js";
@@ -50,12 +50,17 @@ export function observationRoutes(app: Express, obs: Observatory) {
             error: e.message,
             code: e.code,
             operatorAllowance: e.operatorAllowance,
+            // Present only for a refused paid call, not for admin errors.
+            ...(e.operatorAllowance
+              ? { ownerAction: allowanceOwnerAction(e.operatorAllowance) }
+              : {}),
           });
         else if (e instanceof WalletError)
           res.status(e.status).json({
             error: e.message,
             code: e.code,
             wallet: e.wallet,
+            ownerAction: e.ownerAction,
           });
         else if (e instanceof z.ZodError)
           res.status(400).json({
