@@ -335,6 +335,9 @@
 }
 .ws-table-scroll {
   overflow-x: auto;
+  /* Contain absolutely positioned children (such as visually hidden column
+     labels) so they scroll with the table instead of widening the page. */
+  position: relative;
 }
 .ws-table {
   width: 100%;
