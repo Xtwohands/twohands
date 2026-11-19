@@ -17,6 +17,9 @@ export default defineConfig({
         dashboard: fileURLToPath(new URL("./index.html", import.meta.url)),
         landing: fileURLToPath(new URL("./landing.html", import.meta.url)),
         shake: fileURLToPath(new URL("./shake.html", import.meta.url)),
+        orthogonal: fileURLToPath(
+          new URL("./orthogonal.html", import.meta.url),
+        ),
       },
     },
   },

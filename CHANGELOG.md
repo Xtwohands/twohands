@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Added
+
+- Preserve the independent Orthogonal landing reference with local assets, catalog search, animated scenes and browser verification.
+
 ### Changed
 
 - Load customer, company and administrator views on demand, with scoped dashboard reads, non-overlapping refreshes and compressed production assets.
