@@ -223,6 +223,11 @@ test("an account on credit billing sees one spendable balance, per-call charges 
   );
   expect(statementUrl).toContain("from=2026-11-01&to=2026-11-17");
 
+  // The activity note names the section that is actually on a sandbox page.
+  await expect(main).toContainText(
+    "plus 10%. Each card top-up is listed under Card deposit history.",
+  );
+
   // Earlier test credits are kept, out of the way, and never called spendable.
   const legacy = main.locator(".ws-legacy-credits");
   await expect(legacy).toContainText("16.00 test credits");
