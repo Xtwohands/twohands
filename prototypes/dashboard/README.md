@@ -2,7 +2,8 @@
 
 Run `npm run demo:dashboard -- --port 5184`, then open:
 
-- [Landing · Shake draft](http://127.0.0.1:5184/shake.html) — the current landing-page iteration, based on [Figma frame 218:3877](https://www.figma.com/design/WjofMoGOzEmDvoRdERi1O5/Untitled?node-id=218-3877).
+- [Orthogonal landing reference](http://127.0.0.1:5186/orthogonal.html) — the latest separate landing prototype. Run `npm run demo:dashboard -- --port 5186`; see [its guide](./orthogonal/README.md).
+- [Landing · Shake draft](http://127.0.0.1:5184/shake.html) — the Figma landing-page iteration, based on [Figma frame 218:3877](https://www.figma.com/design/WjofMoGOzEmDvoRdERi1O5/Untitled?node-id=218-3877).
 - [Dashboard](http://127.0.0.1:5184/) — existing dashboard, catalog, and sign-in demos.
 - [Earlier landing page](http://127.0.0.1:5184/landing.html).
 

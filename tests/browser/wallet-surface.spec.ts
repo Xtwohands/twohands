@@ -1,5 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
-import AxeBuilder from "@axe-core/playwright";
+import AxeBuilder from "./helpers/accessibility";
 const base = "http://127.0.0.1:3102";
 
 // The fixture server is SQLite, where the wallet is inactive. These tests
@@ -223,6 +223,11 @@ test("an account on credit billing sees one spendable balance, per-call charges 
   );
   expect(statementUrl).toContain("from=2026-11-01&to=2026-11-17");
 
+  // The activity note names the section that is actually on a sandbox page.
+  await expect(main).toContainText(
+    "plus 10%. Each card top-up is listed under Card deposit history.",
+  );
+
   // Earlier test credits are kept, out of the way, and never called spendable.
   const legacy = main.locator(".ws-legacy-credits");
   await expect(legacy).toContainText("16.00 test credits");
@@ -283,6 +288,9 @@ test("the dashboard warns about low, used-up and frozen credits with the next st
     wallet: { availableMicros: 26400, callsRemaining: 3, lowBalance: true },
   });
   await page.goto(`${base}/#dashboard`);
+  await expect(
+    page.getByRole("heading", { name: "Home", level: 1, exact: true }),
+  ).toBeVisible();
   const notice = page.locator("[data-wallet-notice]");
   await expect(notice).toHaveAttribute("data-wallet-notice", "low");
   await expect(notice).toContainText("about 3 paid calls left");

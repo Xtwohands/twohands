@@ -14,9 +14,25 @@ export function sandboxCredits(micros: number) {
   })}`;
 }
 
-/** A signed wallet posting, such as "+$5.00" or "−$0.0077". */
+/** A signed wallet posting, such as "+$5.00" or "−$0.0077". Zero has no sign. */
 export function creditChange(micros: number) {
-  return `${micros < 0 ? "−" : "+"}${sandboxCredits(Math.abs(micros))}`;
+  const sign = micros < 0 ? "−" : micros > 0 ? "+" : "";
+  return `${sign}${sandboxCredits(Math.abs(micros))}`;
+}
+
+/** Net credits a card payment currently contributes, such as "$6.00" or "6.00". */
+export function netCredits(units: number, dollars: boolean) {
+  const amount = (units / 1_000_000).toLocaleString("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+  return dollars ? `$${amount}` : amount;
+}
+
+/** A test-credit ledger reason as a label, such as "Dispute hold". */
+export function ledgerReason(kind: string) {
+  const text = kind.replaceAll("_", " ");
+  return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
 const postingLabels: Record<string, string> = {

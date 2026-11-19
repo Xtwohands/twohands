@@ -8,7 +8,7 @@ test("sidebar navigation reveals the new page heading and preserves browser hist
     page.getByRole("heading", { name: "Connections", exact: true }),
   ).toBeVisible();
   await expect(
-    page.getByRole("button", { name: "Codex", exact: true }),
+    page.getByRole("heading", { name: "Connect your agent", exact: true }),
   ).toBeVisible();
   await page.evaluate(() => window.scrollTo(0, 600));
   await expect
