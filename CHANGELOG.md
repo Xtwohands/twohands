@@ -15,6 +15,8 @@
 
 ### Fixed
 
+- Correct Credits-page receipt labels, payment status icons, amount formatting and single-method layout.
+- Keep navigation and wallet browser checks aligned with hosted agent setup, loaded dashboards and the approved brand-color audit policy.
 - Show tool loading and retry states, and identify each provider in tool-button accessibility names.
 - Keep catalog card footers aligned and contained on desktop and mobile.
 - Preserve browser origins through the development proxy so local write checks match production behavior.

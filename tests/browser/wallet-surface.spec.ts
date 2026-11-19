@@ -1,5 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
-import AxeBuilder from "@axe-core/playwright";
+import AxeBuilder from "./helpers/accessibility";
 const base = "http://127.0.0.1:3102";
 
 // The fixture server is SQLite, where the wallet is inactive. These tests
@@ -288,6 +288,9 @@ test("the dashboard warns about low, used-up and frozen credits with the next st
     wallet: { availableMicros: 26400, callsRemaining: 3, lowBalance: true },
   });
   await page.goto(`${base}/#dashboard`);
+  await expect(
+    page.getByRole("heading", { name: "Home", level: 1, exact: true }),
+  ).toBeVisible();
   const notice = page.locator("[data-wallet-notice]");
   await expect(notice).toHaveAttribute("data-wallet-notice", "low");
   await expect(notice).toContainText("about 3 paid calls left");
