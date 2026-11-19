@@ -28,7 +28,7 @@ npm run db:migrate:dev
 npm run dev
 ```
 
-Open **http://127.0.0.1:5175**. The development API defaults to port 3009; Vite's relative `/api` proxy follows the same configured `PORT` and preserves the browser origin. Port 5175 is fixed, so another preview causes startup to fail instead of opening a different port. `npm run demo:dashboard` remains a separate prototype on port 5174.
+Open **http://127.0.0.1:5175**. The development API defaults to port 3009; Vite's relative `/api` proxy follows the same configured `PORT` and preserves the browser origin. Port 5175 is fixed, so another preview causes startup to fail instead of opening a different port. `npm run demo:dashboard` serves the separate [design prototypes](prototypes/dashboard/README.md) on port 5174 by default; their guide includes the Orthogonal landing reference.
 
 `npm run dev`, `npm run db:migrate:dev`, and `npm run preview:production` load only `.env.development.local`, validate that its database and Auth settings match the declared development project, and reject the known production project. They do not load `.env` or reuse inherited application credentials. Migrations are explicit and require the development API to be stopped. See [development setup](docs/DEVELOPMENT.md) for project creation, Auth redirects, and troubleshooting.
 

@@ -42,6 +42,6 @@ npx vite build --config prototypes/dashboard/vite.config.ts --outDir /tmp/orthog
 node prototypes/dashboard/orthogonal/verify.mjs
 ```
 
-The browser verifier covers animated WebGL output, pointer interaction, Agentation, category and empty-result search states, carousel controls, all six integration tabs, clipboard contents, trial/sign-in dialogs and focus restoration, key scroll states, footer return-to-top, local image loading, no text halos, reduced motion, viewport widths from 320px to 1440px, console/page errors, and unexpected external requests. Evidence is written to `output/orthogonal-verification/`.
+The browser verifier covers animated WebGL output, pointer interaction, Agentation, category and empty-result search states, Enter submission to the original site's search page while preserving the prototype, carousel controls, all six integration tabs, clipboard contents, trial/sign-in dialogs and focus restoration, key scroll states, footer return-to-top, local image loading, no text halos, reduced motion, viewport widths from 320px to 1440px, console/page errors, and unexpected external requests. Evidence is written to `output/orthogonal-verification/`.
 
 For a built preview, set `PROTOTYPE_BUILT=1` and `PROTOTYPE_URL` when running the verifier. Agentation must be absent from that build. No live provider checks are performed.
